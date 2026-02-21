@@ -14,6 +14,8 @@ public interface IPowerShellRunner
 
 public sealed class PowerShellRunner : IPowerShellRunner
 {
+    private const string BootstrapScript = "$ErrorActionPreference='Stop';$env:PSExecutionPolicyPreference='Bypass';Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue;";
+
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
 
@@ -55,7 +57,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         using var ps = PowerShell.Create();
         ps.Runspace = runspace;
-        ps.AddScript("$ErrorActionPreference='Stop'; Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue;");
+        ps.AddScript(BootstrapScript);
         ps.AddScript(request.Script);
 
         var output = new PSDataCollection<PSObject>();
@@ -75,6 +77,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.Streams.Error.DataAdded += (_, args) =>
         {
+            if (args.Index < 0 || args.Index >= ps.Streams.Error.Count)
+            {
+                return;
+            }
+
             var record = ps.Streams.Error[args.Index];
             var text = record.ToString();
             combined.AppendLine(text);
@@ -83,6 +90,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.Streams.Warning.DataAdded += (_, args) =>
         {
+            if (args.Index < 0 || args.Index >= ps.Streams.Warning.Count)
+            {
+                return;
+            }
+
             var text = ps.Streams.Warning[args.Index].ToString();
             combined.AppendLine(text);
             _console.Publish("Warning", text);
@@ -90,6 +102,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.Streams.Verbose.DataAdded += (_, args) =>
         {
+            if (args.Index < 0 || args.Index >= ps.Streams.Verbose.Count)
+            {
+                return;
+            }
+
             var text = ps.Streams.Verbose[args.Index].ToString();
             combined.AppendLine(text);
             _console.Publish("Verbose", text);
@@ -97,6 +114,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.Streams.Debug.DataAdded += (_, args) =>
         {
+            if (args.Index < 0 || args.Index >= ps.Streams.Debug.Count)
+            {
+                return;
+            }
+
             var text = ps.Streams.Debug[args.Index].ToString();
             combined.AppendLine(text);
             _console.Publish("Debug", text);
@@ -104,6 +126,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.Streams.Information.DataAdded += (_, args) =>
         {
+            if (args.Index < 0 || args.Index >= ps.Streams.Information.Count)
+            {
+                return;
+            }
+
             var text = ps.Streams.Information[args.Index].ToString();
             combined.AppendLine(text);
             _console.Publish("Information", text);

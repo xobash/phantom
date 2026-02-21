@@ -11,6 +11,9 @@ public sealed class HomeDataService
     private readonly ConsoleStreamService _console;
     private readonly TelemetryStore _telemetryStore;
     private TelemetryState? _telemetry;
+    private DateTimeOffset _lastNetworkSampleAt = DateTimeOffset.UtcNow;
+    private long _lastNetworkSentBytes;
+    private long _lastNetworkReceivedBytes;
 
     public HomeDataService(ConsoleStreamService console, TelemetryStore telemetryStore)
     {
@@ -42,33 +45,53 @@ public sealed class HomeDataService
             PropertyNameCaseInsensitive = true
         }) ?? new HomeSnapshot();
 
-        snapshot.NetworkUsage = ComputeNetworkUsage(_telemetry);
+        var network = ComputeNetworkSnapshot(_telemetry);
+        snapshot.NetworkUsage = BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred);
         await _telemetryStore.SaveAsync(_telemetry, cancellationToken).ConfigureAwait(false);
 
         return snapshot;
     }
 
-    public async Task<(double CpuUsage, double MemoryUsage)> GetCpuMemoryUsageAsync(CancellationToken cancellationToken)
+    public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, string Uptime, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0);
+            return (0, 0, 0, "00:00:00", "↑ 0 B/s ↓ 0 B/s\n0 B");
         }
 
         const string script = @"
 $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
+$gpu = 0
+try {
+  $gpuSamples = (Get-Counter '\GPU Engine(*engtype_3D)\Utilization Percentage' -ErrorAction Stop).CounterSamples
+  if ($gpuSamples) {
+    $gpu = ($gpuSamples | Measure-Object -Property CookedValue -Average).Average
+  }
+} catch {
+  try {
+    $fallback = (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples
+    if ($fallback) {
+      $gpu = [math]::Min(100, ($fallback | Measure-Object -Property CookedValue -Sum).Sum)
+    }
+  } catch {
+    $gpu = 0
+  }
+}
 $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
+$uptime = (Get-Date) - $os.LastBootUpTime
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)
   MemoryUsage = [math]::Round($memoryPct, 2)
+  GpuUsage = [math]::Round($gpu, 2)
+  Uptime = ([string]::Format('{0:00}:{1:00}:{2:00}', [int]$uptime.TotalHours, $uptime.Minutes, $uptime.Seconds))
 } | ConvertTo-Json -Compress";
 
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
-            return (0, 0);
+            return (0, 0, 0, "00:00:00", BuildNetworkDisplay(0, 0, 0));
         }
 
         try
@@ -76,12 +99,15 @@ $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalV
             using var doc = JsonDocument.Parse(json);
             var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
             var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
-            return (cpu, memory);
+            var gpu = doc.RootElement.TryGetProperty("GpuUsage", out var gpuProperty) ? gpuProperty.GetDouble() : 0;
+            var uptime = doc.RootElement.TryGetProperty("Uptime", out var uptimeProperty) ? uptimeProperty.GetString() ?? "00:00:00" : "00:00:00";
+            var network = ComputeNetworkSnapshot(_telemetry ?? new TelemetryState());
+            return (cpu, memory, gpu, uptime, BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred));
         }
         catch (Exception ex)
         {
-            _console.Publish("Error", $"Live CPU/Memory parse failed: {ex.Message}");
-            return (0, 0);
+            _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
+            return (0, 0, 0, "00:00:00", BuildNetworkDisplay(0, 0, 0));
         }
     }
 
@@ -160,7 +186,7 @@ catch {
         return process.ExitCode == 0 ? stdout.Trim() : string.Empty;
     }
 
-    private static string ComputeNetworkUsage(TelemetryState telemetry)
+    private (double UploadSpeed, double DownloadSpeed, long TotalTransferred) ComputeNetworkSnapshot(TelemetryState telemetry)
     {
         var nics = NetworkInterface.GetAllNetworkInterfaces()
             .Where(x => x.OperationalStatus == OperationalStatus.Up)
@@ -186,18 +212,24 @@ catch {
             }
         }
 
-        long baselineSent = 0;
-        long baselineRecv = 0;
-        foreach (var baseline in telemetry.NetworkBaselines.Values)
-        {
-            baselineSent += baseline.SentBytes;
-            baselineRecv += baseline.ReceivedBytes;
-        }
+        long baselineSent = telemetry.NetworkBaselines.Values.Sum(x => x.SentBytes);
+        long baselineRecv = telemetry.NetworkBaselines.Values.Sum(x => x.ReceivedBytes);
 
-        var deltaSent = Math.Max(0, totalSent - baselineSent);
-        var deltaRecv = Math.Max(0, totalRecv - baselineRecv);
-        return $"Total {FormatBytes(deltaSent)} / {FormatBytes(deltaRecv)} since baseline";
+        var now = DateTimeOffset.UtcNow;
+        var elapsed = Math.Max(0.25, (now - _lastNetworkSampleAt).TotalSeconds);
+        var uploadSpeed = _lastNetworkSentBytes == 0 ? 0 : Math.Max(0, (totalSent - _lastNetworkSentBytes) / elapsed);
+        var downloadSpeed = _lastNetworkReceivedBytes == 0 ? 0 : Math.Max(0, (totalRecv - _lastNetworkReceivedBytes) / elapsed);
+
+        _lastNetworkSampleAt = now;
+        _lastNetworkSentBytes = totalSent;
+        _lastNetworkReceivedBytes = totalRecv;
+
+        var totalTransferred = Math.Max(0, (totalSent - baselineSent) + (totalRecv - baselineRecv));
+        return (uploadSpeed, downloadSpeed, totalTransferred);
     }
+
+    private static string BuildNetworkDisplay(double uploadBytesPerSecond, double downloadBytesPerSecond, long totalTransferred)
+        => $"↑ {FormatBytes((long)uploadBytesPerSecond)}/s ↓ {FormatBytes((long)downloadBytesPerSecond)}/s\n{FormatBytes(totalTransferred)}";
 
     private static string FormatBytes(long bytes)
     {
@@ -230,7 +262,7 @@ catch {
         sb.AppendLine("$services = Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running'} | Select-Object Name, DisplayName, StartMode, State");
         sb.AppendLine("$cpuCtr = (Get-Counter '\\Processor(_Total)\\% Processor Time').CounterSamples.CookedValue");
         sb.AppendLine("$gpuCtr = 0");
-        sb.AppendLine("try { $gpuCtr = ((Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples | Measure-Object -Property CookedValue -Sum).Sum } catch { $gpuCtr = 0 }");
+        sb.AppendLine("try { $gpuSamples = (Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($gpuSamples) { $gpuCtr = ($gpuSamples | Measure-Object -Property CookedValue -Average).Average } } catch { try { $fallback = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($fallback) { $gpuCtr = [math]::Min(100, ($fallback | Measure-Object -Property CookedValue -Sum).Sum) } } catch { $gpuCtr = 0 } }");
         sb.AppendLine("$memoryPct = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 2)");
         sb.AppendLine("$uptime = (Get-Date) - $os.LastBootUpTime");
         sb.AppendLine("$obj = [PSCustomObject]@{");

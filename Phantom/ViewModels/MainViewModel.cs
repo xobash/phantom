@@ -53,7 +53,6 @@ public sealed class MainViewModel : ObservableObject
             new() { Section = AppSection.Features, Label = "Features", Icon = "\uE115" },
             new() { Section = AppSection.Fixes, Label = "Fixes", Icon = "\uE90F" },
             new() { Section = AppSection.Updates, Label = "Updates", Icon = "\uE895" },
-            new() { Section = AppSection.Automation, Label = "Automation", Icon = "\uE71D" },
             new() { Section = AppSection.LogsAbout, Label = "Logs/About", Icon = "\uE9D2" },
             new() { Section = AppSection.Settings, Label = "Settings", Icon = "\uE713" }
         };
@@ -161,7 +160,6 @@ public sealed class MainViewModel : ObservableObject
         await Features.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Fixes.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Updates.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        await Automation.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await LogsAbout.InitializeAsync(cancellationToken).ConfigureAwait(false);
     }
 
