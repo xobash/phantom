@@ -28,7 +28,10 @@
                     <Button Content="Clear" Command="{Binding ClearSelectionCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Import selection" Command="{Binding ImportSelectionCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Export selection" Command="{Binding ExportSelectionCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <CheckBox Content="Dry-run" Margin="8,12,0,0" IsChecked="{Binding DryRun}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                    <StackPanel Orientation="Horizontal" Margin="8,8,0,0" VerticalAlignment="Center">
+                        <CheckBox IsChecked="{Binding DryRun}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
+                        <TextBlock Text="Dry-run" Margin="8,2,0,0"/>
+                    </StackPanel>
                 </WrapPanel>
             </DockPanel>
         </Border>
@@ -39,7 +42,13 @@
                       VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                       ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
                 <DataGrid.Columns>
-                    <DataGridCheckBoxColumn Header="Sel" Binding="{Binding Selected, Mode=TwoWay}" Width="50"/>
+                    <DataGridTemplateColumn Header="On" Width="70">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="280"/>
                     <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
                     <DataGridTextColumn Header="Risk" Binding="{Binding RiskTier}" Width="90"/>

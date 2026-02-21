@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Windows;
 using Phantom.Commands;
 using Phantom.Services;
@@ -49,7 +50,53 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
-        AboutText = "Phantom\nPortable admin-only utility\nAll changes are executed by PowerShell operations\nOffline-first safety enforced.";
+        AboutText = await BuildAboutFromReadmeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string> BuildAboutFromReadmeAsync(CancellationToken cancellationToken)
+    {
+        var readmePath = ResolveReadmePath();
+        if (readmePath is null)
+        {
+            return "Phantom\nPortable admin-only utility\nAll changes are executed by PowerShell operations\nOffline-first safety enforced.";
+        }
+
+        var markdown = await File.ReadAllTextAsync(readmePath, cancellationToken).ConfigureAwait(false);
+        var excludedHeadings = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "## Quick Start",
+            "## Building (Windows)",
+            "## Running"
+        };
+
+        var sb = new StringBuilder();
+        var skipSection = false;
+
+        foreach (var line in markdown.Split('\n'))
+        {
+            if (line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                skipSection = excludedHeadings.Contains(line.Trim());
+            }
+
+            if (!skipSection)
+            {
+                sb.AppendLine(line.TrimEnd('\r'));
+            }
+        }
+
+        return sb.ToString().Trim();
+    }
+
+    private string? ResolveReadmePath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(_paths.BaseDirectory, "README.md"),
+            Path.Combine(Directory.GetParent(_paths.BaseDirectory)?.FullName ?? string.Empty, "README.md")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private async Task RefreshLogsAsync(CancellationToken cancellationToken)

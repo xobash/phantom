@@ -212,7 +212,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _isFastMetricsRefreshing = true;
         try
         {
-            var (cpu, memory) = await _homeData.GetCpuMemoryUsageAsync(cancellationToken).ConfigureAwait(false);
+            var (cpu, memory, gpu, uptime, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var cpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "CPU %", StringComparison.OrdinalIgnoreCase));
@@ -226,11 +226,29 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 {
                     KpiTiles[memoryIndex] = new KpiTile { Title = "Memory %", Value = memory.ToString("F2") };
                 }
+
+                var gpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "GPU %", StringComparison.OrdinalIgnoreCase));
+                if (gpuIndex >= 0)
+                {
+                    KpiTiles[gpuIndex] = new KpiTile { Title = "GPU %", Value = gpu.ToString("F2") };
+                }
+
+                var networkIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "Network", StringComparison.OrdinalIgnoreCase));
+                if (networkIndex >= 0)
+                {
+                    KpiTiles[networkIndex] = new KpiTile { Title = "Network", Value = network };
+                }
+
+                var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
+                if (uptimeIndex >= 0)
+                {
+                    TopCards[uptimeIndex] = new HomeCard { Title = "Uptime", Value = uptime };
+                }
             });
         }
         catch (Exception ex)
         {
-            _console.Publish("Error", $"Live CPU/Memory refresh failed: {ex.Message}");
+            _console.Publish("Error", $"Live metrics refresh failed: {ex.Message}");
         }
         finally
         {
