@@ -54,17 +54,16 @@
 
                                     <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
                                     <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
-
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding Title}" Value="Network">
-                                            <Setter TargetName="KpiTitle" Property="Visibility" Value="Collapsed"/>
-                                            <Setter TargetName="KpiValue" Property="FontSize" Value="34"/>
-                                            <Setter TargetName="KpiValue" Property="Margin" Value="0"/>
-                                            <Setter TargetName="KpiValue" Property="VerticalAlignment" Value="Center"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
                                 </Grid>
                             </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Title}" Value="Network">
+                                    <Setter TargetName="KpiTitle" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="KpiValue" Property="FontSize" Value="34"/>
+                                    <Setter TargetName="KpiValue" Property="Margin" Value="0"/>
+                                    <Setter TargetName="KpiValue" Property="VerticalAlignment" Value="Center"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
