@@ -1,0 +1,68 @@
+<UserControl x:Class="Phantom.Views.FixesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource AppBgBrush}">
+    <Grid Background="{DynamicResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Style="{StaticResource DarkCardStyle}">
+            <DockPanel>
+                <TextBox Width="280" Margin="0,0,12,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}"/>
+                <WrapPanel>
+                    <Button Content="Apply selected" Command="{Binding ApplySelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Content="Undo selected" Command="{Binding UndoSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Style="{StaticResource DarkCardStyle}">
+            <DockPanel>
+                <TextBlock Text="Fixes" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
+                <DataGrid ItemsSource="{Binding FixesView}" AutoGenerateColumns="False"
+                          Style="{StaticResource DarkDataGridStyle}"
+                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="Sel" Binding="{Binding Selected, Mode=TwoWay}" Width="50"/>
+                        <DataGridTextColumn Header="Fix" Binding="{Binding Name}" Width="280"/>
+                        <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                        <DataGridTextColumn Header="Risk" Binding="{Binding RiskTier}" Width="80"/>
+                        <DataGridCheckBoxColumn Header="Rev" Binding="{Binding Reversible}" Width="52"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource DarkCardStyle}">
+            <DockPanel>
+                <TextBlock Text="Legacy Panels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
+                <DataGrid ItemsSource="{Binding LegacyPanelsView}" AutoGenerateColumns="False"
+                          Style="{StaticResource DarkDataGridStyle}"
+                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Panel" Binding="{Binding Name}" Width="260"/>
+                        <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                        <DataGridTemplateColumn Header="Action" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="Launch"
+                                            Command="{Binding DataContext.LaunchPanelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{StaticResource DarkButtonStyle}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

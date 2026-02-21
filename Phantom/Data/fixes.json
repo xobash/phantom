@@ -1,0 +1,92 @@
+[
+  {
+    "id": "reset-network-stack",
+    "name": "Reset network stack",
+    "description": "Runs winsock and TCP/IP reset commands.",
+    "riskTier": "Advanced",
+    "applyScript": "netsh winsock reset; netsh int ip reset",
+    "undoScript": "Write-Output 'Network reset has no direct undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "flush-dns",
+    "name": "Flush DNS cache",
+    "description": "Clears local DNS resolver cache.",
+    "riskTier": "Basic",
+    "applyScript": "ipconfig /flushdns",
+    "undoScript": "Write-Output 'DNS flush has no undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "reset-update-components",
+    "name": "Reset update components",
+    "description": "Stops update services, clears update cache and starts services.",
+    "riskTier": "Advanced",
+    "applyScript": "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction SilentlyContinue; Start-Service cryptsvc,bits,wuauserv",
+    "undoScript": "Write-Output 'No direct undo. Windows will recreate update cache.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "repair-system-files",
+    "name": "Repair system files (SFC/DISM)",
+    "description": "Runs DISM restorehealth and SFC scan.",
+    "riskTier": "Advanced",
+    "applyScript": "DISM /Online /Cleanup-Image /RestoreHealth; sfc /scannow",
+    "undoScript": "Write-Output 'Repair operation has no direct undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "restart-explorer",
+    "name": "Restart Explorer",
+    "description": "Restarts Windows Explorer shell.",
+    "riskTier": "Basic",
+    "applyScript": "Stop-Process -Name explorer -Force; Start-Process explorer.exe",
+    "undoScript": "Write-Output 'Explorer restarted.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "rebuild-icon-cache",
+    "name": "Rebuild icon cache",
+    "description": "Clears icon cache and restarts Explorer.",
+    "riskTier": "Advanced",
+    "applyScript": "Stop-Process -Name explorer -Force; Remove-Item \"$env:LOCALAPPDATA\\IconCache.db\" -Force -ErrorAction SilentlyContinue; Start-Process explorer.exe",
+    "undoScript": "Write-Output 'Icon cache rebuild has no undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "reset-print-spooler",
+    "name": "Reset print spooler",
+    "description": "Clears print queue and restarts spooler service.",
+    "riskTier": "Advanced",
+    "applyScript": "Stop-Service spooler -Force; Remove-Item -Path \"$env:SystemRoot\\System32\\spool\\PRINTERS\\*\" -Force -ErrorAction SilentlyContinue; Start-Service spooler",
+    "undoScript": "Write-Output 'Print queue reset has no undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "reset-ms-store-cache",
+    "name": "Reset Microsoft Store cache",
+    "description": "Runs wsreset.exe to clear Store cache.",
+    "riskTier": "Basic",
+    "applyScript": "Start-Process wsreset.exe -Wait",
+    "undoScript": "Write-Output 'Store cache reset has no undo.'",
+    "reversible": false,
+    "destructive": false
+  },
+  {
+    "id": "enable-optional-updates-service",
+    "name": "Enable update services",
+    "description": "Sets wuauserv and BITS to manual and starts them.",
+    "riskTier": "Basic",
+    "applyScript": "Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction SilentlyContinue; Start-Service bits -ErrorAction SilentlyContinue",
+    "undoScript": "Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled; Stop-Service wuauserv -Force -ErrorAction SilentlyContinue; Stop-Service bits -Force -ErrorAction SilentlyContinue",
+    "reversible": true,
+    "destructive": false
+  }
+]

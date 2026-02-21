@@ -1,0 +1,69 @@
+using Phantom.Models;
+
+namespace Phantom.Services;
+
+public sealed class SettingsStore
+{
+    private readonly JsonFileStore _store;
+    private readonly AppPaths _paths;
+
+    public SettingsStore(JsonFileStore store, AppPaths paths)
+    {
+        _store = store;
+        _paths = paths;
+    }
+
+    public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        return _store.LoadAsync(_paths.SettingsFile, () => new AppSettings(), cancellationToken);
+    }
+
+    public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        return _store.SaveAsync(_paths.SettingsFile, settings, cancellationToken);
+    }
+}
+
+public sealed class TelemetryStore
+{
+    private readonly JsonFileStore _store;
+    private readonly AppPaths _paths;
+
+    public TelemetryStore(JsonFileStore store, AppPaths paths)
+    {
+        _store = store;
+        _paths = paths;
+    }
+
+    public Task<TelemetryState> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        return _store.LoadAsync(_paths.TelemetryFile, () => new TelemetryState(), cancellationToken);
+    }
+
+    public Task SaveAsync(TelemetryState telemetry, CancellationToken cancellationToken = default)
+    {
+        return _store.SaveAsync(_paths.TelemetryFile, telemetry, cancellationToken);
+    }
+}
+
+public sealed class UndoStateStore
+{
+    private readonly JsonFileStore _store;
+    private readonly AppPaths _paths;
+
+    public UndoStateStore(JsonFileStore store, AppPaths paths)
+    {
+        _store = store;
+        _paths = paths;
+    }
+
+    public Task<UndoStateDocument> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        return _store.LoadAsync(_paths.UndoStateFile, () => new UndoStateDocument(), cancellationToken);
+    }
+
+    public Task SaveAsync(UndoStateDocument doc, CancellationToken cancellationToken = default)
+    {
+        return _store.SaveAsync(_paths.UndoStateFile, doc, cancellationToken);
+    }
+}

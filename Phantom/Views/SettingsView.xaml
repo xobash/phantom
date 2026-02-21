@@ -1,0 +1,42 @@
+<UserControl x:Class="Phantom.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource AppBgBrush}">
+    <StackPanel Background="{DynamicResource AppBgBrush}">
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
+                <CheckBox Content="Dark mode" IsChecked="{Binding UseDarkMode}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                <TextBlock Text="Switch between dark and light theme." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
+                <CheckBox Content="Enable destructive operations" IsChecked="{Binding EnableDestructiveOperations}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                <TextBlock Text="When OFF, destructive removals stay hidden/disabled." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
+                <TextBlock Text="Home refresh interval (seconds)" Foreground="{DynamicResource DarkTextBrush}"/>
+                <TextBox Margin="0,8,0,0" Width="120" Text="{Binding HomeRefreshSeconds}" Style="{StaticResource DarkTextBoxStyle}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
+                <TextBlock Text="Log retention" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                <TextBlock Text="Max log files" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                <TextBox Width="120" Text="{Binding MaxLogFiles}" Style="{StaticResource DarkTextBoxStyle}"/>
+                <TextBlock Text="Max total size (bytes)" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                <TextBox Width="180" Text="{Binding MaxTotalLogSizeBytes}" Style="{StaticResource DarkTextBoxStyle}"/>
+            </StackPanel>
+        </Border>
+
+        <Button Content="Save settings" Width="170" Margin="8" Command="{Binding SaveCommand}" Style="{StaticResource DarkButtonStyle}"/>
+    </StackPanel>
+</UserControl>

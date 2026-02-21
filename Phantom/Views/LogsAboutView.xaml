@@ -1,0 +1,37 @@
+<UserControl x:Class="Phantom.Views.LogsAboutView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource AppBgBrush}">
+    <Grid Background="{DynamicResource AppBgBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource DarkCardStyle}">
+            <DockPanel>
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                    <Button Content="Refresh logs" Command="{Binding RefreshLogsCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Content="Open" Command="{Binding OpenLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                </WrapPanel>
+                <ListBox ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLog}" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource DarkTextBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="1"/>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Column="1" Style="{StaticResource DarkCardStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="About" FontWeight="SemiBold" FontSize="18" Foreground="{DynamicResource DarkTextBrush}"/>
+                <TextBox Grid.Row="1" Text="{Binding SelectedLogContent}" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" FontFamily="Consolas" Style="{StaticResource DarkTextBoxStyle}"/>
+                <TextBlock Grid.Row="2" Text="{Binding AboutText}" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

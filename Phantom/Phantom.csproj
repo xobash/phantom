@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Data\catalog.apps.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Data\tweaks.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Data\features.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Data\fixes.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Data\legacy-panels.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

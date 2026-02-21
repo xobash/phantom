@@ -1,0 +1,116 @@
+<UserControl x:Class="Phantom.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource AppBgBrush}">
+    <Grid Background="{DynamicResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Margin="4">
+            <TextBlock Text="Home Dashboard" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,12,0"/>
+            <Button Content="Refresh" Margin="4" Command="{Binding RefreshCommand}"/>
+            <Button Content="Run WinSAT" Margin="4" Command="{Binding RunWinsatCommand}"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <ItemsControl ItemsSource="{Binding TopCards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="2"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource DarkCardStyle}" ToolTip="{Binding Tooltip}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Value}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <ItemsControl ItemsSource="{Binding KpiTiles}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="4"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource DarkCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
+                                    <TextBlock Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid Margin="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource DarkCardStyle}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Installed Apps" FontWeight="SemiBold"/>
+                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding AppSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                            <DataGrid ItemsSource="{Binding AppsView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="100"/>
+                                    <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}" Width="140"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Style="{StaticResource DarkCardStyle}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Processes" FontWeight="SemiBold"/>
+                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding ProcessSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                            <DataGrid ItemsSource="{Binding ProcessesView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="CPU" Binding="{Binding Cpu}" Width="80"/>
+                                    <DataGridTextColumn Header="RAM MB" Binding="{Binding MemoryMb}" Width="90"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource DarkCardStyle}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Services" FontWeight="SemiBold"/>
+                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding ServiceSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                            <DataGrid ItemsSource="{Binding ServicesView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="90"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
