@@ -11,9 +11,6 @@ public sealed class HomeDataService
     private readonly ConsoleStreamService _console;
     private readonly TelemetryStore _telemetryStore;
     private TelemetryState? _telemetry;
-    private DateTimeOffset _lastNetworkSampleAt = DateTimeOffset.UtcNow;
-    private long _lastNetworkSentBytes;
-    private long _lastNetworkReceivedBytes;
 
     public HomeDataService(ConsoleStreamService console, TelemetryStore telemetryStore)
     {
@@ -45,64 +42,35 @@ public sealed class HomeDataService
             PropertyNameCaseInsensitive = true
         }) ?? new HomeSnapshot();
 
-        var network = ComputeNetworkSnapshot(_telemetry);
-        snapshot.NetworkUsage = BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred);
+        snapshot.NetworkUsage = ComputeNetworkUsage(_telemetry);
         await _telemetryStore.SaveAsync(_telemetry, cancellationToken).ConfigureAwait(false);
 
         return snapshot;
     }
 
-    public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, long UptimeSeconds, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
+    public async Task<(double CpuUsage, double MemoryUsage, string Uptime)> GetFastMetricsAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0, 0, 0, "↑ 0 B/s ↓ 0 B/s\n0 B");
+            return (0, 0, "Unavailable");
         }
 
         const string script = @"
 $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
-$gpu = 0
-try {
-  $gpuEngines = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object {
-    $_.Name -match 'engtype_3D' -or $_.Name -match 'engtype_Compute'
-  }
-  if ($gpuEngines) {
-    $gpu = ($gpuEngines | Measure-Object -Property UtilizationPercentage -Average).Average
-  }
-} catch {
-  $gpu = 0
-}
-if ($gpu -le 0) {
-  try {
-    $counterSamples = (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples
-    $values = @($counterSamples | Select-Object -ExpandProperty CookedValue)
-    if ($values.Count -gt 0) {
-      $nonZero = @($values | Where-Object { $_ -gt 0 })
-      if ($nonZero.Count -gt 0) {
-        $gpu = ($nonZero | Measure-Object -Average).Average
-      } else {
-        $gpu = ($values | Measure-Object -Average).Average
-      }
-    }
-  } catch {
-    $gpu = 0
-  }
-}
 $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
 $uptime = (Get-Date) - $os.LastBootUpTime
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)
   MemoryUsage = [math]::Round($memoryPct, 2)
-  GpuUsage = [math]::Round([math]::Min([math]::Max($gpu, 0), 100), 2)
-  UptimeSeconds = [int64][math]::Floor($uptime.TotalSeconds)
+  Uptime = [string]::Format('{0:00}:{1:00}:{2:00}', [int]$uptime.TotalHours, $uptime.Minutes, $uptime.Seconds)
 } | ConvertTo-Json -Compress";
 
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
-            return (0, 0, 0, 0, BuildNetworkDisplay(0, 0, 0));
+            return (0, 0, "Unavailable");
         }
 
         try
@@ -110,17 +78,13 @@ $uptime = (Get-Date) - $os.LastBootUpTime
             using var doc = JsonDocument.Parse(json);
             var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
             var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
-            var gpu = doc.RootElement.TryGetProperty("GpuUsage", out var gpuProperty) ? gpuProperty.GetDouble() : 0;
-            var uptimeSeconds = doc.RootElement.TryGetProperty("UptimeSeconds", out var uptimeProperty)
-                ? uptimeProperty.GetInt64()
-                : 0;
-            var network = ComputeNetworkSnapshot(_telemetry ?? new TelemetryState());
-            return (cpu, memory, gpu, uptimeSeconds, BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred));
+            var uptime = doc.RootElement.GetProperty("Uptime").GetString() ?? "Unavailable";
+            return (cpu, memory, uptime);
         }
         catch (Exception ex)
         {
             _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
-            return (0, 0, 0, 0, BuildNetworkDisplay(0, 0, 0));
+            return (0, 0, "Unavailable");
         }
     }
 
@@ -134,42 +98,13 @@ $uptime = (Get-Date) - $os.LastBootUpTime
         var command = @"
 $ErrorActionPreference = 'Stop'
 try {
-  $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
-  $vmHint = ''
-  if ($cs) {
-    $vmHint = ($cs.Manufacturer + ' ' + $cs.Model)
-  }
-
-  if ($vmHint -match 'Virtual|VMware|VirtualBox|KVM|QEMU|Parallels|Xen|Hyper-V') {
-    [PSCustomObject]@{ Status = 'VMUnsupported'; Message = 'WinSAT formal benchmark is unavailable inside a VM.'; WinSPRLevel = $null } | ConvertTo-Json -Compress
-    exit 0
-  }
-
-  $outFile = Join-Path $env:TEMP ('phantom-winsat-' + [Guid]::NewGuid().ToString('N') + '.out.log')
-  $errFile = Join-Path $env:TEMP ('phantom-winsat-' + [Guid]::NewGuid().ToString('N') + '.err.log')
-  try {
-    $proc = Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-    if ($proc.ExitCode -ne 0) {
-      $errText = ''
-      if (Test-Path $errFile) { $errText = (Get-Content $errFile -Raw).Trim() }
-      if ([string]::IsNullOrWhiteSpace($errText) -and (Test-Path $outFile)) { $errText = (Get-Content $outFile -Raw).Trim() }
-
-      if ($errText -match 'Virtual Machine') {
-        [PSCustomObject]@{ Status = 'VMUnsupported'; Message = 'WinSAT formal benchmark is unavailable inside a VM.'; WinSPRLevel = $null } | ConvertTo-Json -Compress
-        exit 0
-      }
-
-      throw ('winsat formal failed with exit code ' + $proc.ExitCode + '. ' + $errText)
-    }
-  }
-  finally {
-    if (Test-Path $outFile) { Remove-Item $outFile -Force -ErrorAction SilentlyContinue }
-    if (Test-Path $errFile) { Remove-Item $errFile -Force -ErrorAction SilentlyContinue }
-  }
-
-  $wei = Get-CimInstance -ClassName Win32_WinSAT -ErrorAction Stop | Select-Object -First 1
-  if (-not $wei) { throw 'Win32_WinSAT data not found.' }
-  [PSCustomObject]@{ Status = 'Ok'; WinSPRLevel = [double]$wei.WinSPRLevel } | ConvertTo-Json -Compress
+  Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -NoNewWindow | Out-Null
+  $f = Get-ChildItem ""$env:WinDir\Performance\WinSAT\DataStore\*Formal*.WinSAT.xml"" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if (-not $f) { throw 'WinSAT XML not found.' }
+  [xml]$x = Get-Content $f.FullName
+  $score = $x.WinSAT.WinSPR.SystemScore
+  if (-not $score) { throw 'SystemScore not found.' }
+  [PSCustomObject]@{ Score = $score } | ConvertTo-Json -Compress
 }
 catch {
   Write-Error $_
@@ -185,19 +120,7 @@ catch {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var status = TryReadWinsatStatus(doc.RootElement);
-            if (status.Equals("VMUnsupported", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Unavailable (VM)";
-            }
-
-            var score = TryReadWinsatScore(doc.RootElement);
-            if (score.HasValue)
-            {
-                return FormatWinsatScore(score.Value);
-            }
-
-            return "Unavailable";
+            return doc.RootElement.GetProperty("Score").GetString() ?? "Unavailable";
         }
         catch (Exception ex)
         {
@@ -240,7 +163,7 @@ catch {
         return process.ExitCode == 0 ? stdout.Trim() : string.Empty;
     }
 
-    private (double UploadSpeed, double DownloadSpeed, long TotalTransferred) ComputeNetworkSnapshot(TelemetryState telemetry)
+    private static string ComputeNetworkUsage(TelemetryState telemetry)
     {
         var nics = NetworkInterface.GetAllNetworkInterfaces()
             .Where(x => x.OperationalStatus == OperationalStatus.Up)
@@ -266,24 +189,35 @@ catch {
             }
         }
 
-        long baselineSent = telemetry.NetworkBaselines.Values.Sum(x => x.SentBytes);
-        long baselineRecv = telemetry.NetworkBaselines.Values.Sum(x => x.ReceivedBytes);
+        long baselineSent = 0;
+        long baselineRecv = 0;
+        foreach (var baseline in telemetry.NetworkBaselines.Values)
+        {
+            baselineSent += baseline.SentBytes;
+            baselineRecv += baseline.ReceivedBytes;
+        }
+
+        var deltaSent = Math.Max(0, totalSent - baselineSent);
+        var deltaRecv = Math.Max(0, totalRecv - baselineRecv);
 
         var now = DateTimeOffset.UtcNow;
-        var elapsed = Math.Max(0.25, (now - _lastNetworkSampleAt).TotalSeconds);
-        var uploadSpeed = _lastNetworkSentBytes == 0 ? 0 : Math.Max(0, (totalSent - _lastNetworkSentBytes) / elapsed);
-        var downloadSpeed = _lastNetworkReceivedBytes == 0 ? 0 : Math.Max(0, (totalRecv - _lastNetworkReceivedBytes) / elapsed);
+        var sampleWindowSeconds = telemetry.LastNetworkSampleAt is null
+            ? 1
+            : Math.Max(1, (now - telemetry.LastNetworkSampleAt.Value).TotalSeconds);
 
-        _lastNetworkSampleAt = now;
-        _lastNetworkSentBytes = totalSent;
-        _lastNetworkReceivedBytes = totalRecv;
+        var uploadRate = telemetry.LastNetworkSampleAt is null
+            ? 0
+            : Math.Max(0, (totalSent - telemetry.LastNetworkSentBytes) / sampleWindowSeconds);
+        var downloadRate = telemetry.LastNetworkSampleAt is null
+            ? 0
+            : Math.Max(0, (totalRecv - telemetry.LastNetworkReceivedBytes) / sampleWindowSeconds);
 
-        var totalTransferred = Math.Max(0, (totalSent - baselineSent) + (totalRecv - baselineRecv));
-        return (uploadSpeed, downloadSpeed, totalTransferred);
+        telemetry.LastNetworkSentBytes = totalSent;
+        telemetry.LastNetworkReceivedBytes = totalRecv;
+        telemetry.LastNetworkSampleAt = now;
+
+        return $"↑ {FormatBytes((long)uploadRate)}/s ↓ {FormatBytes((long)downloadRate)}/s|{FormatBytes(deltaSent + deltaRecv)}";
     }
-
-    private static string BuildNetworkDisplay(double uploadBytesPerSecond, double downloadBytesPerSecond, long totalTransferred)
-        => $"↑ {FormatBytes((long)uploadBytesPerSecond)}/s ↓ {FormatBytes((long)downloadBytesPerSecond)}/s\n{FormatBytes(totalTransferred)}";
 
     private static string FormatBytes(long bytes)
     {
@@ -299,46 +233,6 @@ catch {
         return $"{value:F2} {units[unit]}";
     }
 
-    private static double? TryReadWinsatScore(JsonElement root)
-    {
-        if (root.TryGetProperty("WinSPRLevel", out var value))
-        {
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
-            {
-                return number;
-            }
-
-            if (value.ValueKind == JsonValueKind.String &&
-                double.TryParse(value.GetString(), out var parsed))
-            {
-                return parsed;
-            }
-        }
-
-        return null;
-    }
-
-    private static string TryReadWinsatStatus(JsonElement root)
-    {
-        if (root.TryGetProperty("Status", out var status))
-        {
-            return status.GetString() ?? string.Empty;
-        }
-
-        return string.Empty;
-    }
-
-    private static string FormatWinsatScore(double score)
-    {
-        if (double.IsNaN(score) || double.IsInfinity(score) || score <= 0)
-        {
-            return "Not benchmarked";
-        }
-
-        var bounded = Math.Clamp(score, 1.0, 9.9);
-        return $"{bounded:F1} / 10";
-    }
-
     private static string BuildSnapshotScript()
     {
         var sb = new StringBuilder();
@@ -351,39 +245,39 @@ catch {
         sb.AppendLine("$disks = Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used");
         sb.AppendLine("$total = ($disks | Measure-Object -Property Used -Sum).Sum + ($disks | Measure-Object -Property Free -Sum).Sum");
         sb.AppendLine("$free = ($disks | Measure-Object -Property Free -Sum).Sum");
-        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue) | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion, Publisher");
+        sb.AppendLine("function Format-Size([double]$bytes) { if ($bytes -le 0) { return 'Unknown' }; $units = @('B','KB','MB','GB','TB'); $i = 0; while ($bytes -ge 1024 -and $i -lt ($units.Length - 1)) { $bytes = $bytes / 1024; $i++ }; return ('{0:N2} {1}' -f $bytes, $units[$i]) }");
+        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue) | Where-Object { $_.DisplayName } | ForEach-Object {");
+        sb.AppendLine("  $installDate = 'Unknown'");
+        sb.AppendLine("  if ($_.InstallDate -and $_.InstallDate -match '^\\d{8}$') {");
+        sb.AppendLine("    try { $installDate = [datetime]::ParseExact($_.InstallDate, 'yyyyMMdd', $null).ToString('yyyy-MM-dd') } catch { $installDate = 'Unknown' }");
+        sb.AppendLine("  }");
+        sb.AppendLine("  $sizeBytes = 0");
+        sb.AppendLine("  if ($_.EstimatedSize -as [double]) { $sizeBytes = [double]$_.EstimatedSize * 1KB }");
+        sb.AppendLine("  $uninstall = if ($_.QuietUninstallString) { $_.QuietUninstallString } else { $_.UninstallString }");
+        sb.AppendLine("  [PSCustomObject]@{");
+        sb.AppendLine("    DisplayName = $_.DisplayName");
+        sb.AppendLine("    DisplayVersion = $_.DisplayVersion");
+        sb.AppendLine("    Publisher = $_.Publisher");
+        sb.AppendLine("    InstallDate = $installDate");
+        sb.AppendLine("    SizeOnDisk = (Format-Size $sizeBytes)");
+        sb.AppendLine("    InstallLocation = $_.InstallLocation");
+        sb.AppendLine("    UninstallCommand = $uninstall");
+        sb.AppendLine("    DisplayIcon = $_.DisplayIcon");
+        sb.AppendLine("  }");
+        sb.AppendLine("}");
         sb.AppendLine("$procs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 100 Name, Id, CPU, @{Name='MemoryMb';Expression={[math]::Round($_.WorkingSet64/1MB,2)}}");
-        sb.AppendLine("$services = Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running'} | Select-Object Name, DisplayName, StartMode, State");
+        sb.AppendLine("$services = Get-CimInstance Win32_Service | Select-Object Name, DisplayName, StartMode, State, PathName, Description");
         sb.AppendLine("$cpuCtr = (Get-Counter '\\Processor(_Total)\\% Processor Time').CounterSamples.CookedValue");
         sb.AppendLine("$gpuCtr = 0");
         sb.AppendLine("try {");
-        sb.AppendLine("  $gpuEngines = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object { $_.Name -match 'engtype_3D' -or $_.Name -match 'engtype_Compute' }");
-        sb.AppendLine("  if ($gpuEngines) { $gpuCtr = ($gpuEngines | Measure-Object -Property UtilizationPercentage -Average).Average }");
+        sb.AppendLine("  $gpuCounters = Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction Stop");
+        sb.AppendLine("  $samples = @($gpuCounters.CounterSamples | Select-Object -ExpandProperty CookedValue)");
+        sb.AppendLine("  if ($samples.Count -gt 0) {");
+        sb.AppendLine("    $gpuCtr = ($samples | Measure-Object -Average).Average");
+        sb.AppendLine("  }");
         sb.AppendLine("} catch { $gpuCtr = 0 }");
-        sb.AppendLine("if ($gpuCtr -le 0) {");
-        sb.AppendLine("  try {");
-        sb.AppendLine("    $samples = @((Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples | Select-Object -ExpandProperty CookedValue)");
-        sb.AppendLine("    if ($samples.Count -gt 0) {");
-        sb.AppendLine("      $nonZero = @($samples | Where-Object { $_ -gt 0 })");
-        sb.AppendLine("      if ($nonZero.Count -gt 0) { $gpuCtr = ($nonZero | Measure-Object -Average).Average } else { $gpuCtr = ($samples | Measure-Object -Average).Average }");
-        sb.AppendLine("    }");
-        sb.AppendLine("  } catch { $gpuCtr = 0 }");
-        sb.AppendLine("}");
         sb.AppendLine("$memoryPct = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 2)");
         sb.AppendLine("$uptime = (Get-Date) - $os.LastBootUpTime");
-        sb.AppendLine("$winsatScore = $null");
-        sb.AppendLine("try {");
-        sb.AppendLine("  $winsat = Get-CimInstance Win32_WinSAT -ErrorAction Stop | Select-Object -First 1");
-        sb.AppendLine("  if ($winsat -and $winsat.WinSPRLevel) {");
-        sb.AppendLine("    $winsatScore = [math]::Round([math]::Min([math]::Max([double]$winsat.WinSPRLevel, 1.0), 9.9), 1)");
-        sb.AppendLine("  }");
-        sb.AppendLine("} catch {");
-        sb.AppendLine("  $winsatScore = $null");
-        sb.AppendLine("}");
-        sb.AppendLine("$performance = 'Not benchmarked'");
-        sb.AppendLine("if ($winsatScore -ne $null -and $winsatScore -gt 0) {");
-        sb.AppendLine("  $performance = [string]::Format('{0:N1} / 10', $winsatScore)");
-        sb.AppendLine("}");
         sb.AppendLine("$obj = [PSCustomObject]@{");
         sb.AppendLine(" Motherboard = if($board){$board.Product}else{'Unknown'}");
         sb.AppendLine(" Graphics = if($gpu){$gpu.Name}else{'Unknown'}");
@@ -394,16 +288,15 @@ catch {
         sb.AppendLine(" Processor = if($cpu){$cpu.Name + ' (' + $cpu.NumberOfCores + 'C/' + $cpu.NumberOfLogicalProcessors + 'T)'}else{'Unknown'}");
         sb.AppendLine(" Memory = ($memGb.ToString() + ' GB')");
         sb.AppendLine(" Windows = ($os.Caption + ' ' + $os.Version + ' (Build ' + $os.BuildNumber + ')')");
-        sb.AppendLine(" PerformanceScore = $performance");
         sb.AppendLine(" AppsCount = $apps.Count");
         sb.AppendLine(" ProcessesCount = (Get-Process).Count");
         sb.AppendLine(" ServicesCount = $services.Count");
         sb.AppendLine(" CpuUsage = [math]::Round($cpuCtr,2)");
-        sb.AppendLine(" GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr,0),100),2)");
+        sb.AppendLine(" GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr, 0), 100),2)");
         sb.AppendLine(" MemoryUsage = $memoryPct");
-        sb.AppendLine(" Apps = @($apps | ForEach-Object { [PSCustomObject]@{ Name = $_.DisplayName; Version = $_.DisplayVersion; Publisher = $_.Publisher } })");
+        sb.AppendLine(" Apps = @($apps | ForEach-Object { [PSCustomObject]@{ Name = $_.DisplayName; Version = $_.DisplayVersion; Publisher = $_.Publisher; InstallDate = if($_.InstallDate){$_.InstallDate}else{'Unknown'}; SizeOnDisk = if($_.SizeOnDisk){$_.SizeOnDisk}else{'Unknown'}; InstallLocation = if($_.InstallLocation){$_.InstallLocation}else{''}; UninstallCommand = if($_.UninstallCommand){$_.UninstallCommand}else{''}; DisplayIcon = if($_.DisplayIcon){$_.DisplayIcon}else{''} } })");
         sb.AppendLine(" Processes = @($procs | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Id = $_.Id; Cpu = $_.CPU; MemoryMb = $_.MemoryMb } })");
-        sb.AppendLine(" Services = @($services | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; DisplayName = $_.DisplayName; StartupType = $_.StartMode; Status = $_.State } })");
+        sb.AppendLine(" Services = @($services | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; DisplayName = $_.DisplayName; StartupType = $_.StartMode; Status = $_.State; PathName = if($_.PathName){$_.PathName}else{''}; Description = if($_.Description){$_.Description}else{''}; Summary = if([string]::IsNullOrWhiteSpace($_.Description)){'No description provided by this service.'}else{$_.Description} } })");
         sb.AppendLine("}");
         sb.AppendLine("$obj | ConvertTo-Json -Depth 5 -Compress");
         return sb.ToString();

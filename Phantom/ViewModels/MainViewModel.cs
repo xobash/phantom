@@ -52,8 +52,8 @@ public sealed class MainViewModel : ObservableObject
         Navigation = new ObservableCollection<NavigationItem>
         {
             new() { Section = AppSection.Home, Label = "Home", Icon = "\uE80F" },
-            new() { Section = AppSection.Apps, Label = "Apps", Icon = "\uE71D" },
-            new() { Section = AppSection.Services, Label = "Services", Icon = "\uE9F5" },
+            new() { Section = AppSection.Apps, Label = "Apps", Icon = "\uE8F1" },
+            new() { Section = AppSection.Services, Label = "Services", Icon = "\uE895" },
             new() { Section = AppSection.Store, Label = "Store", Icon = "\uE719" },
             new() { Section = AppSection.Tweaks, Label = "Tweaks", Icon = "\uE713" },
             new() { Section = AppSection.Features, Label = "Features", Icon = "\uE115" },
@@ -140,7 +140,6 @@ public sealed class MainViewModel : ObservableObject
                     AppSection.Features => Features,
                     AppSection.Fixes => Fixes,
                     AppSection.Updates => Updates,
-                    AppSection.Automation => Automation,
                     AppSection.LogsAbout => LogsAbout,
                     AppSection.Settings => Settings,
                     _ => Home

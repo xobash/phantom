@@ -17,17 +17,6 @@ public sealed class AppBootstrap
         Console = new ConsoleStreamService();
         Log = new LogService(Paths, () => SettingsProvider.Current);
         Log.OpenSessionLog();
-        Console.MessageReceived += (_, evt) =>
-        {
-            try
-            {
-                Log.WriteAsync($"Console.{evt.Stream}", evt.Text).GetAwaiter().GetResult();
-            }
-            catch
-            {
-            }
-        };
-        Log.WriteAsync("Lifecycle", "App bootstrap initialized.").GetAwaiter().GetResult();
 
         Network = new NetworkGuardService();
         Query = new PowerShellQueryService();
@@ -40,8 +29,8 @@ public sealed class AppBootstrap
 
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
-        Apps = new AppsViewModel(HomeData, Console);
-        Services = new ServicesViewModel(HomeData, Console);
+        Apps = new AppsViewModel(HomeData, Console, Runner);
+        Services = new ServicesViewModel(HomeData, Console, Runner);
         Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, Query, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
