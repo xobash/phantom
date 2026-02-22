@@ -92,11 +92,6 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <Border Margin="4" Style="{StaticResource DarkCardStyle}">
-                    <TextBlock Foreground="{DynamicResource MutedTextBrush}"
-                               Text="Detailed lists moved: use the Apps and Services tabs in the left navigation."
-                               TextWrapping="Wrap"/>
-                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

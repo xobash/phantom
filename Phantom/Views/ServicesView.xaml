@@ -77,7 +77,21 @@
                     <DataGridTemplateColumn Header="" Width="42">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Border Style="{StaticResource InfoChipStyle}" ToolTip="{Binding Summary}">
+                                <Border Style="{StaticResource InfoChipStyle}" Cursor="Help"
+                                        ToolTipService.ShowDuration="60000"
+                                        ToolTipService.InitialShowDelay="120">
+                                    <Border.ToolTip>
+                                        <ToolTip Background="{DynamicResource DarkCard2Brush}"
+                                                 Foreground="{DynamicResource DarkTextBrush}"
+                                                 BorderBrush="{DynamicResource DarkBorderBrush}"
+                                                 BorderThickness="1"
+                                                 MaxWidth="520"
+                                                 Placement="Mouse">
+                                            <TextBlock Text="{Binding Summary}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource DarkTextBrush}"/>
+                                        </ToolTip>
+                                    </Border.ToolTip>
                                     <TextBlock Text="i" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                                 </Border>
                             </DataTemplate>
