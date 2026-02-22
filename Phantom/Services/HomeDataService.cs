@@ -135,12 +135,9 @@ $uptime = (Get-Date) - $os.LastBootUpTime
 $ErrorActionPreference = 'Stop'
 try {
   Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -NoNewWindow | Out-Null
-  $f = Get-ChildItem ""$env:WinDir\Performance\WinSAT\DataStore\*Formal*.WinSAT.xml"" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if (-not $f) { throw 'WinSAT XML not found.' }
-  [xml]$x = Get-Content $f.FullName
-  $score = $x.WinSAT.WinSPR.SystemScore
-  if (-not $score) { throw 'SystemScore not found.' }
-  [PSCustomObject]@{ Score = $score } | ConvertTo-Json -Compress
+  $wei = Get-CimInstance -ClassName Win32_WinSAT -ErrorAction Stop | Select-Object -First 1
+  if (-not $wei) { throw 'Win32_WinSAT data not found.' }
+  [PSCustomObject]@{ WinSPRLevel = [double]$wei.WinSPRLevel } | ConvertTo-Json -Compress
 }
 catch {
   Write-Error $_
@@ -156,7 +153,13 @@ catch {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("Score").GetString() ?? "Unavailable";
+            var score = TryReadWinsatScore(doc.RootElement);
+            if (score.HasValue)
+            {
+                return FormatWinsatScore(score.Value);
+            }
+
+            return "Unavailable";
         }
         catch (Exception ex)
         {
@@ -258,6 +261,36 @@ catch {
         return $"{value:F2} {units[unit]}";
     }
 
+    private static double? TryReadWinsatScore(JsonElement root)
+    {
+        if (root.TryGetProperty("WinSPRLevel", out var value))
+        {
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String &&
+                double.TryParse(value.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FormatWinsatScore(double score)
+    {
+        if (double.IsNaN(score) || double.IsInfinity(score) || score <= 0)
+        {
+            return "Not benchmarked";
+        }
+
+        var bounded = Math.Clamp(score, 1.0, 9.9);
+        return $"{bounded:F1} / 10";
+    }
+
     private static string BuildSnapshotScript()
     {
         var sb = new StringBuilder();
@@ -290,6 +323,19 @@ catch {
         sb.AppendLine("}");
         sb.AppendLine("$memoryPct = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 2)");
         sb.AppendLine("$uptime = (Get-Date) - $os.LastBootUpTime");
+        sb.AppendLine("$winsatScore = $null");
+        sb.AppendLine("try {");
+        sb.AppendLine("  $winsat = Get-CimInstance Win32_WinSAT -ErrorAction Stop | Select-Object -First 1");
+        sb.AppendLine("  if ($winsat -and $winsat.WinSPRLevel) {");
+        sb.AppendLine("    $winsatScore = [math]::Round([math]::Min([math]::Max([double]$winsat.WinSPRLevel, 1.0), 9.9), 1)");
+        sb.AppendLine("  }");
+        sb.AppendLine("} catch {");
+        sb.AppendLine("  $winsatScore = $null");
+        sb.AppendLine("}");
+        sb.AppendLine("$performance = 'Not benchmarked'");
+        sb.AppendLine("if ($winsatScore -ne $null -and $winsatScore -gt 0) {");
+        sb.AppendLine("  $performance = [string]::Format('{0:N1} / 10', $winsatScore)");
+        sb.AppendLine("}");
         sb.AppendLine("$obj = [PSCustomObject]@{");
         sb.AppendLine(" Motherboard = if($board){$board.Product}else{'Unknown'}");
         sb.AppendLine(" Graphics = if($gpu){$gpu.Name}else{'Unknown'}");
@@ -300,6 +346,7 @@ catch {
         sb.AppendLine(" Processor = if($cpu){$cpu.Name + ' (' + $cpu.NumberOfCores + 'C/' + $cpu.NumberOfLogicalProcessors + 'T)'}else{'Unknown'}");
         sb.AppendLine(" Memory = ($memGb.ToString() + ' GB')");
         sb.AppendLine(" Windows = ($os.Caption + ' ' + $os.Version + ' (Build ' + $os.BuildNumber + ')')");
+        sb.AppendLine(" PerformanceScore = $performance");
         sb.AppendLine(" AppsCount = $apps.Count");
         sb.AppendLine(" ProcessesCount = (Get-Process).Count");
         sb.AppendLine(" ServicesCount = $services.Count");
