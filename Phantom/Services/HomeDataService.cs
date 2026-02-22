@@ -134,10 +134,42 @@ $uptime = (Get-Date) - $os.LastBootUpTime
         var command = @"
 $ErrorActionPreference = 'Stop'
 try {
-  Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -NoNewWindow | Out-Null
+  $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+  $vmHint = ''
+  if ($cs) {
+    $vmHint = ($cs.Manufacturer + ' ' + $cs.Model)
+  }
+
+  if ($vmHint -match 'Virtual|VMware|VirtualBox|KVM|QEMU|Parallels|Xen|Hyper-V') {
+    [PSCustomObject]@{ Status = 'VMUnsupported'; Message = 'WinSAT formal benchmark is unavailable inside a VM.'; WinSPRLevel = $null } | ConvertTo-Json -Compress
+    exit 0
+  }
+
+  $outFile = Join-Path $env:TEMP ('phantom-winsat-' + [Guid]::NewGuid().ToString('N') + '.out.log')
+  $errFile = Join-Path $env:TEMP ('phantom-winsat-' + [Guid]::NewGuid().ToString('N') + '.err.log')
+  try {
+    $proc = Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    if ($proc.ExitCode -ne 0) {
+      $errText = ''
+      if (Test-Path $errFile) { $errText = (Get-Content $errFile -Raw).Trim() }
+      if ([string]::IsNullOrWhiteSpace($errText) -and (Test-Path $outFile)) { $errText = (Get-Content $outFile -Raw).Trim() }
+
+      if ($errText -match 'Virtual Machine') {
+        [PSCustomObject]@{ Status = 'VMUnsupported'; Message = 'WinSAT formal benchmark is unavailable inside a VM.'; WinSPRLevel = $null } | ConvertTo-Json -Compress
+        exit 0
+      }
+
+      throw ('winsat formal failed with exit code ' + $proc.ExitCode + '. ' + $errText)
+    }
+  }
+  finally {
+    if (Test-Path $outFile) { Remove-Item $outFile -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $errFile) { Remove-Item $errFile -Force -ErrorAction SilentlyContinue }
+  }
+
   $wei = Get-CimInstance -ClassName Win32_WinSAT -ErrorAction Stop | Select-Object -First 1
   if (-not $wei) { throw 'Win32_WinSAT data not found.' }
-  [PSCustomObject]@{ WinSPRLevel = [double]$wei.WinSPRLevel } | ConvertTo-Json -Compress
+  [PSCustomObject]@{ Status = 'Ok'; WinSPRLevel = [double]$wei.WinSPRLevel } | ConvertTo-Json -Compress
 }
 catch {
   Write-Error $_
@@ -153,6 +185,12 @@ catch {
         try
         {
             using var doc = JsonDocument.Parse(json);
+            var status = TryReadWinsatStatus(doc.RootElement);
+            if (status.Equals("VMUnsupported", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Unavailable (VM)";
+            }
+
             var score = TryReadWinsatScore(doc.RootElement);
             if (score.HasValue)
             {
@@ -278,6 +316,16 @@ catch {
         }
 
         return null;
+    }
+
+    private static string TryReadWinsatStatus(JsonElement root)
+    {
+        if (root.TryGetProperty("Status", out var status))
+        {
+            return status.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
     }
 
     private static string FormatWinsatScore(double score)
