@@ -13,6 +13,7 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly ExecutionCoordinator _executionCoordinator;
     private readonly AppPaths _paths;
+    private readonly ConsoleStreamService _console;
 
     private NavigationItem? _selectedNavigation;
     private object? _currentSectionViewModel;
@@ -48,6 +49,7 @@ public sealed class MainViewModel : ObservableObject
 
         _executionCoordinator = executionCoordinator;
         _paths = paths;
+        _console = console;
 
         Navigation = new ObservableCollection<NavigationItem>
         {
@@ -65,6 +67,10 @@ public sealed class MainViewModel : ObservableObject
 
         ConsoleMessages = new ObservableCollection<PowerShellOutputEvent>();
         ConsoleView = CollectionViewSource.GetDefaultView(ConsoleMessages);
+        foreach (var evt in console.Snapshot)
+        {
+            ConsoleMessages.Add(evt);
+        }
 
         console.MessageReceived += (_, evt) =>
         {
@@ -99,6 +105,7 @@ public sealed class MainViewModel : ObservableObject
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
 
         SelectedNavigation = Navigation.First();
+        _console.Publish("Trace", "MainViewModel constructor complete.");
     }
 
     public ObservableCollection<NavigationItem> Navigation { get; }
@@ -130,6 +137,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedNavigation, value) && value is not null)
             {
+                _console.Publish("Trace", $"Navigation selected: {value.Section}");
                 CurrentSectionViewModel = value.Section switch
                 {
                     AppSection.Home => Home,
@@ -162,16 +170,28 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", "Main initialization started.");
+        _console.Publish("Trace", "Initializing Settings view model.");
         await Settings.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Home view model.");
         await Home.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Apps view model.");
         await Apps.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Services view model.");
         await Services.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Store view model.");
         await Store.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Tweaks view model.");
         await Tweaks.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Features view model.");
         await Features.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Fixes view model.");
         await Fixes.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Updates view model.");
         await Updates.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Initializing Logs/About view model.");
         await LogsAbout.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "Main initialization completed.");
     }
 
     private void OpenLogsFolder()

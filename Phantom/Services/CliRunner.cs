@@ -35,6 +35,9 @@ public sealed class CliRunner
 
     public async Task<int> RunAsync(string configPath, bool forceDangerous, CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}");
+        await _log.WriteAsync("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}", cancellationToken).ConfigureAwait(false);
+
         if (!File.Exists(configPath))
         {
             await _log.WriteAsync("Error", $"Config not found: {configPath}", cancellationToken).ConfigureAwait(false);
@@ -44,6 +47,7 @@ public sealed class CliRunner
         var settings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var config = await _definitions.LoadSelectionConfigAsync(configPath, cancellationToken).ConfigureAwait(false);
         var operations = await BuildOperationsAsync(config, cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", $"CliRunner resolved operations: {operations.Count}");
 
         if (operations.Count == 0)
         {
@@ -88,6 +92,7 @@ public sealed class CliRunner
             _console.Publish(item.Success ? "Info" : "Error", $"{item.OperationId}: {item.Message}");
         }
 
+        _console.Publish("Trace", $"CliRunner.RunAsync completed. success={result.Success}");
         return result.Success ? 0 : 1;
     }
 

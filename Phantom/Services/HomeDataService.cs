@@ -20,8 +20,10 @@ public sealed class HomeDataService
 
     public async Task<HomeSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", "HomeDataService.GetSnapshotAsync started.");
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
+            _console.Publish("Warning", "HomeDataService.GetSnapshotAsync unavailable on non-Windows host.");
             return new HomeSnapshot
             {
                 Motherboard = "Unavailable on non-Windows host",
@@ -34,6 +36,7 @@ public sealed class HomeDataService
         var json = await RunPowerShellForJsonAsync(BuildSnapshotScript(), cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
+            _console.Publish("Warning", "HomeDataService.GetSnapshotAsync returned empty JSON.");
             return new HomeSnapshot();
         }
 
@@ -44,14 +47,17 @@ public sealed class HomeDataService
 
         snapshot.NetworkUsage = ComputeNetworkUsage(_telemetry);
         await _telemetryStore.SaveAsync(_telemetry, cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", $"HomeDataService.GetSnapshotAsync completed. apps={snapshot.AppsCount}, processes={snapshot.ProcessesCount}, services={snapshot.ServicesCount}");
 
         return snapshot;
     }
 
     public async Task<(double CpuUsage, double MemoryUsage, string Uptime)> GetFastMetricsAsync(CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", "HomeDataService.GetFastMetricsAsync started.");
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
+            _console.Publish("Warning", "HomeDataService.GetFastMetricsAsync unavailable on non-Windows host.");
             return (0, 0, "Unavailable");
         }
 
@@ -70,6 +76,7 @@ $uptime = (Get-Date) - $os.LastBootUpTime
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
+            _console.Publish("Warning", "HomeDataService.GetFastMetricsAsync returned empty JSON.");
             return (0, 0, "Unavailable");
         }
 
@@ -79,6 +86,7 @@ $uptime = (Get-Date) - $os.LastBootUpTime
             var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
             var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
             var uptime = doc.RootElement.GetProperty("Uptime").GetString() ?? "Unavailable";
+            _console.Publish("Trace", $"HomeDataService.GetFastMetricsAsync completed. cpu={cpu:F2}, memory={memory:F2}, uptime={uptime}");
             return (cpu, memory, uptime);
         }
         catch (Exception ex)
@@ -90,8 +98,10 @@ $uptime = (Get-Date) - $os.LastBootUpTime
 
     public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, long UptimeSeconds, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", "HomeDataService.GetLiveMetricsAsync started.");
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
+            _console.Publish("Warning", "HomeDataService.GetLiveMetricsAsync unavailable on non-Windows host.");
             return (0, 0, 0, 0, "↑ 0.00 B/s ↓ 0.00 B/s");
         }
 
@@ -123,6 +133,7 @@ try {
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
+            _console.Publish("Warning", "HomeDataService.GetLiveMetricsAsync returned empty JSON.");
             return (0, 0, 0, 0, ComputeNetworkUsage(_telemetry));
         }
 
@@ -134,6 +145,7 @@ try {
             var gpu = doc.RootElement.GetProperty("GpuUsage").GetDouble();
             var uptimeSeconds = doc.RootElement.GetProperty("UptimeSeconds").GetInt64();
             var network = ComputeNetworkUsage(_telemetry);
+            _console.Publish("Trace", $"HomeDataService.GetLiveMetricsAsync completed. cpu={cpu:F2}, memory={memory:F2}, gpu={gpu:F2}, uptimeSeconds={uptimeSeconds}, network={network}");
             return (cpu, memory, gpu, uptimeSeconds, network);
         }
         catch (Exception ex)
@@ -186,6 +198,7 @@ catch {
 
     private async Task<string> RunPowerShellForJsonAsync(string script, CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", $"HomeDataService.RunPowerShellForJsonAsync start. scriptLength={script.Length}");
         var wrapped = $"$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';& {{ {script} }}";
         var psi = new ProcessStartInfo
         {
@@ -200,6 +213,7 @@ catch {
         using var process = Process.Start(psi);
         if (process is null)
         {
+            _console.Publish("Error", "HomeDataService.RunPowerShellForJsonAsync failed to start powershell.exe.");
             return string.Empty;
         }
 
@@ -214,6 +228,8 @@ catch {
         {
             _console.Publish("Error", stderr.Trim());
         }
+
+        _console.Publish("Trace", $"HomeDataService.RunPowerShellForJsonAsync exit={process.ExitCode}, stdoutChars={stdout.Length}, stderrChars={stderr.Length}");
 
         return process.ExitCode == 0 ? stdout.Trim() : string.Empty;
     }

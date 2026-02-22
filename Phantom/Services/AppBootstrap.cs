@@ -17,14 +17,19 @@ public sealed class AppBootstrap
         Console = new ConsoleStreamService();
         Log = new LogService(Paths, () => SettingsProvider.Current);
         Log.OpenSessionLog();
+        Log.AttachConsole(Console);
+        Console.AttachPersistentSink((evt, ct) => Log.WriteAsync(evt.Stream, evt.Text, ct, echoToConsole: false));
+        Console.Publish("Trace", "Phantom bootstrap initialized.");
+        Console.Publish("Trace", $"BaseDirectory={Paths.BaseDirectory}");
 
         Network = new NetworkGuardService();
-        Query = new PowerShellQueryService();
+        Query = new PowerShellQueryService(Console, Log);
         Runner = new PowerShellRunner(Console, Log);
         Operations = new OperationEngine(Runner, UndoStore, Network, Console, Log);
         Definitions = new DefinitionCatalogService(Paths);
         Prompt = new UserPromptService();
         ExecutionCoordinator = new ExecutionCoordinator();
+        ExecutionCoordinator.RunningChanged += (_, running) => Console.Publish("Trace", $"ExecutionCoordinator running={running}");
         HomeData = new HomeDataService(Console, TelemetryStore);
 
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme);
@@ -41,6 +46,7 @@ public sealed class AppBootstrap
 
         Main = new MainViewModel(Home, Apps, Services, Store, Tweaks, Features, Fixes, Updates, Automation, LogsAbout, Settings, Console, ExecutionCoordinator, Paths);
         CliRunner = new CliRunner(Paths, Definitions, Operations, Console, Log, Network, Query, SettingsStore);
+        Console.Publish("Trace", "Phantom services wired and ready.");
     }
 
     public AppPaths Paths { get; }
