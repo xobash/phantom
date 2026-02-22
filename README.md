@@ -27,9 +27,8 @@ Built output is saved to `%LOCALAPPDATA%\Phantom\app` so subsequent launches can
 
 ### 🏠 Home
 - Live system cards: motherboard, GPU (with driver info), storage, uptime, CPU, memory, Windows version, and WinSAT performance score
-- KPI tiles with 1-second live refresh for CPU % and Memory %
+- KPI tiles with user controlled refresh intervals
 - Searchable, virtualized lists of installed apps, running processes, and services
-- Configurable full-dashboard refresh interval (default: 5s)
 - On-demand WinSAT benchmark
 
 ### 🛒 Store
@@ -44,7 +43,6 @@ Built output is saved to `%LOCALAPPDATA%\Phantom\app` so subsequent launches can
 - Apply and undo individual tweaks or batch selections
 - Basic and Advanced presets
 - Import/export tweak selections
-- Dry-run mode to preview changes without applying them
 
 ### ⚡ Features
 - Toggle optional Windows features with current status detection
@@ -136,24 +134,6 @@ Add `-ForceDangerous` to allow dangerous operations in CLI mode. This flag is on
 ```powershell
 ./app/Phantom.exe -Config ./my-config.json -Run -ForceDangerous
 ```
-
----
-
-## Automation Config Format
-
-Export a config from the Automation tab or create one manually:
-
-```json
-{
-  "confirmDangerous": false,
-  "storeSelections": ["googlechrome", "vscode"],
-  "tweaks": ["tweak.disable.telemetry", "tweak.disable.cortana"],
-  "features": [],
-  "fixes": [],
-  "updateMode": "Security"
-}
-```
-
 ---
 
 ## Local Data
@@ -172,44 +152,6 @@ All data is stored relative to the executable. Nothing leaves the machine.
 ## Offline Behavior
 
 Operations that require network access (`RequiresNetwork: true`) are blocked before execution if the machine is offline, with a clear error message in the console. No silent failures.
-
----
-
-## App Catalog
-
-The Store tab is driven by `./Data/catalog.apps.json`. Each entry follows this shape:
-
-```json
-{
-  "id": "googlechrome",
-  "name": "Google Chrome",
-  "wingetId": "Google.Chrome",
-  "chocoId": "googlechrome",
-  "homepage": "https://www.google.com/chrome/",
-  "category": "Browser"
-}
-```
-
----
-
-## Tweaks Catalog
-
-Tweaks are defined in `./Data/tweaks.json`. Each entry supports:
-
-```json
-{
-  "Id": "tweak.disable.telemetry",
-  "Name": "Disable Telemetry",
-  "Description": "Sets telemetry level to Security (minimal).",
-  "RiskTier": "Basic",
-  "Scope": "System",
-  "Reversible": true,
-  "Detect": "...",
-  "Apply": "...",
-  "Undo": "...",
-  "StateCaptureKeys": ["HKLM:\\..."]
-}
-```
 
 ---
 
