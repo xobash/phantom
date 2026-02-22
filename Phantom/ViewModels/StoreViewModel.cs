@@ -50,6 +50,10 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
         RefreshManagersCommand = new AsyncRelayCommand(RefreshManagersAsync);
         InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync);
+        InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync);
+        UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync);
+        InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync);
+        UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync);
         InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync);
         UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync);
         UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync);
@@ -64,6 +68,10 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     public AsyncRelayCommand RefreshManagersCommand { get; }
     public AsyncRelayCommand InstallMissingManagersCommand { get; }
+    public AsyncRelayCommand InstallWingetCommand { get; }
+    public AsyncRelayCommand UninstallWingetCommand { get; }
+    public AsyncRelayCommand InstallChocoCommand { get; }
+    public AsyncRelayCommand UninstallChocoCommand { get; }
     public AsyncRelayCommand InstallSelectedCommand { get; }
     public AsyncRelayCommand UninstallSelectedCommand { get; }
     public AsyncRelayCommand UpgradeSelectedCommand { get; }
@@ -126,44 +134,12 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
         if (!WingetInstalled)
         {
-            operations.Add(new OperationDefinition
-            {
-                Id = "store.install.winget",
-                Title = "Install winget",
-                Description = "Installs winget using Microsoft App Installer package.",
-                RiskTier = RiskTier.Dangerous,
-                Reversible = false,
-                RunScripts =
-                [
-                    new PowerShellStep
-                    {
-                        Name = "install-winget",
-                        RequiresNetwork = true,
-                        Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"; Add-AppxPackage -Path \"$env:TEMP\\AppInstaller.msixbundle\""
-                    }
-                ]
-            });
+            operations.Add(BuildInstallWingetOperation());
         }
 
         if (!ChocoInstalled)
         {
-            operations.Add(new OperationDefinition
-            {
-                Id = "store.install.choco",
-                Title = "Install Chocolatey",
-                Description = "Installs Chocolatey package manager.",
-                RiskTier = RiskTier.Dangerous,
-                Reversible = false,
-                RunScripts =
-                [
-                    new PowerShellStep
-                    {
-                        Name = "install-choco",
-                        RequiresNetwork = true,
-                        Script = "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
-                    }
-                ]
-            });
+            operations.Add(BuildInstallChocoOperation());
         }
 
         if (operations.Count == 0)
@@ -174,6 +150,26 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
         await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InstallWingetAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildInstallWingetOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UninstallWingetAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildUninstallWingetOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InstallChocoAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildInstallChocoOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UninstallChocoAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildUninstallChocoOperation(), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
@@ -315,6 +311,96 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private static string SanitizeId(string source)
     {
         return new string(source.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+    }
+
+    private async Task ExecuteManagerOperationAsync(OperationDefinition operation, CancellationToken cancellationToken)
+    {
+        await ExecuteStoreOperationsAsync([operation], dryRun: false, cancellationToken).ConfigureAwait(false);
+        await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static OperationDefinition BuildInstallWingetOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.install.winget",
+            Title = "Install winget",
+            Description = "Installs winget using Microsoft App Installer package.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install-winget",
+                    RequiresNetwork = true,
+                    Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"; Add-AppxPackage -Path \"$env:TEMP\\AppInstaller.msixbundle\""
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildUninstallWingetOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.uninstall.winget",
+            Title = "Uninstall winget",
+            Description = "Removes Microsoft App Installer (winget).",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall-winget",
+                    RequiresNetwork = false,
+                    Script = "$packages = Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -AllUsers -ErrorAction SilentlyContinue; if ($packages) { $packages | ForEach-Object { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction SilentlyContinue } }; $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like 'Microsoft.DesktopAppInstaller*' }; foreach ($pkg in $provisioned) { Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction SilentlyContinue | Out-Null }"
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildInstallChocoOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.install.choco",
+            Title = "Install Chocolatey",
+            Description = "Installs Chocolatey package manager.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install-choco",
+                    RequiresNetwork = true,
+                    Script = "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildUninstallChocoOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.uninstall.choco",
+            Title = "Uninstall Chocolatey",
+            Description = "Removes Chocolatey package manager binaries and PATH entry.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall-choco",
+                    RequiresNetwork = false,
+                    Script = "if (Get-Command choco -ErrorAction SilentlyContinue) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
+                }
+            ]
+        };
     }
 
     private OperationDefinition BuildInstallOperation(CatalogApp app)

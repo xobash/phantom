@@ -23,6 +23,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private string _serviceSearch = string.Empty;
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
+    private long? _lastUptimeSeconds;
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
@@ -65,6 +66,8 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         };
         _fastMetricsTimer.Tick += async (_, _) =>
         {
+            TickUptimeDisplay();
+
             if (!_isFastMetricsRefreshing)
             {
                 await RefreshCpuMemoryTilesAsync(CancellationToken.None).ConfigureAwait(false);
@@ -169,6 +172,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 KpiTiles.Add(new KpiTile { Title = "GPU %", Value = snapshot.GpuUsage.ToString("F2") });
                 KpiTiles.Add(new KpiTile { Title = "Memory %", Value = snapshot.MemoryUsage.ToString("F2") });
                 KpiTiles.Add(new KpiTile { Title = "Network", Value = snapshot.NetworkUsage });
+                _lastUptimeSeconds = TryParseUptimeSeconds(snapshot.Uptime);
 
                 ReplaceCollection(InstalledApps, snapshot.Apps.OrderBy(x => x.Name).ToList());
                 ReplaceCollection(Processes, snapshot.Processes.OrderByDescending(x => x.Cpu).ToList());
@@ -212,7 +216,15 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _isFastMetricsRefreshing = true;
         try
         {
-            var (cpu, memory, gpu, uptime, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
+            var (cpu, memory, gpu, uptimeSeconds, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
+
+            if (uptimeSeconds > 0)
+            {
+                _lastUptimeSeconds = uptimeSeconds;
+            }
+
+            var uptimeText = _lastUptimeSeconds.HasValue ? FormatUptime(_lastUptimeSeconds.Value) : "00:00:00";
+
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var cpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "CPU %", StringComparison.OrdinalIgnoreCase));
@@ -242,7 +254,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
                 if (uptimeIndex >= 0)
                 {
-                    TopCards[uptimeIndex] = new HomeCard { Title = "Uptime", Value = uptime };
+                    TopCards[uptimeIndex] = new HomeCard { Title = "Uptime", Value = uptimeText };
                 }
             });
         }
@@ -315,5 +327,61 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
 
         return $"{value:F2} {units[index]}";
+    }
+
+    private static long? TryParseUptimeSeconds(string uptime)
+    {
+        if (string.IsNullOrWhiteSpace(uptime))
+        {
+            return null;
+        }
+
+        var parts = uptime.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length != 3)
+        {
+            return null;
+        }
+
+        if (!long.TryParse(parts[0], out var hours) ||
+            !long.TryParse(parts[1], out var minutes) ||
+            !long.TryParse(parts[2], out var seconds))
+        {
+            return null;
+        }
+
+        if (hours < 0 || minutes is < 0 or > 59 || seconds is < 0 or > 59)
+        {
+            return null;
+        }
+
+        return (hours * 3600) + (minutes * 60) + seconds;
+    }
+
+    private static string FormatUptime(long uptimeSeconds)
+    {
+        var safe = Math.Max(0, uptimeSeconds);
+        var hours = safe / 3600;
+        var minutes = (safe % 3600) / 60;
+        var seconds = safe % 60;
+        return $"{hours:00}:{minutes:00}:{seconds:00}";
+    }
+
+    private void TickUptimeDisplay()
+    {
+        if (!_lastUptimeSeconds.HasValue)
+        {
+            return;
+        }
+
+        _lastUptimeSeconds++;
+        var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
+        if (uptimeIndex >= 0)
+        {
+            TopCards[uptimeIndex] = new HomeCard
+            {
+                Title = "Uptime",
+                Value = FormatUptime(_lastUptimeSeconds.Value)
+            };
+        }
     }
 }
