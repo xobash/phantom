@@ -40,13 +40,18 @@ public sealed class OperationEngine
 
     public async Task<PrecheckResult> RunBatchPrecheckAsync(IEnumerable<OperationDefinition> operations, CancellationToken cancellationToken)
     {
+        var operationList = operations.ToList();
+        _console.Publish("Trace", $"RunBatchPrecheckAsync started. operationCount={operationList.Count}");
+
         if (!AdminGuard.IsAdministrator())
         {
+            _console.Publish("Error", "Batch precheck failed: Administrator privileges are required.");
             return PrecheckResult.Failure("Administrator privileges are required.");
         }
 
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
+            _console.Publish("Error", "Batch precheck failed: Windows is required.");
             return PrecheckResult.Failure("Windows is required for operation execution.");
         }
 
@@ -54,27 +59,32 @@ public sealed class OperationEngine
         var drive = new DriveInfo(systemDrive);
         if (drive.AvailableFreeSpace < 500L * 1024 * 1024)
         {
+            _console.Publish("Error", "Batch precheck failed: Insufficient disk space (<500MB free).");
             return PrecheckResult.Failure("Insufficient disk space (<500MB free). Operation blocked.");
         }
 
-        var requiresNetwork = operations.SelectMany(o => o.RunScripts).Any(s => s.RequiresNetwork);
+        var requiresNetwork = operationList.SelectMany(o => o.RunScripts).Any(s => s.RequiresNetwork);
         if (requiresNetwork && !_network.IsOnline())
         {
+            _console.Publish("Error", "Batch precheck failed: Offline and operation requires network.");
             return PrecheckResult.Failure("Offline detected. Network-required operations were blocked before execution.");
         }
 
         await _log.WriteAsync("Info", "Batch precheck passed.", cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", "RunBatchPrecheckAsync passed.");
         return PrecheckResult.Success();
     }
 
     public async Task<OperationBatchResult> ExecuteBatchAsync(OperationRequest request, CancellationToken cancellationToken)
     {
+        _console.Publish("Trace", $"ExecuteBatchAsync started. operations={request.Operations.Count}, undo={request.Undo}, dryRun={request.DryRun}, forceDangerous={request.ForceDangerous}");
         var result = new OperationBatchResult();
         var undoState = await _undoStore.LoadAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var operation in request.Operations)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _console.Publish("Trace", $"Operation start: {operation.Id} ({operation.Title})");
 
             var opResult = new OperationExecutionResult
             {
@@ -166,6 +176,7 @@ public sealed class OperationEngine
                 var allSucceeded = true;
                 foreach (var step in scripts)
                 {
+                    _console.Publish("Trace", $"Operation step start: {operation.Id}/{step.Name}");
                     var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
                     {
                         OperationId = operation.Id,
@@ -176,10 +187,13 @@ public sealed class OperationEngine
 
                     if (!stepResult.Success)
                     {
+                        _console.Publish("Error", $"Operation step failed: {operation.Id}/{step.Name}");
                         allSucceeded = false;
                         opResult.Message = $"Step failed: {step.Name}";
                         break;
                     }
+
+                    _console.Publish("Trace", $"Operation step completed: {operation.Id}/{step.Name}");
                 }
 
                 opResult.Success = allSucceeded;
@@ -192,16 +206,20 @@ public sealed class OperationEngine
             {
                 opResult.Cancelled = true;
                 opResult.Message = "Cancelled";
+                _console.Publish("Warning", $"Operation cancelled: {operation.Id}");
             }
             catch (Exception ex)
             {
                 opResult.Message = ex.Message;
                 await _log.WriteAsync("Error", $"{operation.Id}: {ex}", cancellationToken).ConfigureAwait(false);
+                _console.Publish("Error", $"Operation exception: {operation.Id}: {ex.Message}");
             }
 
             result.Results.Add(opResult);
+            _console.Publish(opResult.Success ? "Info" : "Warning", $"Operation result: {operation.Id} => {opResult.Message}");
         }
 
+        _console.Publish("Trace", $"ExecuteBatchAsync completed. success={result.Success}, requiresReboot={result.RequiresReboot}");
         return result;
     }
 }

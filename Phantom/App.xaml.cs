@@ -12,8 +12,12 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        WriteEmergencyStartupTrace($"OnStartup invoked at {DateTimeOffset.Now:O}");
+        WriteEmergencyStartupTrace($"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
+
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => WriteEmergencyStartupTrace($"ProcessExit at {DateTimeOffset.Now:O}");
         _ = StartAsync(e);
     }
 
@@ -21,14 +25,19 @@ public partial class App : Application
     {
         try
         {
+            WriteEmergencyStartupTrace("StartAsync entered.");
             if (!AdminGuard.IsAdministrator())
             {
+                WriteEmergencyStartupTrace("Administrator check failed.");
                 MessageBox.Show("Phantom requires Administrator privileges. Relaunch from an elevated session.", "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(10);
                 return;
             }
 
             _bootstrap = new AppBootstrap();
+            _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
+            _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
+            await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.").ConfigureAwait(false);
 
             AppDomain.CurrentDomain.UnhandledException += async (_, args) =>
             {
@@ -36,7 +45,12 @@ public partial class App : Application
                 {
                     if (_bootstrap is not null)
                     {
+                        _bootstrap.Console.Publish("Fatal", args.ExceptionObject?.ToString() ?? "Unknown fatal error");
                         await _bootstrap.Log.WriteAsync("Fatal", args.ExceptionObject?.ToString() ?? "Unknown fatal error");
+                    }
+                    else
+                    {
+                        WriteEmergencyStartupTrace($"Fatal before bootstrap: {args.ExceptionObject}");
                     }
                 }
                 catch
@@ -47,11 +61,14 @@ public partial class App : Application
             var args = e.Args ?? Array.Empty<string>();
             if (TryParseCli(args, out var configPath, out var run, out var forceDangerous) && run)
             {
+                _bootstrap.Console.Publish("Trace", $"CLI mode requested. configPath={configPath}, forceDangerous={forceDangerous}");
                 var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, CancellationToken.None);
+                _bootstrap.Console.Publish("Trace", $"CLI mode completed with exitCode={exitCode}");
                 Shutdown(exitCode);
                 return;
             }
 
+            _bootstrap.Console.Publish("Trace", "Creating MainWindow instance.");
             var window = new MainWindow
             {
                 DataContext = _bootstrap.Main
@@ -59,7 +76,9 @@ public partial class App : Application
 
             MainWindow = window;
             window.Show();
+            _bootstrap.Console.Publish("Trace", "MainWindow shown.");
             await _bootstrap.Main.InitializeAsync(CancellationToken.None);
+            _bootstrap.Console.Publish("Trace", "Startup completed.");
         }
         catch (Exception ex)
         {
@@ -67,7 +86,12 @@ public partial class App : Application
             {
                 if (_bootstrap is not null)
                 {
+                    _bootstrap.Console.Publish("StartupError", ex.ToString());
                     await _bootstrap.Log.WriteAsync("StartupError", ex.ToString());
+                }
+                else
+                {
+                    WriteEmergencyStartupTrace($"StartupError before bootstrap: {ex}");
                 }
             }
             catch
@@ -84,7 +108,12 @@ public partial class App : Application
         {
             if (_bootstrap is not null)
             {
+                _bootstrap.Console.Publish("DispatcherUnhandled", e.Exception.ToString());
                 await _bootstrap.Log.WriteAsync("DispatcherUnhandled", e.Exception.ToString());
+            }
+            else
+            {
+                WriteEmergencyStartupTrace($"DispatcherUnhandled before bootstrap: {e.Exception}");
             }
         }
         catch
@@ -101,7 +130,12 @@ public partial class App : Application
         {
             if (_bootstrap is not null)
             {
+                _bootstrap.Console.Publish("UnobservedTaskException", e.Exception.ToString());
                 _bootstrap.Log.WriteAsync("UnobservedTaskException", e.Exception.ToString()).GetAwaiter().GetResult();
+            }
+            else
+            {
+                WriteEmergencyStartupTrace($"UnobservedTaskException before bootstrap: {e.Exception}");
             }
         }
         catch
@@ -109,6 +143,24 @@ public partial class App : Application
         }
 
         e.SetObserved();
+    }
+
+    private static void WriteEmergencyStartupTrace(string message)
+    {
+        try
+        {
+            var appRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Phantom",
+                "app");
+            var logsDir = Path.Combine(appRoot, "logs");
+            Directory.CreateDirectory(logsDir);
+            var line = $"[{DateTimeOffset.Now:O}] [Emergency] {message}{Environment.NewLine}";
+            File.AppendAllText(Path.Combine(logsDir, "startup-emergency.log"), line);
+        }
+        catch
+        {
+        }
     }
 
     private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous)

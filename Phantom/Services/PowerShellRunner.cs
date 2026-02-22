@@ -29,6 +29,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
         await _log.WriteAsync("Command", request.Script, cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}");
 
         if (request.DryRun)
         {
@@ -39,13 +40,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         try
         {
-            return await ExecuteViaRunspaceAsync(request, cancellationToken).ConfigureAwait(false);
+            var runspaceResult = await ExecuteViaRunspaceAsync(request, cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
+            return runspaceResult;
         }
         catch (Exception ex)
         {
             _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
             await _log.WriteAsync("Warning", $"Runspace fallback: {ex}", cancellationToken).ConfigureAwait(false);
-            return await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+            return processResult;
         }
     }
 
@@ -146,6 +151,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         ps.EndInvoke(async);
         var success = !ps.HadErrors;
+        _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
         await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
         return new PowerShellExecutionResult
         {
@@ -159,6 +165,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         var outputBuilder = new StringBuilder();
         var wrapped = $"$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& {{ {request.Script} }} *>&1";
+        _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 
         var psi = new ProcessStartInfo
         {
@@ -200,6 +207,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         var success = process.ExitCode == 0;
+        _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputBuilder.Length}");
 
         await _log.WriteAsync(success ? "Info" : "Error", outputBuilder.ToString(), cancellationToken).ConfigureAwait(false);
 

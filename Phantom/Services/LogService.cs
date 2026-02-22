@@ -9,6 +9,7 @@ public sealed class LogService
     private readonly AppPaths _paths;
     private readonly Func<AppSettings> _settingsAccessor;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private ConsoleStreamService? _console;
 
     public LogService(AppPaths paths, Func<AppSettings> settingsAccessor)
     {
@@ -18,6 +19,11 @@ public sealed class LogService
 
     public string CurrentLogPath { get; private set; } = string.Empty;
 
+    public void AttachConsole(ConsoleStreamService console)
+    {
+        _console = console;
+    }
+
     public void OpenSessionLog()
     {
         Directory.CreateDirectory(_paths.LogsDirectory);
@@ -25,7 +31,7 @@ public sealed class LogService
         File.WriteAllText(CurrentLogPath, $"Phantom session started {DateTimeOffset.Now:O}{Environment.NewLine}", Encoding.UTF8);
     }
 
-    public async Task WriteAsync(string level, string message, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(string level, string message, CancellationToken cancellationToken = default, bool echoToConsole = true)
     {
         if (string.IsNullOrWhiteSpace(CurrentLogPath))
         {
@@ -47,6 +53,11 @@ public sealed class LogService
         finally
         {
             _gate.Release();
+        }
+
+        if (echoToConsole)
+        {
+            _console?.Publish(level, message, persist: false);
         }
     }
 
