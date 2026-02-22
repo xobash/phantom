@@ -7,20 +7,49 @@
              Background="{DynamicResource AppBgBrush}">
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="420"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Style="{StaticResource DarkCardStyle}">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="2.2*"/>
+                    <RowDefinition Height="2.5*"/>
                     <RowDefinition Height="1.4*"/>
                 </Grid.RowDefinitions>
 
                 <DockPanel Grid.Row="0" Margin="0,0,0,8">
                     <TextBlock DockPanel.Dock="Top" Text="About (README excerpt)" Margin="0,0,0,8" FontWeight="SemiBold" FontSize="18"/>
-                    <TextBox Text="{Binding AboutText}" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" Style="{StaticResource DarkTextBoxStyle}"/>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBox Grid.Row="0"
+                                 Margin="0,0,0,8"
+                                 Text="{Binding AboutBanner}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Disabled"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap"
+                                 FontFamily="Consolas"
+                                 FontSize="8.5"
+                                 Foreground="#B95AFF"
+                                 Background="{DynamicResource TerminalBackgroundBrush}"
+                                 BorderBrush="{DynamicResource DarkBorderBrush}"
+                                 BorderThickness="1"
+                                 Padding="8,6"/>
+                        <TextBox Grid.Row="1"
+                                 Text="{Binding AboutText}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 TextWrapping="Wrap"
+                                 FontFamily="Consolas"
+                                 FontSize="15"
+                                 Style="{StaticResource DarkTextBoxStyle}"/>
+                    </Grid>
                 </DockPanel>
 
                 <DockPanel Grid.Row="1">
