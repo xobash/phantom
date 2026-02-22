@@ -28,14 +28,22 @@ public sealed class OperationEngine
     private readonly NetworkGuardService _network;
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
+    private readonly Func<AppSettings> _settingsAccessor;
 
-    public OperationEngine(IPowerShellRunner runner, UndoStateStore undoStore, NetworkGuardService network, ConsoleStreamService console, LogService log)
+    public OperationEngine(
+        IPowerShellRunner runner,
+        UndoStateStore undoStore,
+        NetworkGuardService network,
+        ConsoleStreamService console,
+        LogService log,
+        Func<AppSettings> settingsAccessor)
     {
         _runner = runner;
         _undoStore = undoStore;
         _network = network;
         _console = console;
         _log = log;
+        _settingsAccessor = settingsAccessor;
     }
 
     public async Task<PrecheckResult> RunBatchPrecheckAsync(IEnumerable<OperationDefinition> operations, CancellationToken cancellationToken)
@@ -80,6 +88,7 @@ public sealed class OperationEngine
         _console.Publish("Trace", $"ExecuteBatchAsync started. operations={request.Operations.Count}, undo={request.Undo}, dryRun={request.DryRun}, forceDangerous={request.ForceDangerous}");
         var result = new OperationBatchResult();
         var undoState = await _undoStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var restorePointAttempted = false;
 
         foreach (var operation in request.Operations)
         {
@@ -105,6 +114,14 @@ public sealed class OperationEngine
                 }
 
                 var scripts = request.Undo ? operation.UndoScripts : operation.RunScripts;
+
+                if (!request.DryRun && !request.Undo && !restorePointAttempted &&
+                    _settingsAccessor().CreateRestorePointBeforeDangerousOperations &&
+                    (operation.RiskTier == RiskTier.Dangerous || operation.Destructive))
+                {
+                    restorePointAttempted = true;
+                    await TryCreateRestorePointAsync(operation, cancellationToken).ConfigureAwait(false);
+                }
 
                 if (scripts.Any(s => s.RequiresNetwork) && !_network.IsOnline())
                 {
@@ -221,6 +238,47 @@ public sealed class OperationEngine
 
         _console.Publish("Trace", $"ExecuteBatchAsync completed. success={result.Success}, requiresReboot={result.RequiresReboot}");
         return result;
+    }
+
+    private async Task TryCreateRestorePointAsync(OperationDefinition operation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+            {
+                return;
+            }
+
+            var description = $"Phantom {DateTime.Now:yyyyMMdd-HHmmss} {operation.Id}";
+            if (description.Length > 220)
+            {
+                description = description[..220];
+            }
+
+            _console.Publish("Info", $"Creating restore point before dangerous operation: {operation.Title}");
+            var script = $"Checkpoint-Computer -Description '{description.Replace("'", "''")}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop";
+            var rpResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+            {
+                OperationId = "safety.restore-point",
+                StepName = operation.Id,
+                Script = script,
+                DryRun = false
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (rpResult.Success)
+            {
+                _console.Publish("Info", "Restore point created successfully.");
+                return;
+            }
+
+            _console.Publish("Warning", "Restore point creation failed. Continuing operation with backup artifacts.");
+            await _log.WriteAsync("Warning", $"Restore point creation failed for {operation.Id}.", cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Warning", $"Restore point creation error: {ex.Message}");
+            await _log.WriteAsync("Warning", $"Restore point creation exception for {operation.Id}: {ex}", cancellationToken).ConfigureAwait(false);
+        }
     }
 }
 

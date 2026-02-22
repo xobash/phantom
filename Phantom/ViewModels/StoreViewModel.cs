@@ -334,7 +334,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "install-winget",
                     RequiresNetwork = true,
-                    Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"; Add-AppxPackage -Path \"$env:TEMP\\AppInstaller.msixbundle\""
+                    Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"; $sig = Get-AuthenticodeSignature \"$env:TEMP\\AppInstaller.msixbundle\"; if ($sig.Status -ne 'Valid') { throw \"App Installer signature validation failed: $($sig.Status)\" }; Add-AppxPackage -Path \"$env:TEMP\\AppInstaller.msixbundle\""
                 }
             ]
         };
@@ -376,7 +376,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "install-choco",
                     RequiresNetwork = true,
-                    Script = "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+                    Script = "if (Get-Command winget -ErrorAction SilentlyContinue) { winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent } else { throw 'winget is required to install Chocolatey in safe mode.' }"
                 }
             ]
         };

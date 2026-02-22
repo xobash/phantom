@@ -53,6 +53,32 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         }
     }
 
+    public bool CreateRestorePointBeforeDangerousOperations
+    {
+        get => _settings.CreateRestorePointBeforeDangerousOperations;
+        set
+        {
+            if (_settings.CreateRestorePointBeforeDangerousOperations != value)
+            {
+                _settings.CreateRestorePointBeforeDangerousOperations = value;
+                Notify();
+            }
+        }
+    }
+
+    public bool EnforceScriptSafetyGuards
+    {
+        get => _settings.EnforceScriptSafetyGuards;
+        set
+        {
+            if (_settings.EnforceScriptSafetyGuards != value)
+            {
+                _settings.EnforceScriptSafetyGuards = value;
+                Notify();
+            }
+        }
+    }
+
     public int HomeRefreshSeconds
     {
         get => _settings.HomeRefreshSeconds;
@@ -102,6 +128,8 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         _theme.ApplyTheme(_settings.UseDarkMode);
         Notify(nameof(UseDarkMode));
         Notify(nameof(EnableDestructiveOperations));
+        Notify(nameof(CreateRestorePointBeforeDangerousOperations));
+        Notify(nameof(EnforceScriptSafetyGuards));
         Notify(nameof(HomeRefreshSeconds));
         Notify(nameof(MaxLogFiles));
         Notify(nameof(MaxTotalLogSizeBytes));

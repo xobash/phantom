@@ -22,6 +22,20 @@
 
         <Border Style="{StaticResource DarkCardStyle}">
             <StackPanel>
+                <CheckBox Content="Create restore point before dangerous operations" IsChecked="{Binding CreateRestorePointBeforeDangerousOperations}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                <TextBlock Text="Optional safety net before risky changes (Windows may limit restore point frequency)." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
+                <CheckBox Content="Enforce script safety guards" IsChecked="{Binding EnforceScriptSafetyGuards}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                <TextBlock Text="Blocks dynamic script execution patterns and untrusted download hosts." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource DarkCardStyle}">
+            <StackPanel>
                 <TextBlock Text="Home refresh interval (seconds)" Foreground="{DynamicResource DarkTextBrush}"/>
                 <TextBox Margin="0,8,0,0" Width="120" Text="{Binding HomeRefreshSeconds}" Style="{StaticResource DarkTextBoxStyle}"/>
             </StackPanel>
