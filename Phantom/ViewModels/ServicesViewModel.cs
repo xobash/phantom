@@ -88,6 +88,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
                 Services.Clear();
                 foreach (var service in snapshot.Services.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
                 {
+                    service.Summary = ResolveSummary(service);
                     Services.Add(service);
                 }
 
@@ -243,4 +244,24 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
     }
 
     private static string EscapeSingleQuotes(string text) => text.Replace("'", "''");
+
+    private static string ResolveSummary(ServiceInfoRow service)
+    {
+        if (!string.IsNullOrWhiteSpace(service.Summary))
+        {
+            return service.Summary;
+        }
+
+        if (!string.IsNullOrWhiteSpace(service.Description))
+        {
+            return service.Description;
+        }
+
+        if (!string.IsNullOrWhiteSpace(service.PathName))
+        {
+            return $"Path: {service.PathName}";
+        }
+
+        return "No description is available for this service.";
+    }
 }

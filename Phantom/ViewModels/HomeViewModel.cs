@@ -1,8 +1,7 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows;
-using System.Windows.Data;
 using System.Windows.Threading;
 using Phantom.Commands;
 using Phantom.Models;
@@ -21,11 +20,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private readonly DispatcherTimer _timer;
     private readonly DispatcherTimer _fastMetricsTimer;
 
-    private string _appSearch = string.Empty;
-    private string _processSearch = string.Empty;
-    private string _serviceSearch = string.Empty;
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
+    private int _refreshQueued;
     private long? _uptimeBaselineSeconds;
     private long _uptimeBaselineTimestamp;
     private long? _lastRenderedUptimeSeconds;
@@ -39,33 +36,17 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
         TopCards = new ObservableCollection<HomeCard>();
         KpiTiles = new ObservableCollection<KpiTile>();
-        InstalledApps = new ObservableCollection<InstalledAppInfo>();
-        Processes = new ObservableCollection<ProcessInfoRow>();
-        Services = new ObservableCollection<ServiceInfoRow>();
 
-        AppsView = CollectionViewSource.GetDefaultView(InstalledApps);
-        AppsView.Filter = FilterApps;
-        ProcessesView = CollectionViewSource.GetDefaultView(Processes);
-        ProcessesView.Filter = FilterProcesses;
-        ServicesView = CollectionViewSource.GetDefaultView(Services);
-        ServicesView.Filter = FilterServices;
-
-        RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !_isRefreshing);
+        RefreshCommand = new RelayCommand(() => RequestRefresh(forceIfBusy: true));
         RunWinsatCommand = new AsyncRelayCommand(RunWinsatAsync, () => !_isRefreshing);
 
         _timer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromSeconds(Math.Max(2, _settingsAccessor().HomeRefreshSeconds))
         };
-        _timer.Tick += async (_, _) =>
-        {
-            if (!_isRefreshing)
-            {
-                await RefreshAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-        };
+        _timer.Tick += (_, _) => RequestRefresh(forceIfBusy: false);
 
-        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Normal)
+        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
             Interval = TimeSpan.FromSeconds(1)
         };
@@ -84,52 +65,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     public ObservableCollection<HomeCard> TopCards { get; }
     public ObservableCollection<KpiTile> KpiTiles { get; }
-    public ObservableCollection<InstalledAppInfo> InstalledApps { get; }
-    public ObservableCollection<ProcessInfoRow> Processes { get; }
-    public ObservableCollection<ServiceInfoRow> Services { get; }
 
-    public ICollectionView AppsView { get; }
-    public ICollectionView ProcessesView { get; }
-    public ICollectionView ServicesView { get; }
-
-    public AsyncRelayCommand RefreshCommand { get; }
+    public RelayCommand RefreshCommand { get; }
     public AsyncRelayCommand RunWinsatCommand { get; }
-
-    public string AppSearch
-    {
-        get => _appSearch;
-        set
-        {
-            if (SetProperty(ref _appSearch, value))
-            {
-                AppsView.Refresh();
-            }
-        }
-    }
-
-    public string ProcessSearch
-    {
-        get => _processSearch;
-        set
-        {
-            if (SetProperty(ref _processSearch, value))
-            {
-                ProcessesView.Refresh();
-            }
-        }
-    }
-
-    public string ServiceSearch
-    {
-        get => _serviceSearch;
-        set
-        {
-            if (SetProperty(ref _serviceSearch, value))
-            {
-                ServicesView.Refresh();
-            }
-        }
-    }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -145,47 +83,74 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _fastMetricsTimer.Stop();
     }
 
-    private async Task RefreshAsync(CancellationToken cancellationToken)
+    private void RequestRefresh(bool forceIfBusy)
     {
+        _ = RefreshAsync(CancellationToken.None, queueIfBusy: forceIfBusy);
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken, bool queueIfBusy = true)
+    {
+        if (_isRefreshing)
+        {
+            if (queueIfBusy)
+            {
+                Interlocked.Exchange(ref _refreshQueued, 1);
+            }
+
+            return;
+        }
+
         _isRefreshing = true;
-        RefreshCommand.RaiseCanExecuteChanged();
         RunWinsatCommand.RaiseCanExecuteChanged();
 
         try
         {
-            var snapshot = await _homeData.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await _homeData.GetSnapshotAsync(cancellationToken, includeDetails: false).ConfigureAwait(false);
             var telemetry = await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            var snapshotUptime = TryParseUptimeSeconds(snapshot.Uptime);
+            if (snapshotUptime.HasValue)
+            {
+                MaybeResyncUptimeBaseline(snapshotUptime.Value);
+            }
+
+            var displayedUptime = GetDisplayedUptimeSeconds();
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                TopCards.Clear();
-                TopCards.Add(new HomeCard { Title = "System", Value = snapshot.Motherboard });
-                TopCards.Add(new HomeCard { Title = "Graphics", Value = snapshot.Graphics, Tooltip = $"Driver {snapshot.GraphicsDriverVersion} ({snapshot.GraphicsDriverDate})" });
-                TopCards.Add(new HomeCard { Title = "Storage", Value = snapshot.Storage });
-                TopCards.Add(new HomeCard { Title = "Uptime", Value = snapshot.Uptime });
-                TopCards.Add(new HomeCard { Title = "Processor", Value = snapshot.Processor });
-                TopCards.Add(new HomeCard { Title = "Memory", Value = snapshot.Memory });
-                TopCards.Add(new HomeCard { Title = "Windows", Value = snapshot.Windows });
-                TopCards.Add(new HomeCard { Title = "Performance", Value = snapshot.PerformanceScore, Tooltip = PerformanceTooltipText });
+                UpsertTopCard("System", snapshot.Motherboard);
+                UpsertTopCard("Graphics", snapshot.Graphics, $"Driver {snapshot.GraphicsDriverVersion} ({snapshot.GraphicsDriverDate})");
+                UpsertTopCard("Storage", snapshot.Storage);
+                UpsertTopCard("Uptime", displayedUptime.HasValue ? FormatUptime(displayedUptime.Value) : snapshot.Uptime);
+                UpsertTopCard("Processor", snapshot.Processor);
+                UpsertTopCard("Memory", snapshot.Memory);
+                UpsertTopCard("Windows", snapshot.Windows);
+                UpsertTopCard("Performance", snapshot.PerformanceScore, PerformanceTooltipText);
 
-                KpiTiles.Clear();
-                KpiTiles.Add(new KpiTile { Title = "Apps count", Value = snapshot.AppsCount.ToString() });
-                KpiTiles.Add(new KpiTile { Title = "Processes count", Value = snapshot.ProcessesCount.ToString() });
-                KpiTiles.Add(new KpiTile { Title = "Services count", Value = snapshot.ServicesCount.ToString() });
-                KpiTiles.Add(new KpiTile { Title = "Space cleaned total", Value = FormatBytes(telemetry.SpaceCleanedBytes) });
-                KpiTiles.Add(new KpiTile { Title = "CPU %", Value = snapshot.CpuUsage.ToString("F2") });
-                KpiTiles.Add(new KpiTile { Title = "GPU %", Value = snapshot.GpuUsage.ToString("F2") });
-                KpiTiles.Add(new KpiTile { Title = "Memory %", Value = snapshot.MemoryUsage.ToString("F2") });
-                KpiTiles.Add(new KpiTile { Title = "Network", Value = snapshot.NetworkUsage });
-                var snapshotUptime = TryParseUptimeSeconds(snapshot.Uptime);
-                if (snapshotUptime.HasValue)
+                UpsertKpiTile("Apps count", snapshot.AppsCount.ToString());
+                UpsertKpiTile("Processes count", snapshot.ProcessesCount.ToString());
+                UpsertKpiTile("Services count", snapshot.ServicesCount.ToString());
+                UpsertKpiTile("Space cleaned total", FormatBytes(telemetry.SpaceCleanedBytes));
+
+                // Live KPI values are driven by the 1-second timer.
+                if (!ContainsKpiTile("CPU %"))
                 {
-                    MaybeResyncUptimeBaseline(snapshotUptime.Value);
+                    UpsertKpiTile("CPU %", snapshot.CpuUsage.ToString("F2"));
                 }
 
-                ReplaceCollection(InstalledApps, snapshot.Apps.OrderBy(x => x.Name).ToList());
-                ReplaceCollection(Processes, snapshot.Processes.OrderByDescending(x => x.Cpu).ToList());
-                ReplaceCollection(Services, snapshot.Services.OrderBy(x => x.Name).ToList());
+                if (!ContainsKpiTile("GPU %"))
+                {
+                    UpsertKpiTile("GPU %", snapshot.GpuUsage.ToString("F2"));
+                }
+
+                if (!ContainsKpiTile("Memory %"))
+                {
+                    UpsertKpiTile("Memory %", snapshot.MemoryUsage.ToString("F2"));
+                }
+
+                if (!ContainsKpiTile("Network"))
+                {
+                    UpsertKpiTile("Network", snapshot.NetworkUsage);
+                }
             });
         }
         catch (Exception ex)
@@ -195,8 +160,12 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         finally
         {
             _isRefreshing = false;
-            RefreshCommand.RaiseCanExecuteChanged();
             RunWinsatCommand.RaiseCanExecuteChanged();
+
+            if (Interlocked.Exchange(ref _refreshQueued, 0) == 1)
+            {
+                _ = RefreshAsync(CancellationToken.None, queueIfBusy: true);
+            }
         }
     }
 
@@ -236,32 +205,12 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                var cpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "CPU %", StringComparison.OrdinalIgnoreCase));
-                if (cpuIndex >= 0)
-                {
-                    KpiTiles[cpuIndex] = new KpiTile { Title = "CPU %", Value = cpu.ToString("F2") };
-                }
+                UpsertKpiTile("CPU %", cpu.ToString("F2"));
+                UpsertKpiTile("Memory %", memory.ToString("F2"));
+                UpsertKpiTile("GPU %", gpu.ToString("F2"));
+                UpsertKpiTile("Network", network);
 
-                var memoryIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "Memory %", StringComparison.OrdinalIgnoreCase));
-                if (memoryIndex >= 0)
-                {
-                    KpiTiles[memoryIndex] = new KpiTile { Title = "Memory %", Value = memory.ToString("F2") };
-                }
-
-                var gpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "GPU %", StringComparison.OrdinalIgnoreCase));
-                if (gpuIndex >= 0)
-                {
-                    KpiTiles[gpuIndex] = new KpiTile { Title = "GPU %", Value = gpu.ToString("F2") };
-                }
-
-                var networkIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "Network", StringComparison.OrdinalIgnoreCase));
-                if (networkIndex >= 0)
-                {
-                    KpiTiles[networkIndex] = new KpiTile { Title = "Network", Value = network };
-                }
-
-                var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
-                if (uptimeIndex >= 0 && displayedUptime.HasValue)
+                if (displayedUptime.HasValue)
                 {
                     UpdateUptimeCard(displayedUptime.Value);
                 }
@@ -277,51 +226,46 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
     }
 
-    private bool FilterApps(object obj)
+    private bool ContainsKpiTile(string title)
     {
-        if (obj is not InstalledAppInfo app)
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(AppSearch))
-        {
-            return true;
-        }
-
-        return app.Name.Contains(AppSearch, StringComparison.OrdinalIgnoreCase) ||
-               app.Publisher.Contains(AppSearch, StringComparison.OrdinalIgnoreCase);
+        return KpiTiles.Any(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
     }
 
-    private bool FilterProcesses(object obj)
+    private void UpsertTopCard(string title, string value, string? tooltip = null)
     {
-        if (obj is not ProcessInfoRow process)
+        var index = TopCards.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
+        var next = new HomeCard
         {
-            return false;
+            Title = title,
+            Value = value,
+            Tooltip = tooltip
+        };
+
+        if (index >= 0)
+        {
+            TopCards[index] = next;
+            return;
         }
 
-        return string.IsNullOrWhiteSpace(ProcessSearch) || process.Name.Contains(ProcessSearch, StringComparison.OrdinalIgnoreCase);
+        TopCards.Add(next);
     }
 
-    private bool FilterServices(object obj)
+    private void UpsertKpiTile(string title, string value)
     {
-        if (obj is not ServiceInfoRow service)
+        var index = KpiTiles.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
+        var next = new KpiTile
         {
-            return false;
+            Title = title,
+            Value = value
+        };
+
+        if (index >= 0)
+        {
+            KpiTiles[index] = next;
+            return;
         }
 
-        return string.IsNullOrWhiteSpace(ServiceSearch) ||
-               service.Name.Contains(ServiceSearch, StringComparison.OrdinalIgnoreCase) ||
-               service.DisplayName.Contains(ServiceSearch, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void ReplaceCollection<T>(ObservableCollection<T> target, IReadOnlyList<T> source)
-    {
-        target.Clear();
-        foreach (var item in source)
-        {
-            target.Add(item);
-        }
+        KpiTiles.Add(next);
     }
 
     private static string FormatBytes(long bytes)
