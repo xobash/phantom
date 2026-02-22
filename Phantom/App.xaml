@@ -321,6 +321,12 @@
         <DataTemplate DataType="{x:Type vm:HomeViewModel}">
             <views:HomeView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AppsViewModel}">
+            <views:AppsView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ServicesViewModel}">
+            <views:ServicesView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:StoreViewModel}">
             <views:StoreView/>
         </DataTemplate>

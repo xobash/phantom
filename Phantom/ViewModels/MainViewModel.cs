@@ -20,6 +20,8 @@ public sealed class MainViewModel : ObservableObject
 
     public MainViewModel(
         HomeViewModel home,
+        AppsViewModel apps,
+        ServicesViewModel services,
         StoreViewModel store,
         TweaksViewModel tweaks,
         FeaturesViewModel features,
@@ -33,6 +35,8 @@ public sealed class MainViewModel : ObservableObject
         AppPaths paths)
     {
         Home = home;
+        Apps = apps;
+        Services = services;
         Store = store;
         Tweaks = tweaks;
         Features = features;
@@ -48,6 +52,8 @@ public sealed class MainViewModel : ObservableObject
         Navigation = new ObservableCollection<NavigationItem>
         {
             new() { Section = AppSection.Home, Label = "Home", Icon = "\uE80F" },
+            new() { Section = AppSection.Apps, Label = "Apps", Icon = "\uE71D" },
+            new() { Section = AppSection.Services, Label = "Services", Icon = "\uE9F5" },
             new() { Section = AppSection.Store, Label = "Store", Icon = "\uE719" },
             new() { Section = AppSection.Tweaks, Label = "Tweaks", Icon = "\uE713" },
             new() { Section = AppSection.Features, Label = "Features", Icon = "\uE115" },
@@ -102,6 +108,8 @@ public sealed class MainViewModel : ObservableObject
     public ICollectionView ConsoleView { get; }
 
     public HomeViewModel Home { get; }
+    public AppsViewModel Apps { get; }
+    public ServicesViewModel Services { get; }
     public StoreViewModel Store { get; }
     public TweaksViewModel Tweaks { get; }
     public FeaturesViewModel Features { get; }
@@ -125,6 +133,8 @@ public sealed class MainViewModel : ObservableObject
                 CurrentSectionViewModel = value.Section switch
                 {
                     AppSection.Home => Home,
+                    AppSection.Apps => Apps,
+                    AppSection.Services => Services,
                     AppSection.Store => Store,
                     AppSection.Tweaks => Tweaks,
                     AppSection.Features => Features,
@@ -155,6 +165,8 @@ public sealed class MainViewModel : ObservableObject
     {
         await Settings.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Home.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await Apps.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await Services.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Store.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Tweaks.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await Features.InitializeAsync(cancellationToken).ConfigureAwait(false);
