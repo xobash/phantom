@@ -48,7 +48,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         CatalogView = CollectionViewSource.GetDefaultView(Catalog);
         CatalogView.Filter = FilterCatalog;
 
-        RefreshManagersCommand = new AsyncRelayCommand(RefreshManagersAsync);
+        RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true));
         InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync);
         InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync);
         UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync);
