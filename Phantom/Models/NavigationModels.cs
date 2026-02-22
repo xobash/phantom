@@ -3,6 +3,8 @@ namespace Phantom.Models;
 public enum AppSection
 {
     Home,
+    Apps,
+    Services,
     Store,
     Tweaks,
     Features,

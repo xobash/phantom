@@ -5,6 +5,63 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <Style x:Key="TweakChevronButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="ChevronBg"
+                                CornerRadius="6"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Grid>
+                                <Path x:Name="ChevronPath"
+                                      Width="10"
+                                      Height="7"
+                                      Stretch="Fill"
+                                      Stroke="{DynamicResource DarkTextBrush}"
+                                      StrokeThickness="1.8"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Data="M 1 1 L 5 5 L 9 1"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      RenderTransformOrigin="0.5,0.5">
+                                    <Path.RenderTransform>
+                                        <RotateTransform Angle="0"/>
+                                    </Path.RenderTransform>
+                                </Path>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ChevronPath" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <RotateTransform Angle="180"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ChevronBg" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                                <Setter TargetName="ChevronBg" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ChevronBg" Property="Background" Value="{DynamicResource RowSelectedBackgroundBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -53,11 +110,17 @@
                                     BorderBrush="{DynamicResource DarkBorderBrush}"
                                     BorderThickness="1"
                                     Background="{DynamicResource DarkCard2Brush}">
-                                <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
-                                    <Expander.Header>
-                                        <Grid Margin="8,5">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Border Grid.Row="0" Padding="10,8" Background="{DynamicResource DarkCard2Brush}">
+                                        <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
@@ -66,13 +129,19 @@
                                             </StackPanel>
                                             <TextBlock Grid.Column="1"
                                                        VerticalAlignment="Center"
-                                                       Margin="10,0,4,0"
+                                                       Margin="10,0,12,0"
                                                        Foreground="{DynamicResource MutedTextBrush}"
                                                        Text="{Binding Tweaks.Count, StringFormat={}{0}}"/>
+                                            <ToggleButton Grid.Column="2"
+                                                          VerticalAlignment="Center"
+                                                          IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                          Style="{StaticResource TweakChevronButtonStyle}"/>
                                         </Grid>
-                                    </Expander.Header>
+                                    </Border>
 
-                                    <ItemsControl ItemsSource="{Binding Tweaks}">
+                                    <ItemsControl Grid.Row="1"
+                                                  Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                  ItemsSource="{Binding Tweaks}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,1,0,0" Padding="10,10">
@@ -108,7 +177,7 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                </Expander>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

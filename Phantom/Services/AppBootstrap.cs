@@ -40,6 +40,8 @@ public sealed class AppBootstrap
 
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
+        Apps = new AppsViewModel(HomeData, Console);
+        Services = new ServicesViewModel(HomeData, Console);
         Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, Query, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
@@ -48,7 +50,7 @@ public sealed class AppBootstrap
         LogsAbout = new LogsAboutViewModel(Paths);
         Automation = new AutomationViewModel(Definitions, Store, Tweaks, Features, Fixes, Updates);
 
-        Main = new MainViewModel(Home, Store, Tweaks, Features, Fixes, Updates, Automation, LogsAbout, Settings, Console, ExecutionCoordinator, Paths);
+        Main = new MainViewModel(Home, Apps, Services, Store, Tweaks, Features, Fixes, Updates, Automation, LogsAbout, Settings, Console, ExecutionCoordinator, Paths);
         CliRunner = new CliRunner(Paths, Definitions, Operations, Console, Log, Network, Query, SettingsStore);
     }
 
@@ -72,6 +74,8 @@ public sealed class AppBootstrap
 
     public SettingsViewModel Settings { get; }
     public HomeViewModel Home { get; }
+    public AppsViewModel Apps { get; }
+    public ServicesViewModel Services { get; }
     public StoreViewModel Store { get; }
     public TweaksViewModel Tweaks { get; }
     public FeaturesViewModel Features { get; }
