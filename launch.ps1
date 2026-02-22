@@ -20,6 +20,15 @@ function Write-Fail($msg) {
     Write-Host "   ERROR: $msg" -ForegroundColor Red
 }
 
+function Try-GetCommand([string]$name) {
+    try {
+        return Get-Command $name -ErrorAction Stop
+    } catch {
+        Write-Host "   Probe failed for '$name': $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
+}
+
 function Stop-LaunchTranscript {
     if (-not $script:TranscriptStarted) {
         return
@@ -86,7 +95,7 @@ Write-Host ""
 # ── .NET SDK check ─────────────────────────────────────────────────────────────
 Write-Step "Checking for .NET 8 SDK..."
 
-$dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+$dotnet = Try-GetCommand 'dotnet'
 $hasNet8 = $false
 
 if ($dotnet) {
@@ -97,7 +106,7 @@ if ($dotnet) {
 if (-not $hasNet8) {
     Write-Host "   .NET 8 SDK not found. Installing via winget..." -ForegroundColor Yellow
 
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    $winget = Try-GetCommand 'winget'
     if (-not $winget) {
         Write-Fail "winget is not available. Please install the .NET 8 SDK manually from https://dot.net and re-run."
         Stop-LaunchTranscript
@@ -117,7 +126,7 @@ if (-not $hasNet8) {
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
                 [System.Environment]::GetEnvironmentVariable("PATH", "User")
 
-    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    $dotnet = Try-GetCommand 'dotnet'
     if (-not $dotnet) {
         Write-Fail ".NET SDK installed but 'dotnet' still not found in PATH. Please restart your shell and re-run."
         Stop-LaunchTranscript

@@ -119,8 +119,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshManagersAsync(CancellationToken cancellationToken)
     {
-        var winget = await _queryService.InvokeAsync("if (Get-Command winget -ErrorAction SilentlyContinue) { '1' }", cancellationToken).ConfigureAwait(false);
-        var choco = await _queryService.InvokeAsync("if (Get-Command choco -ErrorAction SilentlyContinue) { '1' }", cancellationToken).ConfigureAwait(false);
+        var winget = await _queryService.InvokeAsync("$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken).ConfigureAwait(false);
+        var choco = await _queryService.InvokeAsync("$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken).ConfigureAwait(false);
 
         WingetInstalled = winget.Stdout.Trim() == "1";
         ChocoInstalled = choco.Stdout.Trim() == "1";
@@ -355,7 +355,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "uninstall-winget",
                     RequiresNetwork = false,
-                    Script = "$packages = Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -AllUsers -ErrorAction SilentlyContinue; if ($packages) { $packages | ForEach-Object { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction SilentlyContinue } }; $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like 'Microsoft.DesktopAppInstaller*' }; foreach ($pkg in $provisioned) { Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction SilentlyContinue | Out-Null }"
+                    Script = "$packages = Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -AllUsers -ErrorAction Stop; if ($packages) { $packages | ForEach-Object { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop } }; $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like 'Microsoft.DesktopAppInstaller*' }; foreach ($pkg in $provisioned) { Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop | Out-Null }"
                 }
             ]
         };
@@ -376,7 +376,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "install-choco",
                     RequiresNetwork = true,
-                    Script = "if (Get-Command winget -ErrorAction SilentlyContinue) { winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent } else { throw 'winget is required to install Chocolatey in safe mode.' }"
+                    Script = "$wingetPresent=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $wingetPresent=$true } catch { $wingetPresent=$false }; if ($wingetPresent) { winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent } else { throw 'winget is required to install Chocolatey in safe mode.' }"
                 }
             ]
         };
@@ -397,7 +397,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "uninstall-choco",
                     RequiresNetwork = false,
-                    Script = "if (Get-Command choco -ErrorAction SilentlyContinue) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
+                    Script = "$hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; if ($hasChoco) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
                 }
             ]
         };
@@ -487,20 +487,21 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     {
         var hasWinget = !string.IsNullOrWhiteSpace(wingetScript);
         var hasChoco = !string.IsNullOrWhiteSpace(chocoScript);
+        const string managerProbeScript = "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; $hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; ";
 
         if (hasWinget && hasChoco)
         {
-            return $"if (Get-Command winget -ErrorAction SilentlyContinue) {{ {wingetScript} }} elseif (Get-Command choco -ErrorAction SilentlyContinue) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
+            return $"{managerProbeScript}if ($hasWinget) {{ {wingetScript} }} elseif ($hasChoco) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
         }
 
         if (hasWinget)
         {
-            return $"if (Get-Command winget -ErrorAction SilentlyContinue) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
+            return $"{managerProbeScript}if ($hasWinget) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
         }
 
         if (hasChoco)
         {
-            return $"if (Get-Command choco -ErrorAction SilentlyContinue) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
+            return $"{managerProbeScript}if ($hasChoco) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
         }
 
         return "throw 'No installer metadata defined for this app.'";

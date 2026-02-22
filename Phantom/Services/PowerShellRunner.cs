@@ -16,7 +16,7 @@ public interface IPowerShellRunner
 
 public sealed class PowerShellRunner : IPowerShellRunner
 {
-    private const string BootstrapScript = "$ErrorActionPreference='Stop';$env:PSExecutionPolicyPreference='Bypass';Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue;";
+    private const string BootstrapScript = "$ErrorActionPreference='Stop';$env:PSExecutionPolicyPreference='Bypass';Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Continue;";
     private static readonly HashSet<string> TrustedDownloadHosts =
     [
         "aka.ms",

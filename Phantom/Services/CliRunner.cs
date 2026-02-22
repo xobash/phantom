@@ -245,8 +245,8 @@ public sealed class CliRunner
                 Description = "Disable all updates",
                 RiskTier = RiskTier.Dangerous,
                 Reversible = true,
-                RunScripts = [new PowerShellStep { Name = "disable", Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction SilentlyContinue; Set-Service wuauserv -StartupType Disabled" }],
-                UndoScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue; Set-Service wuauserv -StartupType Manual; Start-Service wuauserv -ErrorAction SilentlyContinue" }]
+                RunScripts = [new PowerShellStep { Name = "disable", Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Disabled" }],
+                UndoScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Manual; Start-Service wuauserv -ErrorAction Stop" }]
             },
             "Security" => new OperationDefinition
             {
@@ -256,7 +256,7 @@ public sealed class CliRunner
                 RiskTier = RiskTier.Basic,
                 Reversible = true,
                 RunScripts = [new PowerShellStep { Name = "security", Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord" }],
-                UndoScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue" }]
+                UndoScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction Stop" }]
             },
             _ => new OperationDefinition
             {
@@ -265,7 +265,7 @@ public sealed class CliRunner
                 Description = "Restore default update behavior",
                 RiskTier = RiskTier.Basic,
                 Reversible = true,
-                RunScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue; Set-Service wuauserv -StartupType Manual; Start-Service wuauserv -ErrorAction SilentlyContinue" }],
+                RunScripts = [new PowerShellStep { Name = "default", Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Manual; Start-Service wuauserv -ErrorAction Stop" }],
                 UndoScripts = [new PowerShellStep { Name = "none", Script = "Write-Output 'No-op'" }]
             }
         });
@@ -276,7 +276,7 @@ public sealed class CliRunner
     private static string BuildRegistryCaptureScript(string key)
     {
         var escaped = key.Replace("'", "''");
-        return "$WarningPreference='SilentlyContinue'; " +
+        return "$WarningPreference='Continue'; " +
                $"$p='{escaped}'; " +
                "if (Test-Path $p) { " +
                "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
@@ -295,11 +295,15 @@ public sealed class CliRunner
         string winget = string.IsNullOrWhiteSpace(app.WingetId) ? string.Empty : $"winget install --id {app.WingetId} -e --accept-source-agreements --accept-package-agreements --silent";
         string choco = string.IsNullOrWhiteSpace(app.ChocoId) ? string.Empty : $"choco install {app.ChocoId} -y";
 
+        var managerProbeScript =
+            "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; " +
+            "$hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; ";
+
         var script = !string.IsNullOrWhiteSpace(winget) && !string.IsNullOrWhiteSpace(choco)
-            ? $"if(Get-Command winget -ErrorAction SilentlyContinue){{ {winget} }} elseif(Get-Command choco -ErrorAction SilentlyContinue){{ {choco} }} else {{ throw 'No package manager available' }}"
+            ? $"{managerProbeScript}if($hasWinget){{ {winget} }} elseif($hasChoco){{ {choco} }} else {{ throw 'No package manager available' }}"
             : !string.IsNullOrWhiteSpace(winget)
-                ? $"if(Get-Command winget -ErrorAction SilentlyContinue){{ {winget} }} else {{ throw 'winget missing' }}"
-                : $"if(Get-Command choco -ErrorAction SilentlyContinue){{ {choco} }} else {{ throw 'choco missing' }}";
+                ? $"{managerProbeScript}if($hasWinget){{ {winget} }} else {{ throw 'winget missing' }}"
+                : $"{managerProbeScript}if($hasChoco){{ {choco} }} else {{ throw 'choco missing' }}";
 
         return new OperationDefinition
         {

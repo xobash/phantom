@@ -370,7 +370,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         => ExecuteScriptAsync("feature.cleanup.storage", "clean", "Start-Process -FilePath \"$env:SystemRoot\\System32\\cleanmgr.exe\" -ArgumentList '/VERYLOWDISK'", cancellationToken);
 
     private Task CleanupFileExplorerAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.cleanup.file-explorer", "clean", "Remove-Item \"$env:APPDATA\\Microsoft\\Windows\\Recent\\*\" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\\thumbcache_*\" -Force -ErrorAction SilentlyContinue", cancellationToken);
+        => ExecuteScriptAsync("feature.cleanup.file-explorer", "clean", "Remove-Item \"$env:APPDATA\\Microsoft\\Windows\\Recent\\*\" -Recurse -Force -ErrorAction Stop; Remove-Item \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\\thumbcache_*\" -Force -ErrorAction Stop", cancellationToken);
 
     private Task CleanupStoreAsync(CancellationToken cancellationToken)
         => ExecuteScriptAsync("feature.cleanup.store", "reset", "Start-Process -FilePath 'wsreset.exe'", cancellationToken);
@@ -394,10 +394,10 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         => ExecuteScriptAsync("feature.memory-diagnostic", "launch", "Start-Process -FilePath \"$env:SystemRoot\\System32\\mdsched.exe\"", cancellationToken);
 
     private Task RestartGraphicsDriverAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.graphics-driver", "restart", "Get-Process -Name 'dwm' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue", cancellationToken);
+        => ExecuteScriptAsync("feature.graphics-driver", "restart", "Get-Process -Name 'dwm' -ErrorAction Stop | Stop-Process -Force -ErrorAction Stop", cancellationToken);
 
     private Task RebuildIconCacheAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.icons-cache", "rebuild", "Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue; Remove-Item \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\\iconcache*\" -Force -ErrorAction SilentlyContinue; Start-Process explorer.exe", cancellationToken);
+        => ExecuteScriptAsync("feature.icons-cache", "rebuild", "Stop-Process -Name explorer -Force -ErrorAction Stop; Remove-Item \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\\iconcache*\" -Force -ErrorAction Stop; Start-Process explorer.exe", cancellationToken);
 
     private async Task RefreshSystemStateAsync(CancellationToken cancellationToken)
     {
@@ -405,11 +405,11 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
 $powerSession='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
 $power='HKLM:\SYSTEM\CurrentControlSet\Control\Power'
 $storage='HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy'
-$fast=(Get-ItemProperty -Path $powerSession -Name HiberbootEnabled -ErrorAction SilentlyContinue).HiberbootEnabled
-$hib=(Get-ItemProperty -Path $power -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled
-$hibPct=(Get-ItemProperty -Path $power -Name HiberFileSizePercent -ErrorAction SilentlyContinue).HiberFileSizePercent
-$storageSense=(Get-ItemProperty -Path $storage -Name 01 -ErrorAction SilentlyContinue).'01'
-$task=Get-ScheduledTask -TaskPath '\Microsoft\Windows\Defrag\' -TaskName 'ScheduledDefrag' -ErrorAction SilentlyContinue
+$fast=(Get-ItemProperty -Path $powerSession -Name HiberbootEnabled -ErrorAction Stop).HiberbootEnabled
+$hib=(Get-ItemProperty -Path $power -Name HibernateEnabled -ErrorAction Stop).HibernateEnabled
+$hibPct=(Get-ItemProperty -Path $power -Name HiberFileSizePercent -ErrorAction Stop).HiberFileSizePercent
+$storageSense=(Get-ItemProperty -Path $storage -Name 01 -ErrorAction Stop).'01'
+$task=Get-ScheduledTask -TaskPath '\Microsoft\Windows\Defrag\' -TaskName 'ScheduledDefrag' -ErrorAction Stop
 
 if ($null -eq $fast) { $fast = 0 }
 if ($null -eq $hib) { $hib = 0 }
@@ -475,7 +475,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         var statuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var feature in snapshot)
         {
-            var script = $"$f=Get-WindowsOptionalFeature -Online -FeatureName '{feature.FeatureName}' -ErrorAction SilentlyContinue; if($f){{$f.State}} else {{'Unknown'}}";
+            var script = $"$f=Get-WindowsOptionalFeature -Online -FeatureName '{feature.FeatureName}' -ErrorAction Stop; if($f){{$f.State}} else {{'Unknown'}}";
             var result = await _queryService.InvokeAsync(script, cancellationToken).ConfigureAwait(false);
             statuses[feature.Id] = result.ExitCode == 0 ? result.Stdout.Trim() : "Managed / Restricted";
         }

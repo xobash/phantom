@@ -199,7 +199,7 @@ catch {
     private async Task<string> RunPowerShellForJsonAsync(string script, CancellationToken cancellationToken)
     {
         _console.Publish("Trace", $"HomeDataService.RunPowerShellForJsonAsync start. scriptLength={script.Length}");
-        var wrapped = $"$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';& {{ {script} }}";
+        var wrapped = $"$ProgressPreference='Continue';$ErrorActionPreference='Stop';& {{ {script} }}";
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
@@ -317,7 +317,7 @@ catch {
         sb.AppendLine("$total = ($disks | Measure-Object -Property Used -Sum).Sum + ($disks | Measure-Object -Property Free -Sum).Sum");
         sb.AppendLine("$free = ($disks | Measure-Object -Property Free -Sum).Sum");
         sb.AppendLine("function Format-Size([double]$bytes) { if ($bytes -le 0) { return 'Unknown' }; $units = @('B','KB','MB','GB','TB'); $i = 0; while ($bytes -ge 1024 -and $i -lt ($units.Length - 1)) { $bytes = $bytes / 1024; $i++ }; return ('{0:N2} {1}' -f $bytes, $units[$i]) }");
-        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue) | Where-Object { $_.DisplayName } | ForEach-Object {");
+        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction Continue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction Continue) | Where-Object { $_.DisplayName } | ForEach-Object {");
         sb.AppendLine("  $installDate = 'Unknown'");
         sb.AppendLine("  if ($_.InstallDate -and $_.InstallDate -match '^\\d{8}$') {");
         sb.AppendLine("    try { $installDate = [datetime]::ParseExact($_.InstallDate, 'yyyyMMdd', $null).ToString('yyyy-MM-dd') } catch { $installDate = 'Unknown' }");

@@ -114,7 +114,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 new PowerShellStep
                 {
                     Name = "reset-components",
-                    Script = "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction SilentlyContinue; Start-Service cryptsvc,bits,wuauserv"
+                    Script = "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction Stop; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction Stop; Start-Service cryptsvc,bits,wuauserv"
                 }
             ]
         };
@@ -189,7 +189,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 new PowerShellStep
                 {
                     Name = "restore-default",
-                    Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Recurse -Force -ErrorAction SilentlyContinue; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction SilentlyContinue; Start-Service bits -ErrorAction SilentlyContinue"
+                    Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction Stop; Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Recurse -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop"
                 }
             ],
             UndoScripts =
@@ -245,7 +245,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 new PowerShellStep
                 {
                     Name = "disable-updates",
-                    Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction SilentlyContinue; Stop-Service bits -Force -ErrorAction SilentlyContinue; Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled"
+                    Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction Stop; Stop-Service bits -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled"
                 }
             ],
             UndoScripts =
