@@ -114,7 +114,7 @@ public sealed class CliRunner
                 StateCaptureScripts = t.StateCaptureKeys.Select(k => new PowerShellStep
                 {
                     Name = k,
-                    Script = $"$p='{k.Replace("'", "''")}'; if(Test-Path $p){{ Get-ItemProperty -Path $p | ConvertTo-Json -Depth 6 -Compress }}"
+                    Script = BuildRegistryCaptureScript(k)
                 }).ToArray()
             }));
 
@@ -182,6 +182,23 @@ public sealed class CliRunner
         });
 
         return operations;
+    }
+
+    private static string BuildRegistryCaptureScript(string key)
+    {
+        var escaped = key.Replace("'", "''");
+        return "$WarningPreference='SilentlyContinue'; " +
+               $"$p='{escaped}'; " +
+               "if (Test-Path $p) { " +
+               "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
+               "$out = [ordered]@{}; " +
+               "foreach ($prop in $item.PSObject.Properties) { " +
+               "if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }; " +
+               "$value = $prop.Value; " +
+               "if ($value -is [byte[]]) { $out[$prop.Name] = [Convert]::ToBase64String($value) } else { $out[$prop.Name] = $value } " +
+               "}; " +
+               "$out | ConvertTo-Json -Depth 8 -Compress " +
+               "} else { '' }";
     }
 
     private static OperationDefinition BuildStoreInstallOperation(CatalogApp app)

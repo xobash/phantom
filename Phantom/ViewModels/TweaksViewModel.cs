@@ -316,7 +316,18 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         }
 
         var escaped = key.Replace("'", "''");
-        return $"$p='{escaped}'; if (Test-Path $p) {{ Get-ItemProperty -Path $p | ConvertTo-Json -Depth 6 -Compress }} else {{ '' }}";
+        return "$WarningPreference='SilentlyContinue'; " +
+               $"$p='{escaped}'; " +
+               "if (Test-Path $p) { " +
+               "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
+               "$out = [ordered]@{}; " +
+               "foreach ($prop in $item.PSObject.Properties) { " +
+               "if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }; " +
+               "$value = $prop.Value; " +
+               "if ($value -is [byte[]]) { $out[$prop.Name] = [Convert]::ToBase64String($value) } else { $out[$prop.Name] = $value } " +
+               "}; " +
+               "$out | ConvertTo-Json -Depth 8 -Compress " +
+               "} else { '' }";
     }
 
     private bool FilterTweaks(object obj)
