@@ -17,6 +17,17 @@ public sealed class AppBootstrap
         Console = new ConsoleStreamService();
         Log = new LogService(Paths, () => SettingsProvider.Current);
         Log.OpenSessionLog();
+        Console.MessageReceived += (_, evt) =>
+        {
+            try
+            {
+                Log.WriteAsync($"Console.{evt.Stream}", evt.Text).GetAwaiter().GetResult();
+            }
+            catch
+            {
+            }
+        };
+        Log.WriteAsync("Lifecycle", "App bootstrap initialized.").GetAwaiter().GetResult();
 
         Network = new NetworkGuardService();
         Query = new PowerShellQueryService();
