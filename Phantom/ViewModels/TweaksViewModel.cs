@@ -55,7 +55,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             {
                 tweak.Selected = false;
             }
-            Notify(nameof(Tweaks));
+            RefreshTweaksView();
         });
 
         ExportSelectionCommand = new AsyncRelayCommand(ExportSelectionAsync);
@@ -120,17 +120,19 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             tweak.Selected = tweak.RiskTier <= maxRisk;
         }
 
-        Notify(nameof(Tweaks));
+        RefreshTweaksView();
     }
 
     private async Task RefreshStatusAsync(CancellationToken cancellationToken)
     {
-        foreach (var tweak in Tweaks)
+        var tweakRows = await Application.Current.Dispatcher.InvokeAsync(() => Tweaks.ToList());
+        var updates = new List<(string Id, string Status, bool Selected)>(tweakRows.Count);
+
+        foreach (var tweak in tweakRows)
         {
             if (string.IsNullOrWhiteSpace(tweak.DetectScript))
             {
-                tweak.Status = "Unknown";
-                tweak.Selected = false;
+                updates.Add((tweak.Id, "Unknown", false));
                 continue;
             }
 
@@ -139,19 +141,34 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
 
             if (result.ExitCode == 0)
             {
-                tweak.Status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
-                tweak.Selected = IsAppliedStatus(tweak.Status);
+                var status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
+                updates.Add((tweak.Id, status, IsAppliedStatus(status)));
             }
             else
             {
-                tweak.Status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
-                tweak.Selected = false;
+                var status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
+                updates.Add((tweak.Id, status, false));
                 _console.Publish("Error", $"{tweak.Name}: {output}");
             }
         }
 
-        TweaksView.Refresh();
-        Notify(nameof(Tweaks));
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var update in updates)
+            {
+                var tweak = Tweaks.FirstOrDefault(x => string.Equals(x.Id, update.Id, StringComparison.OrdinalIgnoreCase));
+                if (tweak is null)
+                {
+                    continue;
+                }
+
+                tweak.Status = update.Status;
+                tweak.Selected = update.Selected;
+            }
+
+            TweaksView.Refresh();
+            Notify(nameof(Tweaks));
+        });
     }
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
@@ -216,15 +233,30 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
                 ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
             }, linked.Token).ConfigureAwait(false);
 
+            var statusUpdates = new List<(string Id, string Status)>();
             foreach (var op in batch.Results)
             {
                 _console.Publish(op.Success ? "Info" : "Error", $"{op.OperationId}: {op.Message}");
-                var tweak = Tweaks.FirstOrDefault(x => x.Id == op.OperationId.Replace("tweak.", string.Empty, StringComparison.OrdinalIgnoreCase));
-                if (tweak is not null)
-                {
-                    tweak.Status = op.Success ? (undo ? "Undone" : "Applied") : (DetectManagedRestriction(op.Message) ? "Managed / Restricted" : "Failed");
-                }
+                var tweakId = op.OperationId.Replace("tweak.", string.Empty, StringComparison.OrdinalIgnoreCase);
+                var status = op.Success ? (undo ? "Undone" : "Applied") : (DetectManagedRestriction(op.Message) ? "Managed / Restricted" : "Failed");
+                statusUpdates.Add((tweakId, status));
             }
+
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                foreach (var update in statusUpdates)
+                {
+                    var tweak = Tweaks.FirstOrDefault(x => string.Equals(x.Id, update.Id, StringComparison.OrdinalIgnoreCase));
+                    if (tweak is null)
+                    {
+                        continue;
+                    }
+
+                    tweak.Status = update.Status;
+                }
+
+                RefreshTweaksView();
+            });
         }
         catch (OperationCanceledException)
         {
@@ -344,7 +376,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             tweak.Selected = set.Contains(tweak.Id);
         }
 
-        Notify(nameof(Tweaks));
+        RefreshTweaksView();
         _console.Publish("Info", $"Selection imported: {dialog.FileName}");
     }
 
@@ -400,5 +432,28 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase)
             || normalized.Contains("installed", StringComparison.OrdinalIgnoreCase)
             || normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RefreshTweaksView()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            Notify(nameof(Tweaks));
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            TweaksView.Refresh();
+            Notify(nameof(Tweaks));
+            return;
+        }
+
+        dispatcher.Invoke(() =>
+        {
+            TweaksView.Refresh();
+            Notify(nameof(Tweaks));
+        });
     }
 }

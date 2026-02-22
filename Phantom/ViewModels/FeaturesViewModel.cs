@@ -87,14 +87,34 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshStatusAsync(CancellationToken cancellationToken)
     {
-        foreach (var feature in Features)
+        var featureRows = await Application.Current.Dispatcher.InvokeAsync(() => Features.ToList());
+        var updates = new List<(string Id, string Status, bool Selected)>(featureRows.Count);
+
+        foreach (var feature in featureRows)
         {
             var script = $"$f=Get-WindowsOptionalFeature -Online -FeatureName '{feature.FeatureName}' -ErrorAction SilentlyContinue; if($f){{$f.State}} else {{'Unknown'}}";
             var result = await _queryService.InvokeAsync(script, cancellationToken).ConfigureAwait(false);
-            feature.Status = result.ExitCode == 0 ? result.Stdout.Trim() : "Managed / Restricted";
+            var status = result.ExitCode == 0 ? result.Stdout.Trim() : "Managed / Restricted";
+            updates.Add((feature.Id, status, IsFeatureEnabledStatus(status)));
         }
 
-        Notify(nameof(Features));
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var update in updates)
+            {
+                var feature = Features.FirstOrDefault(x => string.Equals(x.Id, update.Id, StringComparison.OrdinalIgnoreCase));
+                if (feature is null)
+                {
+                    continue;
+                }
+
+                feature.Status = update.Status;
+                feature.Selected = update.Selected;
+            }
+
+            FeaturesView.Refresh();
+            Notify(nameof(Features));
+        });
     }
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
@@ -232,5 +252,17 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         return feature.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                feature.Description.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                feature.FeatureName.Contains(Search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFeatureEnabledStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        var normalized = status.Trim();
+        return normalized.Equals("Enabled", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("EnablePending", StringComparison.OrdinalIgnoreCase);
     }
 }
