@@ -8,78 +8,90 @@
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0" Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <TextBlock Text="Package Managers" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="winget installed: "
-                               FontSize="24"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource MutedTextBrush}"/>
-                    <TextBlock Text="{Binding WingetInstalled}"
-                               FontSize="24"
-                               FontWeight="SemiBold">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#FF5C5C"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding WingetInstalled}" Value="True">
-                                        <Setter Property="Foreground" Value="#5BD671"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="choco installed: "
-                               FontSize="24"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource MutedTextBrush}"/>
-                    <TextBlock Text="{Binding ChocoInstalled}"
-                               FontSize="24"
-                               FontWeight="SemiBold">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#FF5C5C"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ChocoInstalled}" Value="True">
-                                        <Setter Property="Foreground" Value="#5BD671"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <WrapPanel Margin="0,12,0,0">
-                    <Button Content="Refresh managers" Command="{Binding RefreshManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Install missing managers" Command="{Binding InstallMissingManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Install winget" Command="{Binding InstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Uninstall winget" Command="{Binding UninstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Install choco" Command="{Binding InstallChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Uninstall choco" Command="{Binding UninstallChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Import catalog" Command="{Binding ImportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Export catalog" Command="{Binding ExportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                </WrapPanel>
-            </StackPanel>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Package Managers" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <TextBlock Text="winget installed: "
+                                       FontSize="20"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <TextBlock Text="{Binding WingetInstalled}"
+                                       FontSize="20"
+                                       FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#FF5C5C"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding WingetInstalled}" Value="True">
+                                                <Setter Property="Foreground" Value="#5BD671"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="choco installed: "
+                                       FontSize="20"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <TextBlock Text="{Binding ChocoInstalled}"
+                                       FontSize="20"
+                                       FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#FF5C5C"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ChocoInstalled}" Value="True">
+                                                <Setter Property="Foreground" Value="#5BD671"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <WrapPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Top">
+                        <Button Content="Refresh managers" Command="{Binding RefreshManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Install missing managers" Command="{Binding InstallMissingManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Install winget" Command="{Binding InstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Uninstall winget" Command="{Binding UninstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Install choco" Command="{Binding InstallChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Uninstall choco" Command="{Binding UninstallChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Import catalog" Command="{Binding ImportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Export catalog" Command="{Binding ExportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    </WrapPanel>
+                </Grid>
+
+                <DockPanel Grid.Row="1" Margin="0,10,0,0">
+                    <TextBox DockPanel.Dock="Left" Width="280" Margin="0,0,10,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}"/>
+                    <WrapPanel>
+                        <Button Content="Install selected" Command="{Binding InstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Uninstall selected" Command="{Binding UninstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Upgrade selected" Command="{Binding UpgradeSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    </WrapPanel>
+                </DockPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Row="1" Style="{StaticResource DarkCardStyle}">
-            <DockPanel>
-                <TextBox DockPanel.Dock="Left" Width="260" Margin="0,0,12,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}"/>
-                <WrapPanel>
-                    <Button Content="Install selected" Command="{Binding InstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Uninstall selected" Command="{Binding UninstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Upgrade selected" Command="{Binding UpgradeSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                </WrapPanel>
-            </DockPanel>
-        </Border>
-
-        <Border Grid.Row="2" Style="{StaticResource DarkCardStyle}">
             <DataGrid ItemsSource="{Binding CatalogView}" AutoGenerateColumns="False"
                       Style="{StaticResource DarkDataGridStyle}"
                       VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
