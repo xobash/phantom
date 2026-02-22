@@ -12,6 +12,8 @@ namespace Phantom.ViewModels;
 
 public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 {
+    private const string PerformanceTooltipText = "Windows Experience Index (WinSAT). Base score is the lowest subscore, max 9.9.";
+
     private readonly HomeDataService _homeData;
     private readonly TelemetryStore _telemetryStore;
     private readonly Func<AppSettings> _settingsAccessor;
@@ -164,7 +166,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 TopCards.Add(new HomeCard { Title = "Processor", Value = snapshot.Processor });
                 TopCards.Add(new HomeCard { Title = "Memory", Value = snapshot.Memory });
                 TopCards.Add(new HomeCard { Title = "Windows", Value = snapshot.Windows });
-                TopCards.Add(new HomeCard { Title = "Performance", Value = snapshot.PerformanceScore });
+                TopCards.Add(new HomeCard { Title = "Performance", Value = snapshot.PerformanceScore, Tooltip = PerformanceTooltipText });
 
                 KpiTiles.Clear();
                 KpiTiles.Add(new KpiTile { Title = "Apps count", Value = snapshot.AppsCount.ToString() });
@@ -208,7 +210,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 var index = TopCards.ToList().FindIndex(c => c.Title == "Performance");
                 if (index >= 0)
                 {
-                    TopCards[index] = new HomeCard { Title = "Performance", Value = score };
+                    TopCards[index] = new HomeCard { Title = "Performance", Value = score, Tooltip = PerformanceTooltipText };
                 }
             });
         }
