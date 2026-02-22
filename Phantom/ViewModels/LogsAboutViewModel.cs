@@ -9,6 +9,7 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
 {
     private readonly AppPaths _paths;
 
+    private string _aboutBanner = string.Empty;
     private string _aboutText = "Phantom portable admin utility.";
     private string _selectedLog = string.Empty;
     private string _selectedLogContent = string.Empty;
@@ -31,6 +32,12 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
         set => SetProperty(ref _aboutText, value);
     }
 
+    public string AboutBanner
+    {
+        get => _aboutBanner;
+        set => SetProperty(ref _aboutBanner, value);
+    }
+
     public string SelectedLog
     {
         get => _selectedLog;
@@ -49,7 +56,20 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
+        AboutBanner = BuildAboutBanner();
         AboutText = await BuildAboutFromReadmeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildAboutBanner()
+    {
+        return """
+██████╗ ██╗  ██╗ █████╗ ███╗   ██╗████████╗ ██████╗ ███╗   ███╗
+██╔══██╗██║  ██║██╔══██╗████╗  ██║╚══██╔══╝██╔═══██╗████╗ ████║
+██████╔╝███████║███████║██╔██╗ ██║   ██║   ██║   ██║██╔████╔██║
+██╔═══╝ ██╔══██║██╔══██║██║╚██╗██║   ██║   ██║   ██║██║╚██╔╝██║
+██║     ██║  ██║██║  ██║██║ ╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║
+╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝
+""";
     }
 
     private async Task<string> BuildAboutFromReadmeAsync(CancellationToken cancellationToken)
@@ -57,15 +77,6 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
         await Task.CompletedTask;
         return """
 # Phantom
-
-```text
-  ██████╗ ██╗  ██╗ █████╗ ███╗   ██╗████████╗ ██████╗ ███╗   ███╗
-  ██╔══██╗██║  ██║██╔══██╗████╗  ██║╚══██╔══╝██╔═══██╗████╗ ████║
-  ██████╔╝███████║███████║██╔██╗ ██║   ██║   ██║   ██║██╔████╔██║
-  ██╔═══╝ ██╔══██║██╔══██║██║╚██╗██║   ██║   ██║   ██║██║╚██╔╝██║
-  ██║     ██║  ██║██║  ██║██║ ╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║
-  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝
-```
 
 A portable, self-contained Windows admin utility built with WPF and .NET 8. Phantom provides a unified interface for system monitoring, tweaks, app management, Windows Update control, and automation — all from a single elevated window with a persistent in-app console.
 
