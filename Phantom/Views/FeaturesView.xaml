@@ -28,11 +28,10 @@
                       VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                       ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
                 <DataGrid.Columns>
-                    <DataGridCheckBoxColumn Header="Sel" Binding="{Binding Selected, Mode=TwoWay}" Width="50"/>
+                    <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Selected, Mode=TwoWay}" Width="76"/>
                     <DataGridTextColumn Header="Feature" Binding="{Binding Name}" Width="230"/>
                     <DataGridTextColumn Header="FeatureName" Binding="{Binding FeatureName}" Width="240"/>
                     <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="150"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
