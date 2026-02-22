@@ -14,6 +14,9 @@ public sealed class TelemetryState
     public long SpaceCleanedBytes { get; set; }
     public DateTimeOffset FirstRunAt { get; set; } = DateTimeOffset.Now;
     public Dictionary<string, NetworkBaseline> NetworkBaselines { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public long LastNetworkSentBytes { get; set; }
+    public long LastNetworkReceivedBytes { get; set; }
+    public DateTimeOffset? LastNetworkSampleAt { get; set; }
 }
 
 public sealed class NetworkBaseline

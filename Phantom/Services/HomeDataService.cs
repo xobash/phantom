@@ -88,6 +88,61 @@ $uptime = (Get-Date) - $os.LastBootUpTime
         }
     }
 
+    public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, long UptimeSeconds, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
+    {
+        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+        {
+            return (0, 0, 0, 0, "↑ 0.00 B/s ↓ 0.00 B/s");
+        }
+
+        _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+
+        const string script = @"
+$ErrorActionPreference = 'Stop'
+$os = Get-CimInstance Win32_OperatingSystem
+$cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
+$memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
+$uptime = [long]((Get-Date) - $os.LastBootUpTime).TotalSeconds
+$gpuCtr = 0
+try {
+  $gpuCounters = Get-Counter '\GPU Engine(*engtype_3D)\Utilization Percentage' -ErrorAction Stop
+  $samples = @($gpuCounters.CounterSamples | Select-Object -ExpandProperty CookedValue)
+  if ($samples.Count -gt 0) {
+    $gpuCtr = ($samples | Measure-Object -Average).Average
+  }
+} catch {
+  $gpuCtr = 0
+}
+[PSCustomObject]@{
+  CpuUsage = [math]::Round($cpu, 2)
+  MemoryUsage = [math]::Round($memoryPct, 2)
+  GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr, 0), 100), 2)
+  UptimeSeconds = [math]::Max($uptime, 0)
+} | ConvertTo-Json -Compress";
+
+        var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return (0, 0, 0, 0, ComputeNetworkUsage(_telemetry));
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
+            var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
+            var gpu = doc.RootElement.GetProperty("GpuUsage").GetDouble();
+            var uptimeSeconds = doc.RootElement.GetProperty("UptimeSeconds").GetInt64();
+            var network = ComputeNetworkUsage(_telemetry);
+            return (cpu, memory, gpu, uptimeSeconds, network);
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
+            return (0, 0, 0, 0, ComputeNetworkUsage(_telemetry));
+        }
+    }
+
     public async Task<string> RunWinsatScoreAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
