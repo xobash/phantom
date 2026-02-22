@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows;
 using Phantom.Commands;
 using Phantom.Services;
@@ -48,7 +49,15 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
     public string SelectedLog
     {
         get => _selectedLog;
-        set => SetProperty(ref _selectedLog, value);
+        set
+        {
+            if (!SetProperty(ref _selectedLog, value))
+            {
+                return;
+            }
+
+            _ = LoadSelectedLogContentAsync(value);
+        }
     }
 
     public string SelectedLogContent
@@ -107,11 +116,45 @@ Data locations
 
     private async Task OpenSelectedLogAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(SelectedLog) || !File.Exists(SelectedLog))
+        _ = cancellationToken;
+
+        try
         {
+            var hasSelectedLog = !string.IsNullOrWhiteSpace(SelectedLog) && File.Exists(SelectedLog);
+            var argument = hasSelectedLog
+                ? $"/select,\"{SelectedLog}\""
+                : $"\"{_paths.LogsDirectory}\"";
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = argument,
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Best-effort action.
+        }
+    }
+
+    private async Task LoadSelectedLogContentAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            SelectedLogContent = string.Empty;
             return;
         }
 
-        SelectedLogContent = await File.ReadAllTextAsync(SelectedLog, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var content = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+            await Application.Current.Dispatcher.InvokeAsync(() => SelectedLogContent = content);
+        }
+        catch (Exception ex)
+        {
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                SelectedLogContent = $"Failed to load log file:{Environment.NewLine}{ex.Message}");
+        }
     }
 }

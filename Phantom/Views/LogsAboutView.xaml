@@ -7,46 +7,61 @@
              Background="{DynamicResource AppBgBrush}">
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="420"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Style="{StaticResource DarkCardStyle}">
-            <DockPanel>
-                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                    <Button Content="Refresh logs" Command="{Binding RefreshLogsCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Open" Command="{Binding OpenLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                </WrapPanel>
-                <ListBox ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLog}" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource DarkTextBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="1"/>
-            </DockPanel>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="About (README excerpt)" FontWeight="SemiBold" FontSize="18" Foreground="{DynamicResource DarkTextBrush}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding AboutLogo}"
+                               FontFamily="Consolas"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="#A55DFF"
+                               TextWrapping="NoWrap"
+                               Margin="0,0,0,10"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="300" Margin="0,0,0,10">
+                        <TextBlock Text="{Binding AboutText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" />
+                    </ScrollViewer>
+                </StackPanel>
+
+                <DockPanel Grid.Row="1">
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Button Content="Refresh logs" Command="{Binding RefreshLogsCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Content="Open logs folder" Command="{Binding OpenLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    </WrapPanel>
+                    <ListBox ItemsSource="{Binding LogFiles}"
+                             SelectedItem="{Binding SelectedLog}"
+                             Background="{DynamicResource InputBackgroundBrush}"
+                             Foreground="{DynamicResource DarkTextBrush}"
+                             BorderBrush="{DynamicResource DarkBorderBrush}"
+                             BorderThickness="1"/>
+                </DockPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Column="1" Style="{StaticResource DarkCardStyle}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Text="About (README excerpt)" FontWeight="SemiBold" FontSize="18" Foreground="{DynamicResource DarkTextBrush}" Margin="0,0,0,8"/>
-
-                <TextBlock Grid.Row="1"
-                           Text="{Binding AboutLogo}"
-                           FontFamily="Consolas"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           Foreground="#A55DFF"
-                           TextWrapping="NoWrap"
-                           Margin="0,0,0,10"/>
-
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                    <TextBlock Text="{Binding AboutText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" />
-                </ScrollViewer>
-
-                <TextBlock Grid.Row="3" Text="Log content" FontWeight="SemiBold" FontSize="16" Foreground="{DynamicResource DarkTextBrush}" Margin="0,10,0,6"/>
-                <TextBox Grid.Row="4" Text="{Binding SelectedLogContent}" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" FontFamily="Consolas" Style="{StaticResource DarkTextBoxStyle}"/>
+                <TextBlock Text="Log content" FontWeight="SemiBold" FontSize="18" Foreground="{DynamicResource DarkTextBrush}" Margin="0,0,0,8"/>
+                <TextBox Grid.Row="1"
+                         Text="{Binding SelectedLogContent}"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         TextWrapping="NoWrap"
+                         FontFamily="Consolas"
+                         Style="{StaticResource DarkTextBoxStyle}"/>
             </Grid>
         </Border>
     </Grid>
