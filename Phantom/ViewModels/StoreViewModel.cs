@@ -114,13 +114,13 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             }
         });
 
-        await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshManagersAsync(cancellationToken, echoToConsole: false).ConfigureAwait(false);
     }
 
-    private async Task RefreshManagersAsync(CancellationToken cancellationToken)
+    private async Task RefreshManagersAsync(CancellationToken cancellationToken, bool echoToConsole = true)
     {
-        var winget = await _queryService.InvokeAsync("$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken).ConfigureAwait(false);
-        var choco = await _queryService.InvokeAsync("$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken).ConfigureAwait(false);
+        var winget = await _queryService.InvokeAsync("$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
+        var choco = await _queryService.InvokeAsync("$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
 
         WingetInstalled = winget.Stdout.Trim() == "1";
         ChocoInstalled = choco.Stdout.Trim() == "1";

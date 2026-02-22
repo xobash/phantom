@@ -54,7 +54,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         FeaturesView = CollectionViewSource.GetDefaultView(Features);
         FeaturesView.Filter = FilterFeature;
 
-        RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync);
+        RefreshStatusCommand = new AsyncRelayCommand(ct => RefreshStatusAsync(ct, echoQueryToConsole: true));
         ApplySelectedCommand = new AsyncRelayCommand(ApplySelectedAsync);
         UndoSelectedCommand = new AsyncRelayCommand(UndoSelectedAsync);
         OpenDriveOptimizationCommand = new AsyncRelayCommand(OpenDriveOptimizationAsync);
@@ -200,13 +200,13 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
             }
         });
 
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
-    private async Task RefreshStatusAsync(CancellationToken cancellationToken)
+    private async Task RefreshStatusAsync(CancellationToken cancellationToken, bool echoQueryToConsole)
     {
-        await RefreshSystemStateAsync(cancellationToken).ConfigureAwait(false);
-        await RefreshOptionalFeatureStatesAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshSystemStateAsync(cancellationToken, echoQueryToConsole).ConfigureAwait(false);
+        await RefreshOptionalFeatureStatesAsync(cancellationToken, echoQueryToConsole).ConfigureAwait(false);
     }
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
@@ -227,7 +227,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
             .ToList();
 
         await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
     private async Task UndoSelectedAsync(CancellationToken cancellationToken)
@@ -248,7 +248,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
             .ToList();
 
         await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
     private async Task RunOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool undo, CancellationToken externalToken)
@@ -399,7 +399,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private Task RebuildIconCacheAsync(CancellationToken cancellationToken)
         => ExecuteScriptAsync("feature.icons-cache", "rebuild", "Stop-Process -Name explorer -Force -ErrorAction Stop; Remove-Item \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer\\iconcache*\" -Force -ErrorAction Stop; Start-Process explorer.exe", cancellationToken);
 
-    private async Task RefreshSystemStateAsync(CancellationToken cancellationToken)
+    private async Task RefreshSystemStateAsync(CancellationToken cancellationToken, bool echoQueryToConsole)
     {
         const string script = @"
 $powerSession='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
@@ -424,7 +424,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
   StorageSense = [bool]([int]$storageSense -eq 1)
 } | ConvertTo-Json -Compress";
 
-        var result = await _queryService.InvokeAsync(script, cancellationToken).ConfigureAwait(false);
+        var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
         if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.Stdout))
         {
             if (!string.IsNullOrWhiteSpace(result.Stderr))
@@ -467,7 +467,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         }
     }
 
-    private async Task RefreshOptionalFeatureStatesAsync(CancellationToken cancellationToken)
+    private async Task RefreshOptionalFeatureStatesAsync(CancellationToken cancellationToken, bool echoQueryToConsole)
     {
         List<FeatureDefinition> snapshot = new();
         await Application.Current.Dispatcher.InvokeAsync(() => snapshot = Features.ToList());
@@ -476,7 +476,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         foreach (var feature in snapshot)
         {
             var script = $"$f=Get-WindowsOptionalFeature -Online -FeatureName '{feature.FeatureName}' -ErrorAction Stop; if($f){{$f.State}} else {{'Unknown'}}";
-            var result = await _queryService.InvokeAsync(script, cancellationToken).ConfigureAwait(false);
+            var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
             statuses[feature.Id] = result.ExitCode == 0 ? result.Stdout.Trim() : "Managed / Restricted";
         }
 
@@ -512,7 +512,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
 
         if (refreshSystemState)
         {
-            await RefreshSystemStateAsync(cancellationToken).ConfigureAwait(false);
+            await RefreshSystemStateAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
         }
     }
 

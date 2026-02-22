@@ -34,7 +34,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
         ApplyModeCommand = new AsyncRelayCommand(ApplyModeAsync);
         RestoreDefaultCommand = new AsyncRelayCommand(RestoreDefaultAsync);
-        RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync);
+        RefreshStatusCommand = new AsyncRelayCommand(ct => RefreshStatusAsync(ct, echoQueryToConsole: true));
         ResetUpdateComponentsCommand = new AsyncRelayCommand(ResetUpdateComponentsAsync);
     }
 
@@ -67,7 +67,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
     private async Task ApplyModeAsync(CancellationToken cancellationToken)
@@ -81,20 +81,20 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         };
 
         await ExecuteUpdateOperationAsync(operation, cancellationToken).ConfigureAwait(false);
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
     private async Task RestoreDefaultAsync(CancellationToken cancellationToken)
     {
         await ExecuteUpdateOperationAsync(BuildDefaultModeOperation(), cancellationToken).ConfigureAwait(false);
-        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
-    private async Task RefreshStatusAsync(CancellationToken cancellationToken)
+    private async Task RefreshStatusAsync(CancellationToken cancellationToken, bool echoQueryToConsole)
     {
-        var service = await _queryService.InvokeAsync("Get-Service wuauserv | Select-Object -ExpandProperty Status", cancellationToken).ConfigureAwait(false);
-        var bits = await _queryService.InvokeAsync("Get-Service bits | Select-Object -ExpandProperty Status", cancellationToken).ConfigureAwait(false);
-        var policy = await _queryService.InvokeAsync("$p='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; if(Test-Path $p){Get-ItemProperty -Path $p | Select-Object DeferFeatureUpdatesPeriodInDays, DeferQualityUpdatesPeriodInDays | ConvertTo-Json -Compress}else{'{}'}", cancellationToken).ConfigureAwait(false);
+        var service = await _queryService.InvokeAsync("Get-Service wuauserv | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
+        var bits = await _queryService.InvokeAsync("Get-Service bits | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
+        var policy = await _queryService.InvokeAsync("$p='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; if(Test-Path $p){Get-ItemProperty -Path $p | Select-Object DeferFeatureUpdatesPeriodInDays, DeferQualityUpdatesPeriodInDays | ConvertTo-Json -Compress}else{'{}'}", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
 
         ServiceStatus = $"wuauserv: {service.Stdout.Trim()} | BITS: {bits.Stdout.Trim()}";
         PolicySummary = string.IsNullOrWhiteSpace(policy.Stdout) ? "No explicit policy" : policy.Stdout.Trim();
