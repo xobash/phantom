@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Text;
 using System.Windows;
 using Phantom.Commands;
 using Phantom.Services;
@@ -55,48 +54,40 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
 
     private async Task<string> BuildAboutFromReadmeAsync(CancellationToken cancellationToken)
     {
-        var readmePath = ResolveReadmePath();
-        if (readmePath is null)
-        {
-            return "Phantom\nPortable admin-only utility\nAll changes are executed by PowerShell operations\nOffline-first safety enforced.";
-        }
+        await Task.CompletedTask;
+        return """
+# Phantom
 
-        var markdown = await File.ReadAllTextAsync(readmePath, cancellationToken).ConfigureAwait(false);
-        var excludedHeadings = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "## Quick Start",
-            "## Building (Windows)",
-            "## Running"
-        };
+A portable, self-contained Windows admin utility built with WPF and .NET 8. Phantom provides a unified interface for system monitoring, tweaks, app management, Windows Update control, and automation — all from a single elevated window with a persistent in-app console.
 
-        var sb = new StringBuilder();
-        var skipSection = false;
 
-        foreach (var line in markdown.Split('\n'))
-        {
-            if (line.StartsWith("## ", StringComparison.Ordinal))
-            {
-                skipSection = excludedHeadings.Contains(line.Trim());
-            }
+## Local Data
 
-            if (!skipSection)
-            {
-                sb.AppendLine(line.TrimEnd('\r'));
-            }
-        }
+All data is stored relative to the executable. Nothing leaves the machine.
 
-        return sb.ToString().Trim();
-    }
+| Path | Contents |
+|---|---|
+| `./data/settings.json` | UI and behavior preferences |
+| `./data/state.json` | Undo state for applied tweaks |
+| `./data/telemetry-local.json` | Local stats (space cleaned, first-run date, network baselines) |
+| `./logs/` | Rolling session logs |
 
-    private string? ResolveReadmePath()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(_paths.BaseDirectory, "README.md"),
-            Path.Combine(Directory.GetParent(_paths.BaseDirectory)?.FullName ?? string.Empty, "README.md")
-        };
+---
 
-        return candidates.FirstOrDefault(File.Exists);
+## Offline Behavior
+
+Operations that require network access (`RequiresNetwork: true`) are blocked before execution if the machine is offline, with a clear error message in the console. No silent failures.
+
+---
+
+
+## Security Notes
+
+- Phantom requires and verifies administrator elevation on startup — it will not auto-elevate.
+- All PowerShell scripts run in-process via the official `Microsoft.PowerShell.SDK`; no `powershell.exe` child processes are spawned for core operations.
+- No network calls are made automatically. The only outbound URLs in the codebase are the official winget installer (`aka.ms/getwinget`) and the Chocolatey install script (`community.chocolatey.org/install.ps1`), both triggered only by explicit user action.
+- Dangerous operations require both the Settings toggle and an in-prompt confirmation.
+""";
     }
 
     private async Task RefreshLogsAsync(CancellationToken cancellationToken)
