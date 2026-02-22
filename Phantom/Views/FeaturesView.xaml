@@ -35,6 +35,15 @@
             <Setter Property="MinWidth" Value="72"/>
         </Style>
 
+        <Style x:Key="FeatureInfoChipStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
+        </Style>
+
         <Style x:Key="ChevronToggleStyle" TargetType="ToggleButton">
             <Setter Property="Width" Value="34"/>
             <Setter Property="Height" Value="30"/>
@@ -331,7 +340,41 @@
                             <DataGridTextColumn Header="Feature" Binding="{Binding Name}" Width="240"/>
                             <DataGridTextColumn Header="FeatureName" Binding="{Binding FeatureName}" Width="280"/>
                             <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="150"/>
+                            <DataGridTemplateColumn Header="Info" Width="62">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource FeatureInfoChipStyle}"
+                                                Cursor="Help"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                ToolTipService.ShowDuration="60000"
+                                                ToolTipService.InitialShowDelay="120">
+                                            <Border.ToolTip>
+                                                <ToolTip Background="{DynamicResource DarkCard2Brush}"
+                                                         Foreground="{DynamicResource DarkTextBrush}"
+                                                         BorderBrush="{DynamicResource DarkBorderBrush}"
+                                                         BorderThickness="1"
+                                                         MaxWidth="520"
+                                                         Placement="Mouse">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                                                        <TextBlock Text="{Binding Description}" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource DarkTextBrush}"/>
+                                                        <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}">
+                                                            <Run Text="FeatureName: "/>
+                                                            <Run Text="{Binding FeatureName}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Foreground="{DynamicResource MutedTextBrush}">
+                                                            <Run Text="Current state: "/>
+                                                            <Run Text="{Binding Status}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </ToolTip>
+                                            </Border.ToolTip>
+                                            <TextBlock Text="i" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </StackPanel>

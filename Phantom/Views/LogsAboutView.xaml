@@ -20,13 +20,14 @@
 
                 <StackPanel Grid.Row="0">
                     <TextBlock Text="About (README excerpt)" FontWeight="SemiBold" FontSize="18" Foreground="{DynamicResource DarkTextBrush}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding AboutLogo}"
-                               FontFamily="Consolas"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               Foreground="#A55DFF"
-                               TextWrapping="NoWrap"
-                               Margin="0,0,0,10"/>
+                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Height="92" Margin="0,0,0,10">
+                        <TextBlock Text="{Binding AboutLogo}"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="#A55DFF"
+                                   TextWrapping="NoWrap"/>
+                    </Viewbox>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="300" Margin="0,0,0,10">
                         <TextBlock Text="{Binding AboutText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" />
                     </ScrollViewer>
