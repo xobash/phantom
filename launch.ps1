@@ -29,6 +29,66 @@ function Try-GetCommand([string]$name) {
     }
 }
 
+function Stop-RunningPhantomFromAppDir([string]$appPath) {
+    if (-not (Test-Path $appPath)) {
+        return
+    }
+
+    $normalizedAppPath = [System.IO.Path]::GetFullPath($appPath).TrimEnd('\')
+    $stopped = 0
+
+    try {
+        $processes = Get-CimInstance Win32_Process -Filter "Name='Phantom.exe'" -ErrorAction Stop
+        foreach ($proc in $processes) {
+            if ([string]::IsNullOrWhiteSpace($proc.ExecutablePath)) {
+                continue
+            }
+
+            $exePath = [System.IO.Path]::GetFullPath($proc.ExecutablePath)
+            if (-not $exePath.StartsWith($normalizedAppPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            try {
+                Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                $stopped++
+                Write-Host "   Stopped running Phantom instance (PID $($proc.ProcessId))." -ForegroundColor Yellow
+            } catch {
+                Write-Host "   Could not stop Phantom PID $($proc.ProcessId): $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        Write-Host "   Could not enumerate running Phantom processes: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    if ($stopped -gt 0) {
+        Start-Sleep -Milliseconds 700
+    }
+}
+
+function Remove-DirectoryWithRetry([string]$path, [int]$maxAttempts = 8, [int]$delayMs = 600) {
+    if (-not (Test-Path $path)) {
+        return $true
+    }
+
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            Remove-Item $path -Recurse -Force -ErrorAction Stop
+            return $true
+        } catch {
+            if ($attempt -ge $maxAttempts) {
+                Write-Fail "Failed to remove '$path': $($_.Exception.Message)"
+                return $false
+            }
+
+            Write-Host "   Waiting for lock release ($attempt/$maxAttempts): $($_.Exception.Message)" -ForegroundColor Yellow
+            Start-Sleep -Milliseconds $delayMs
+        }
+    }
+
+    return $false
+}
+
 function Stop-LaunchTranscript {
     if (-not $script:TranscriptStarted) {
         return
@@ -149,7 +209,11 @@ Write-OK "Downloaded."
 # ── Extract ────────────────────────────────────────────────────────────────────
 Write-Step "Extracting..."
 
-if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force }
+if (-not (Remove-DirectoryWithRetry $BuildDir)) {
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
+    return
+}
 Expand-Archive -Path $zip -DestinationPath $BuildDir -Force
 Remove-Item $zip
 
@@ -176,7 +240,13 @@ if (-not (Test-Path $project)) {
     return
 }
 
-if (Test-Path $AppDir) { Remove-Item $AppDir -Recurse -Force }
+Stop-RunningPhantomFromAppDir $AppDir
+if (-not (Remove-DirectoryWithRetry $AppDir)) {
+    Write-Fail "Phantom appears to still be running from '$AppDir'. Close Phantom and run launch.ps1 again."
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
+    return
+}
 
 dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $AppDir
 
