@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
 using Phantom.Services;
@@ -29,7 +31,19 @@ public partial class App : Application
             if (!AdminGuard.IsAdministrator())
             {
                 WriteEmergencyStartupTrace("Administrator check failed.");
-                MessageBox.Show("Phantom requires Administrator privileges. Relaunch from an elevated session.", "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
+                if (TryRelaunchElevated(e.Args ?? Array.Empty<string>(), out var relaunchMessage))
+                {
+                    WriteEmergencyStartupTrace("Elevation relaunch started successfully.");
+                    Shutdown(0);
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(relaunchMessage))
+                {
+                    WriteEmergencyStartupTrace($"Elevation relaunch failed: {relaunchMessage}");
+                }
+
+                MessageBox.Show("Phantom requires Administrator privileges. Please approve the elevation prompt and relaunch.", "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(10);
                 return;
             }
@@ -161,6 +175,58 @@ public partial class App : Application
         catch
         {
         }
+    }
+
+    private static bool TryRelaunchElevated(string[] args, out string message)
+    {
+        message = string.Empty;
+
+        try
+        {
+            var fileName = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                message = "Unable to resolve current executable path.";
+                return false;
+            }
+
+            var quotedArgs = string.Join(" ", args.Select(QuoteArgument));
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = quotedArgs,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            Process.Start(psi);
+            return true;
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            message = "Elevation prompt was cancelled.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            return false;
+        }
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "\"\"";
+        }
+
+        if (!value.Contains(' ') && !value.Contains('"'))
+        {
+            return value;
+        }
+
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
     private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous)

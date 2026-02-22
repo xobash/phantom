@@ -24,8 +24,8 @@ public sealed class AppBootstrap
 
         Network = new NetworkGuardService();
         Query = new PowerShellQueryService(Console, Log);
-        Runner = new PowerShellRunner(Console, Log);
-        Operations = new OperationEngine(Runner, UndoStore, Network, Console, Log);
+        Runner = new PowerShellRunner(Console, Log, Paths, () => SettingsProvider.Current);
+        Operations = new OperationEngine(Runner, UndoStore, Network, Console, Log, () => SettingsProvider.Current);
         Definitions = new DefinitionCatalogService(Paths);
         Prompt = new UserPromptService();
         ExecutionCoordinator = new ExecutionCoordinator();
