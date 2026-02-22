@@ -13,16 +13,22 @@ public sealed class PowerShellQueryService
         _log = log;
     }
 
-    public async Task<(int ExitCode, string Stdout, string Stderr)> InvokeAsync(string script, CancellationToken cancellationToken)
+    public async Task<(int ExitCode, string Stdout, string Stderr)> InvokeAsync(string script, CancellationToken cancellationToken, bool echoToConsole = true)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        _console.Publish("Query", script);
+        if (echoToConsole)
+        {
+            _console.Publish("Query", script);
+        }
         await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length}", cancellationToken).ConfigureAwait(false);
 
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
             const string notWindows = "Not running on Windows.";
-            _console.Publish("Error", notWindows);
+            if (echoToConsole)
+            {
+                _console.Publish("Error", notWindows);
+            }
             await _log.WriteAsync("Error", notWindows, cancellationToken).ConfigureAwait(false);
             return (1, string.Empty, "Not running on Windows.");
         }
@@ -41,7 +47,10 @@ public sealed class PowerShellQueryService
         if (process is null)
         {
             const string failedStart = "Failed to start powershell.exe";
-            _console.Publish("Error", failedStart);
+            if (echoToConsole)
+            {
+                _console.Publish("Error", failedStart);
+            }
             await _log.WriteAsync("Error", failedStart, cancellationToken).ConfigureAwait(false);
             return (1, string.Empty, "Failed to start powershell.exe");
         }
@@ -53,14 +62,17 @@ public sealed class PowerShellQueryService
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 
-        foreach (var line in SplitLines(stdout))
+        if (echoToConsole)
         {
-            _console.Publish("Output", line);
-        }
+            foreach (var line in SplitLines(stdout))
+            {
+                _console.Publish("Output", line);
+            }
 
-        foreach (var line in SplitLines(stderr))
-        {
-            _console.Publish("Error", line);
+            foreach (var line in SplitLines(stderr))
+            {
+                _console.Publish("Error", line);
+            }
         }
 
         var elapsedMilliseconds = (long)((Stopwatch.GetTimestamp() - startedAt) * 1000d / Stopwatch.Frequency);

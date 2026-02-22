@@ -216,7 +216,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
                 continue;
             }
 
-            var result = await _queryService.InvokeAsync(tweak.DetectScript, cancellationToken).ConfigureAwait(false);
+            var result = await _queryService.InvokeAsync(tweak.DetectScript, cancellationToken, echoToConsole: false).ConfigureAwait(false);
             var output = (result.Stdout + "\n" + result.Stderr).Trim();
 
             if (result.ExitCode == 0)
@@ -226,6 +226,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             }
             else
             {
+                if (DetectMissingSettingState(output))
+                {
+                    updates.Add((tweak.Id, "Not Applied", false));
+                    continue;
+                }
+
                 var status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
                 updates.Add((tweak.Id, status, false));
                 _console.Publish("Error", $"{tweak.Name}: {output}");
@@ -490,6 +496,20 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             || message.Contains("managed", StringComparison.OrdinalIgnoreCase)
             || message.Contains("restricted", StringComparison.OrdinalIgnoreCase)
             || message.Contains("mdm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool DetectMissingSettingState(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        return message.Contains("does not exist at path", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot find path", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot find registry key", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot find property", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("itemnotfoundexception", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsAppliedStatus(string status)
