@@ -52,11 +52,11 @@ public sealed class HomeDataService
         return snapshot;
     }
 
-    public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, string Uptime, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
+    public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, long UptimeSeconds, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0, 0, "00:00:00", "↑ 0 B/s ↓ 0 B/s\n0 B");
+            return (0, 0, 0, 0, "↑ 0 B/s ↓ 0 B/s\n0 B");
         }
 
         const string script = @"
@@ -65,15 +65,26 @@ $os = Get-CimInstance Win32_OperatingSystem
 $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
 $gpu = 0
 try {
-  $gpuSamples = (Get-Counter '\GPU Engine(*engtype_3D)\Utilization Percentage' -ErrorAction Stop).CounterSamples
-  if ($gpuSamples) {
-    $gpu = ($gpuSamples | Measure-Object -Property CookedValue -Average).Average
+  $gpuEngines = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object {
+    $_.Name -match 'engtype_3D' -or $_.Name -match 'engtype_Compute'
+  }
+  if ($gpuEngines) {
+    $gpu = ($gpuEngines | Measure-Object -Property UtilizationPercentage -Average).Average
   }
 } catch {
+  $gpu = 0
+}
+if ($gpu -le 0) {
   try {
-    $fallback = (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples
-    if ($fallback) {
-      $gpu = [math]::Min(100, ($fallback | Measure-Object -Property CookedValue -Sum).Sum)
+    $counterSamples = (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples
+    $values = @($counterSamples | Select-Object -ExpandProperty CookedValue)
+    if ($values.Count -gt 0) {
+      $nonZero = @($values | Where-Object { $_ -gt 0 })
+      if ($nonZero.Count -gt 0) {
+        $gpu = ($nonZero | Measure-Object -Average).Average
+      } else {
+        $gpu = ($values | Measure-Object -Average).Average
+      }
     }
   } catch {
     $gpu = 0
@@ -84,14 +95,14 @@ $uptime = (Get-Date) - $os.LastBootUpTime
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)
   MemoryUsage = [math]::Round($memoryPct, 2)
-  GpuUsage = [math]::Round($gpu, 2)
-  Uptime = ([string]::Format('{0:00}:{1:00}:{2:00}', [int]$uptime.TotalHours, $uptime.Minutes, $uptime.Seconds))
+  GpuUsage = [math]::Round([math]::Min([math]::Max($gpu, 0), 100), 2)
+  UptimeSeconds = [int64][math]::Floor($uptime.TotalSeconds)
 } | ConvertTo-Json -Compress";
 
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
-            return (0, 0, 0, "00:00:00", BuildNetworkDisplay(0, 0, 0));
+            return (0, 0, 0, 0, BuildNetworkDisplay(0, 0, 0));
         }
 
         try
@@ -100,14 +111,16 @@ $uptime = (Get-Date) - $os.LastBootUpTime
             var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
             var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
             var gpu = doc.RootElement.TryGetProperty("GpuUsage", out var gpuProperty) ? gpuProperty.GetDouble() : 0;
-            var uptime = doc.RootElement.TryGetProperty("Uptime", out var uptimeProperty) ? uptimeProperty.GetString() ?? "00:00:00" : "00:00:00";
+            var uptimeSeconds = doc.RootElement.TryGetProperty("UptimeSeconds", out var uptimeProperty)
+                ? uptimeProperty.GetInt64()
+                : 0;
             var network = ComputeNetworkSnapshot(_telemetry ?? new TelemetryState());
-            return (cpu, memory, gpu, uptime, BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred));
+            return (cpu, memory, gpu, uptimeSeconds, BuildNetworkDisplay(network.UploadSpeed, network.DownloadSpeed, network.TotalTransferred));
         }
         catch (Exception ex)
         {
             _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
-            return (0, 0, 0, "00:00:00", BuildNetworkDisplay(0, 0, 0));
+            return (0, 0, 0, 0, BuildNetworkDisplay(0, 0, 0));
         }
     }
 
@@ -262,7 +275,19 @@ catch {
         sb.AppendLine("$services = Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running'} | Select-Object Name, DisplayName, StartMode, State");
         sb.AppendLine("$cpuCtr = (Get-Counter '\\Processor(_Total)\\% Processor Time').CounterSamples.CookedValue");
         sb.AppendLine("$gpuCtr = 0");
-        sb.AppendLine("try { $gpuSamples = (Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($gpuSamples) { $gpuCtr = ($gpuSamples | Measure-Object -Property CookedValue -Average).Average } } catch { try { $fallback = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($fallback) { $gpuCtr = [math]::Min(100, ($fallback | Measure-Object -Property CookedValue -Sum).Sum) } } catch { $gpuCtr = 0 } }");
+        sb.AppendLine("try {");
+        sb.AppendLine("  $gpuEngines = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object { $_.Name -match 'engtype_3D' -or $_.Name -match 'engtype_Compute' }");
+        sb.AppendLine("  if ($gpuEngines) { $gpuCtr = ($gpuEngines | Measure-Object -Property UtilizationPercentage -Average).Average }");
+        sb.AppendLine("} catch { $gpuCtr = 0 }");
+        sb.AppendLine("if ($gpuCtr -le 0) {");
+        sb.AppendLine("  try {");
+        sb.AppendLine("    $samples = @((Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples | Select-Object -ExpandProperty CookedValue)");
+        sb.AppendLine("    if ($samples.Count -gt 0) {");
+        sb.AppendLine("      $nonZero = @($samples | Where-Object { $_ -gt 0 })");
+        sb.AppendLine("      if ($nonZero.Count -gt 0) { $gpuCtr = ($nonZero | Measure-Object -Average).Average } else { $gpuCtr = ($samples | Measure-Object -Average).Average }");
+        sb.AppendLine("    }");
+        sb.AppendLine("  } catch { $gpuCtr = 0 }");
+        sb.AppendLine("}");
         sb.AppendLine("$memoryPct = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 2)");
         sb.AppendLine("$uptime = (Get-Date) - $os.LastBootUpTime");
         sb.AppendLine("$obj = [PSCustomObject]@{");
@@ -279,7 +304,7 @@ catch {
         sb.AppendLine(" ProcessesCount = (Get-Process).Count");
         sb.AppendLine(" ServicesCount = $services.Count");
         sb.AppendLine(" CpuUsage = [math]::Round($cpuCtr,2)");
-        sb.AppendLine(" GpuUsage = [math]::Round($gpuCtr,2)");
+        sb.AppendLine(" GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr,0),100),2)");
         sb.AppendLine(" MemoryUsage = $memoryPct");
         sb.AppendLine(" Apps = @($apps | ForEach-Object { [PSCustomObject]@{ Name = $_.DisplayName; Version = $_.DisplayVersion; Publisher = $_.Publisher } })");
         sb.AppendLine(" Processes = @($procs | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Id = $_.Id; Cpu = $_.CPU; MemoryMb = $_.MemoryMb } })");

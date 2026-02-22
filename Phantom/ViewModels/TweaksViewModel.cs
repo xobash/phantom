@@ -130,6 +130,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             if (string.IsNullOrWhiteSpace(tweak.DetectScript))
             {
                 tweak.Status = "Unknown";
+                tweak.Selected = false;
                 continue;
             }
 
@@ -139,14 +140,17 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             if (result.ExitCode == 0)
             {
                 tweak.Status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
+                tweak.Selected = IsAppliedStatus(tweak.Status);
             }
             else
             {
                 tweak.Status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
+                tweak.Selected = false;
                 _console.Publish("Error", $"{tweak.Name}: {output}");
             }
         }
 
+        TweaksView.Refresh();
         Notify(nameof(Tweaks));
     }
 
@@ -356,5 +360,45 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             || message.Contains("managed", StringComparison.OrdinalIgnoreCase)
             || message.Contains("restricted", StringComparison.OrdinalIgnoreCase)
             || message.Contains("mdm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAppliedStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        var normalized = status.Trim();
+        if (normalized.Equals("Applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Detected", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Installed", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.Equals("Not Applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Not Installed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Managed / Restricted", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (normalized.Contains("not applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("not installed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("managed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("restricted", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("installed", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
     }
 }
