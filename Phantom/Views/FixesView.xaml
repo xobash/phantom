@@ -23,9 +23,13 @@
         </Border>
 
         <Border Grid.Row="1" Style="{StaticResource DarkCardStyle}">
-            <DockPanel>
-                <TextBlock Text="Fixes" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
-                <DataGrid ItemsSource="{Binding FixesView}" AutoGenerateColumns="False"
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="Fixes" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
+                <DataGrid Grid.Row="1" ItemsSource="{Binding FixesView}" AutoGenerateColumns="False"
                           Style="{StaticResource DarkDataGridStyle}"
                           VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                           ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
@@ -37,13 +41,17 @@
                         <DataGridCheckBoxColumn Header="Rev" Binding="{Binding Reversible}" Width="52"/>
                     </DataGrid.Columns>
                 </DataGrid>
-            </DockPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Row="2" Style="{StaticResource DarkCardStyle}">
-            <DockPanel>
-                <TextBlock Text="Legacy Panels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
-                <DataGrid ItemsSource="{Binding LegacyPanelsView}" AutoGenerateColumns="False"
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="Legacy Panels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource DarkTextBrush}"/>
+                <DataGrid Grid.Row="1" ItemsSource="{Binding LegacyPanelsView}" AutoGenerateColumns="False"
                           Style="{StaticResource DarkDataGridStyle}"
                           VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                           ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
@@ -62,7 +70,7 @@
                         </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
-            </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

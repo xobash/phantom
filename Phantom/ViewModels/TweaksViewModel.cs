@@ -12,6 +12,49 @@ namespace Phantom.ViewModels;
 
 public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
 {
+    private static readonly IReadOnlyDictionary<string, (string Title, string Description)> SectionMetadata =
+        new Dictionary<string, (string Title, string Description)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["desktop"] = ("Desktop", "Desktop and shell appearance behavior."),
+            ["startmenu"] = ("Start menu", "Search, suggestions, and start menu behavior."),
+            ["fileexplorer"] = ("File Explorer", "Explorer visibility and interaction options."),
+            ["privacy"] = ("Privacy", "Telemetry, background activity, and data sharing options."),
+            ["ads"] = ("Ads", "Recommendations, tips, and promotional content options."),
+            ["system"] = ("System", "Performance, power, and core platform behavior."),
+            ["superuser"] = ("Superuser", "Advanced tweaks that may carry operational risk.")
+        };
+
+    private static readonly string[] SectionOrder =
+    [
+        "desktop",
+        "startmenu",
+        "fileexplorer",
+        "privacy",
+        "ads",
+        "system",
+        "superuser"
+    ];
+
+    private static readonly IReadOnlyDictionary<string, string> TweakSectionById =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["show-file-extensions"] = "fileexplorer",
+            ["show-hidden-files"] = "fileexplorer",
+            ["disable-web-search"] = "startmenu",
+            ["disable-telemetry"] = "privacy",
+            ["disable-background-apps"] = "privacy",
+            ["disable-delivery-optimization"] = "privacy",
+            ["disable-copilot"] = "privacy",
+            ["disable-consumer-features"] = "ads",
+            ["disable-windows-tips"] = "ads",
+            ["disable-gamedvr"] = "system",
+            ["high-performance-plan"] = "system",
+            ["disable-hibernation"] = "system",
+            ["disable-smb1"] = "superuser",
+            ["remove-onedrive"] = "superuser",
+            ["remove-edge"] = "superuser"
+        };
+
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
@@ -19,6 +62,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
     private readonly ConsoleStreamService _console;
     private readonly PowerShellQueryService _queryService;
     private readonly Func<AppSettings> _settingsAccessor;
+    private readonly SemaphoreSlim _toggleApplyLock = new(1, 1);
+    private readonly Dictionary<string, bool> _sectionExpansionState = new(StringComparer.OrdinalIgnoreCase);
 
     private string _search = string.Empty;
     private bool _dryRun;
@@ -41,6 +86,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         _settingsAccessor = settingsAccessor;
 
         Tweaks = new ObservableCollection<TweakDefinition>();
+        Sections = new ObservableCollection<TweakSection>();
+
         TweaksView = CollectionViewSource.GetDefaultView(Tweaks);
         TweaksView.Filter = FilterTweaks;
 
@@ -55,7 +102,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             {
                 tweak.Selected = false;
             }
-            Notify(nameof(Tweaks));
+
+            RefreshTweaksView();
         });
 
         ExportSelectionCommand = new AsyncRelayCommand(ExportSelectionAsync);
@@ -65,6 +113,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
     public string Title => "Tweaks";
 
     public ObservableCollection<TweakDefinition> Tweaks { get; }
+    public ObservableCollection<TweakSection> Sections { get; }
     public ICollectionView TweaksView { get; }
 
     public AsyncRelayCommand RefreshStatusCommand { get; }
@@ -83,7 +132,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         {
             if (SetProperty(ref _search, value))
             {
-                TweaksView.Refresh();
+                RefreshTweaksView();
             }
         }
     }
@@ -106,11 +155,42 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
                 {
                     continue;
                 }
+
+                tweak.Scope = string.IsNullOrWhiteSpace(tweak.Scope) ? "System" : tweak.Scope;
                 Tweaks.Add(tweak);
             }
         });
 
+        RefreshTweaksView();
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public void ApplyToggleFromUi(TweakDefinition? tweak, bool enabled)
+    {
+        if (tweak is null)
+        {
+            return;
+        }
+
+        _ = ApplyToggleFromUiAsync(tweak, enabled);
+    }
+
+    private async Task ApplyToggleFromUiAsync(TweakDefinition tweak, bool enabled)
+    {
+        await _toggleApplyLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            tweak.Status = enabled ? "Applying..." : "Undoing...";
+            RefreshTweaksView();
+
+            var operation = BuildApplyOperation(tweak);
+            await RunOperationsAsync([operation], undo: !enabled, CancellationToken.None).ConfigureAwait(false);
+            await RefreshStatusAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _toggleApplyLock.Release();
+        }
     }
 
     private void ApplyPreset(RiskTier maxRisk)
@@ -120,16 +200,19 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             tweak.Selected = tweak.RiskTier <= maxRisk;
         }
 
-        Notify(nameof(Tweaks));
+        RefreshTweaksView();
     }
 
     private async Task RefreshStatusAsync(CancellationToken cancellationToken)
     {
-        foreach (var tweak in Tweaks)
+        var tweakRows = await Application.Current.Dispatcher.InvokeAsync(() => Tweaks.ToList());
+        var updates = new List<(string Id, string Status, bool Selected)>(tweakRows.Count);
+
+        foreach (var tweak in tweakRows)
         {
             if (string.IsNullOrWhiteSpace(tweak.DetectScript))
             {
-                tweak.Status = "Unknown";
+                updates.Add((tweak.Id, "Unknown", false));
                 continue;
             }
 
@@ -138,16 +221,33 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
 
             if (result.ExitCode == 0)
             {
-                tweak.Status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
+                var status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
+                updates.Add((tweak.Id, status, IsAppliedStatus(status)));
             }
             else
             {
-                tweak.Status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
+                var status = DetectManagedRestriction(output) ? "Managed / Restricted" : "Error";
+                updates.Add((tweak.Id, status, false));
                 _console.Publish("Error", $"{tweak.Name}: {output}");
             }
         }
 
-        Notify(nameof(Tweaks));
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var update in updates)
+            {
+                var tweak = Tweaks.FirstOrDefault(x => string.Equals(x.Id, update.Id, StringComparison.OrdinalIgnoreCase));
+                if (tweak is null)
+                {
+                    continue;
+                }
+
+                tweak.Status = update.Status;
+                tweak.Selected = update.Selected;
+            }
+
+            RefreshTweaksView();
+        });
     }
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
@@ -180,6 +280,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
 
     private async Task RunOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool undo, CancellationToken externalToken)
     {
+        if (operations.Count == 0)
+        {
+            return;
+        }
+
         CancellationToken token;
         try
         {
@@ -212,15 +317,30 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
                 ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
             }, linked.Token).ConfigureAwait(false);
 
+            var statusUpdates = new List<(string Id, string Status)>();
             foreach (var op in batch.Results)
             {
                 _console.Publish(op.Success ? "Info" : "Error", $"{op.OperationId}: {op.Message}");
-                var tweak = Tweaks.FirstOrDefault(x => x.Id == op.OperationId.Replace("tweak.", string.Empty, StringComparison.OrdinalIgnoreCase));
-                if (tweak is not null)
-                {
-                    tweak.Status = op.Success ? (undo ? "Undone" : "Applied") : (DetectManagedRestriction(op.Message) ? "Managed / Restricted" : "Failed");
-                }
+                var tweakId = op.OperationId.Replace("tweak.", string.Empty, StringComparison.OrdinalIgnoreCase);
+                var status = op.Success ? (undo ? "Undone" : "Applied") : (DetectManagedRestriction(op.Message) ? "Managed / Restricted" : "Failed");
+                statusUpdates.Add((tweakId, status));
             }
+
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                foreach (var update in statusUpdates)
+                {
+                    var tweak = Tweaks.FirstOrDefault(x => string.Equals(x.Id, update.Id, StringComparison.OrdinalIgnoreCase));
+                    if (tweak is null)
+                    {
+                        continue;
+                    }
+
+                    tweak.Status = update.Status;
+                }
+
+                RefreshTweaksView();
+            });
         }
         catch (OperationCanceledException)
         {
@@ -280,7 +400,18 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         }
 
         var escaped = key.Replace("'", "''");
-        return $"$p='{escaped}'; if (Test-Path $p) {{ Get-ItemProperty -Path $p | ConvertTo-Json -Depth 6 -Compress }} else {{ '' }}";
+        return "$WarningPreference='SilentlyContinue'; " +
+               $"$p='{escaped}'; " +
+               "if (Test-Path $p) { " +
+               "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
+               "$out = [ordered]@{}; " +
+               "foreach ($prop in $item.PSObject.Properties) { " +
+               "if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }; " +
+               "$value = $prop.Value; " +
+               "if ($value -is [byte[]]) { $out[$prop.Name] = [Convert]::ToBase64String($value) } else { $out[$prop.Name] = $value } " +
+               "}; " +
+               "$out | ConvertTo-Json -Depth 8 -Compress " +
+               "} else { '' }";
     }
 
     private bool FilterTweaks(object obj)
@@ -295,9 +426,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             return true;
         }
 
+        var section = ResolveSectionKey(tweak);
+        var sectionTitle = SectionMetadata.TryGetValue(section, out var meta) ? meta.Title : section;
         return tweak.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                tweak.Description.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
-               tweak.Scope.Contains(Search, StringComparison.OrdinalIgnoreCase);
+               tweak.Scope.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+               sectionTitle.Contains(Search, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ExportSelectionAsync(CancellationToken cancellationToken)
@@ -340,7 +474,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             tweak.Selected = set.Contains(tweak.Id);
         }
 
-        Notify(nameof(Tweaks));
+        RefreshTweaksView();
         _console.Publish("Info", $"Selection imported: {dialog.FileName}");
     }
 
@@ -356,5 +490,163 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             || message.Contains("managed", StringComparison.OrdinalIgnoreCase)
             || message.Contains("restricted", StringComparison.OrdinalIgnoreCase)
             || message.Contains("mdm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAppliedStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        var normalized = status.Trim();
+        if (normalized.Equals("Applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Detected", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Installed", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.Equals("Not Applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Not Installed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Managed / Restricted", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (normalized.Contains("not applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("not installed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("managed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("restricted", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("installed", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveSectionKey(TweakDefinition tweak)
+    {
+        if (TweakSectionById.TryGetValue(tweak.Id, out var mapped))
+        {
+            return mapped;
+        }
+
+        if (tweak.Destructive || tweak.RiskTier == RiskTier.Dangerous)
+        {
+            return "superuser";
+        }
+
+        return tweak.Scope.Equals("HKCU", StringComparison.OrdinalIgnoreCase)
+            ? "desktop"
+            : "system";
+    }
+
+    private void RebuildSections()
+    {
+        foreach (var section in Sections)
+        {
+            _sectionExpansionState[section.Key] = section.IsExpanded;
+        }
+
+        Sections.Clear();
+        var filtered = Tweaks.Where(t => FilterTweaks(t)).ToList();
+        if (filtered.Count == 0)
+        {
+            Notify(nameof(Sections));
+            return;
+        }
+
+        var bySection = filtered
+            .GroupBy(ResolveSectionKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var addedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in SectionOrder)
+        {
+            if (!bySection.TryGetValue(key, out var tweaksForSection) || tweaksForSection.Count == 0)
+            {
+                continue;
+            }
+
+            var meta = SectionMetadata.TryGetValue(key, out var value)
+                ? value
+                : (Title: key, Description: "Tweaks");
+            var expanded = _sectionExpansionState.TryGetValue(key, out var savedExpanded)
+                ? savedExpanded
+                : Sections.Count == 0;
+
+            Sections.Add(new TweakSection(key, meta.Title, meta.Description, tweaksForSection, expanded));
+            addedKeys.Add(key);
+        }
+
+        foreach (var pair in bySection.Where(x => !addedKeys.Contains(x.Key)))
+        {
+            var meta = SectionMetadata.TryGetValue(pair.Key, out var value)
+                ? value
+                : (Title: pair.Key, Description: "Tweaks");
+            var expanded = _sectionExpansionState.TryGetValue(pair.Key, out var savedExpanded) && savedExpanded;
+            Sections.Add(new TweakSection(pair.Key, meta.Title, meta.Description, pair.Value, expanded));
+        }
+
+        Notify(nameof(Sections));
+    }
+
+    private void RefreshTweaksView()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            Notify(nameof(Tweaks));
+            Notify(nameof(Sections));
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            TweaksView.Refresh();
+            RebuildSections();
+            Notify(nameof(Tweaks));
+            return;
+        }
+
+        dispatcher.Invoke(() =>
+        {
+            TweaksView.Refresh();
+            RebuildSections();
+            Notify(nameof(Tweaks));
+        });
+    }
+
+    public sealed class TweakSection : ObservableObject
+    {
+        private bool _isExpanded;
+
+        public TweakSection(string key, string title, string description, IEnumerable<TweakDefinition> tweaks, bool isExpanded)
+        {
+            Key = key;
+            Title = title;
+            Description = description;
+            Tweaks = new ObservableCollection<TweakDefinition>(tweaks);
+            _isExpanded = isExpanded;
+        }
+
+        public string Key { get; }
+        public string Title { get; }
+        public string Description { get; }
+        public ObservableCollection<TweakDefinition> Tweaks { get; }
+
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set => SetProperty(ref _isExpanded, value);
+        }
     }
 }

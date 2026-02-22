@@ -14,7 +14,6 @@
         <StackPanel Orientation="Horizontal" Margin="4">
             <TextBlock Text="Home Dashboard" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,12,0"/>
             <Button Content="Refresh" Margin="4" Command="{Binding RefreshCommand}"/>
-            <Button Content="Run WinSAT" Margin="4" Command="{Binding RunWinsatCommand}"/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -28,10 +27,43 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Style="{StaticResource DarkCardStyle}" ToolTip="{Binding Tooltip}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="{Binding Value}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Grid.Row="0" LastChildFill="False">
+                                        <Button DockPanel.Dock="Right"
+                                                Width="32"
+                                                Height="32"
+                                                Padding="0"
+                                                Margin="8,0,0,0"
+                                                Command="{Binding DataContext.RunWinsatCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                ToolTip="Run Windows Experience Index benchmark (WinSAT)">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Title}" Value="Performance">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <Viewbox Width="16" Height="16" Stretch="Uniform">
+                                                <Path Stroke="{DynamicResource DarkTextBrush}"
+                                                      StrokeThickness="1.8"
+                                                      Fill="Transparent"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      Data="M12,2 C8.8,5.3 7.8,8.1 7.8,10.5 C7.8,13.4 9.8,15.5 12.3,15.5 C14.8,15.5 16.8,13.4 16.8,10.5 C16.8,8.2 15.6,5.4 12,2 Z M12.3,8.1 C11.1,9.3 10.8,10.3 10.8,11.3 C10.8,12.4 11.6,13.2 12.3,13.2 C13,13.2 13.8,12.4 13.8,11.3 C13.8,10.3 13.5,9.3 12.3,8.1 Z"/>
+                                            </Viewbox>
+                                        </Button>
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <TextBlock Grid.Row="1" Text="{Binding Value}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -46,70 +78,25 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Style="{StaticResource DarkCardStyle}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
-                                    <TextBlock Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0"/>
-                                </StackPanel>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
+                                    <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <Grid Margin="4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" Style="{StaticResource DarkCardStyle}">
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Top" Text="Installed Apps" FontWeight="SemiBold"/>
-                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding AppSearch, UpdateSourceTrigger=PropertyChanged}"/>
-                            <DataGrid ItemsSource="{Binding AppsView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
-                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
-                                    <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="100"/>
-                                    <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}" Width="140"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </DockPanel>
-                    </Border>
-
-                    <Border Grid.Column="1" Style="{StaticResource DarkCardStyle}">
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Top" Text="Processes" FontWeight="SemiBold"/>
-                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding ProcessSearch, UpdateSourceTrigger=PropertyChanged}"/>
-                            <DataGrid ItemsSource="{Binding ProcessesView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
-                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
-                                    <DataGridTextColumn Header="CPU" Binding="{Binding Cpu}" Width="80"/>
-                                    <DataGridTextColumn Header="RAM MB" Binding="{Binding MemoryMb}" Width="90"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </DockPanel>
-                    </Border>
-
-                    <Border Grid.Column="2" Style="{StaticResource DarkCardStyle}">
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Top" Text="Services" FontWeight="SemiBold"/>
-                            <TextBox DockPanel.Dock="Top" Margin="0,8,0,8" Text="{Binding ServiceSearch, UpdateSourceTrigger=PropertyChanged}"/>
-                            <DataGrid ItemsSource="{Binding ServicesView}" AutoGenerateColumns="False" IsReadOnly="True" Style="{StaticResource DarkDataGridStyle}"
-                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
-                                    <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="90"/>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </DockPanel>
-                    </Border>
-                </Grid>
+                <Border Margin="4" Style="{StaticResource DarkCardStyle}">
+                    <TextBlock Foreground="{DynamicResource MutedTextBrush}"
+                               Text="Detailed lists moved: use the Apps and Services tabs in the left navigation."
+                               TextWrapping="Wrap"/>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

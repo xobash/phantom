@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Threading;
@@ -11,6 +12,8 @@ namespace Phantom.ViewModels;
 
 public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 {
+    private const string PerformanceTooltipText = "Windows Experience Index (WinSAT). Base score is the lowest subscore, max 9.9.";
+
     private readonly HomeDataService _homeData;
     private readonly TelemetryStore _telemetryStore;
     private readonly Func<AppSettings> _settingsAccessor;
@@ -23,6 +26,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private string _serviceSearch = string.Empty;
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
+    private long? _uptimeBaselineSeconds;
+    private long _uptimeBaselineTimestamp;
+    private long? _lastRenderedUptimeSeconds;
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
@@ -59,12 +65,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             }
         };
 
-        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Background)
+        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Normal)
         {
             Interval = TimeSpan.FromSeconds(1)
         };
         _fastMetricsTimer.Tick += async (_, _) =>
         {
+            TickUptimeDisplay();
+
             if (!_isFastMetricsRefreshing)
             {
                 await RefreshCpuMemoryTilesAsync(CancellationToken.None).ConfigureAwait(false);
@@ -158,7 +166,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 TopCards.Add(new HomeCard { Title = "Processor", Value = snapshot.Processor });
                 TopCards.Add(new HomeCard { Title = "Memory", Value = snapshot.Memory });
                 TopCards.Add(new HomeCard { Title = "Windows", Value = snapshot.Windows });
-                TopCards.Add(new HomeCard { Title = "Performance", Value = snapshot.PerformanceScore });
+                TopCards.Add(new HomeCard { Title = "Performance", Value = snapshot.PerformanceScore, Tooltip = PerformanceTooltipText });
 
                 KpiTiles.Clear();
                 KpiTiles.Add(new KpiTile { Title = "Apps count", Value = snapshot.AppsCount.ToString() });
@@ -169,6 +177,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 KpiTiles.Add(new KpiTile { Title = "GPU %", Value = snapshot.GpuUsage.ToString("F2") });
                 KpiTiles.Add(new KpiTile { Title = "Memory %", Value = snapshot.MemoryUsage.ToString("F2") });
                 KpiTiles.Add(new KpiTile { Title = "Network", Value = snapshot.NetworkUsage });
+                var snapshotUptime = TryParseUptimeSeconds(snapshot.Uptime);
+                if (snapshotUptime.HasValue)
+                {
+                    MaybeResyncUptimeBaseline(snapshotUptime.Value);
+                }
 
                 ReplaceCollection(InstalledApps, snapshot.Apps.OrderBy(x => x.Name).ToList());
                 ReplaceCollection(Processes, snapshot.Processes.OrderByDescending(x => x.Cpu).ToList());
@@ -197,7 +210,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 var index = TopCards.ToList().FindIndex(c => c.Title == "Performance");
                 if (index >= 0)
                 {
-                    TopCards[index] = new HomeCard { Title = "Performance", Value = score };
+                    TopCards[index] = new HomeCard { Title = "Performance", Value = score, Tooltip = PerformanceTooltipText };
                 }
             });
         }
@@ -212,7 +225,15 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _isFastMetricsRefreshing = true;
         try
         {
-            var (cpu, memory) = await _homeData.GetCpuMemoryUsageAsync(cancellationToken).ConfigureAwait(false);
+            var (cpu, memory, gpu, uptimeSeconds, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
+
+            if (uptimeSeconds > 0)
+            {
+                MaybeResyncUptimeBaseline(uptimeSeconds);
+            }
+
+            var displayedUptime = GetDisplayedUptimeSeconds();
+
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var cpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "CPU %", StringComparison.OrdinalIgnoreCase));
@@ -226,11 +247,29 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 {
                     KpiTiles[memoryIndex] = new KpiTile { Title = "Memory %", Value = memory.ToString("F2") };
                 }
+
+                var gpuIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "GPU %", StringComparison.OrdinalIgnoreCase));
+                if (gpuIndex >= 0)
+                {
+                    KpiTiles[gpuIndex] = new KpiTile { Title = "GPU %", Value = gpu.ToString("F2") };
+                }
+
+                var networkIndex = KpiTiles.ToList().FindIndex(t => string.Equals(t.Title, "Network", StringComparison.OrdinalIgnoreCase));
+                if (networkIndex >= 0)
+                {
+                    KpiTiles[networkIndex] = new KpiTile { Title = "Network", Value = network };
+                }
+
+                var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
+                if (uptimeIndex >= 0 && displayedUptime.HasValue)
+                {
+                    UpdateUptimeCard(displayedUptime.Value);
+                }
             });
         }
         catch (Exception ex)
         {
-            _console.Publish("Error", $"Live CPU/Memory refresh failed: {ex.Message}");
+            _console.Publish("Error", $"Live metrics refresh failed: {ex.Message}");
         }
         finally
         {
@@ -297,5 +336,148 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
 
         return $"{value:F2} {units[index]}";
+    }
+
+    private static long? TryParseUptimeSeconds(string uptime)
+    {
+        if (string.IsNullOrWhiteSpace(uptime))
+        {
+            return null;
+        }
+
+        var parts = uptime.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length != 3)
+        {
+            return null;
+        }
+
+        if (!long.TryParse(parts[0], out var hours) ||
+            !long.TryParse(parts[1], out var minutes) ||
+            !long.TryParse(parts[2], out var seconds))
+        {
+            return null;
+        }
+
+        if (hours < 0 || minutes is < 0 or > 59 || seconds is < 0 or > 59)
+        {
+            return null;
+        }
+
+        return (hours * 3600) + (minutes * 60) + seconds;
+    }
+
+    private static string FormatUptime(long uptimeSeconds)
+    {
+        var safe = Math.Max(0, uptimeSeconds);
+        var hours = safe / 3600;
+        var minutes = (safe % 3600) / 60;
+        var seconds = safe % 60;
+        return $"{hours:00}:{minutes:00}:{seconds:00}";
+    }
+
+    private void TickUptimeDisplay()
+    {
+        var uptimeSeconds = GetDisplayedUptimeSeconds();
+        if (!uptimeSeconds.HasValue)
+        {
+            return;
+        }
+
+        UpdateUptimeCard(uptimeSeconds.Value);
+    }
+
+    private void SyncUptimeBaseline(long uptimeSeconds, bool resetRendered = false)
+    {
+        _uptimeBaselineSeconds = Math.Max(0, uptimeSeconds);
+        _uptimeBaselineTimestamp = Stopwatch.GetTimestamp();
+        if (resetRendered)
+        {
+            _lastRenderedUptimeSeconds = null;
+        }
+    }
+
+    private void MaybeResyncUptimeBaseline(long sampledSeconds)
+    {
+        var sampled = Math.Max(0, sampledSeconds);
+        if (!_uptimeBaselineSeconds.HasValue)
+        {
+            SyncUptimeBaseline(sampled, resetRendered: true);
+            return;
+        }
+
+        var displayed = GetDisplayedUptimeSecondsRaw();
+        if (!displayed.HasValue)
+        {
+            SyncUptimeBaseline(sampled, resetRendered: true);
+            return;
+        }
+
+        var drift = sampled - displayed.Value;
+        if (drift > 2)
+        {
+            SyncUptimeBaseline(sampled);
+            return;
+        }
+
+        // If uptime drops by a large amount, treat it as reboot and reset the baseline.
+        if (drift < -120)
+        {
+            SyncUptimeBaseline(sampled, resetRendered: true);
+        }
+    }
+
+    private long? GetDisplayedUptimeSeconds()
+    {
+        var raw = GetDisplayedUptimeSecondsRaw();
+        if (!raw.HasValue)
+        {
+            return null;
+        }
+
+        if (_lastRenderedUptimeSeconds.HasValue && raw.Value < _lastRenderedUptimeSeconds.Value)
+        {
+            return _lastRenderedUptimeSeconds.Value;
+        }
+
+        return raw.Value;
+    }
+
+    private long? GetDisplayedUptimeSecondsRaw()
+    {
+        if (!_uptimeBaselineSeconds.HasValue)
+        {
+            return null;
+        }
+
+        var elapsedTicks = Stopwatch.GetTimestamp() - _uptimeBaselineTimestamp;
+        if (elapsedTicks < 0)
+        {
+            elapsedTicks = 0;
+        }
+
+        var elapsedSeconds = (long)(elapsedTicks / (double)Stopwatch.Frequency);
+        return _uptimeBaselineSeconds.Value + elapsedSeconds;
+    }
+
+    private void UpdateUptimeCard(long uptimeSeconds)
+    {
+        var safeSeconds = Math.Max(0, uptimeSeconds);
+        if (_lastRenderedUptimeSeconds.HasValue && safeSeconds < _lastRenderedUptimeSeconds.Value)
+        {
+            safeSeconds = _lastRenderedUptimeSeconds.Value;
+        }
+
+        _lastRenderedUptimeSeconds = safeSeconds;
+        var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
+        if (uptimeIndex < 0)
+        {
+            return;
+        }
+
+        TopCards[uptimeIndex] = new HomeCard
+        {
+            Title = "Uptime",
+            Value = FormatUptime(safeSeconds)
+        };
     }
 }

@@ -4,6 +4,9 @@ $RepoZip  = "https://github.com/xobash/phantom/archive/refs/heads/main.zip"
 $InstallDir = "$env:LOCALAPPDATA\Phantom"
 $BuildDir   = "$InstallDir\source"
 $AppDir     = "$InstallDir\app"
+$LaunchLogsDir = "$InstallDir\launch-logs"
+$LaunchLogPath = Join-Path $LaunchLogsDir ("launch-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+$script:TranscriptStarted = $false
 
 function Write-Step($msg) {
     Write-Host "`n>> $msg" -ForegroundColor Cyan
@@ -17,10 +20,49 @@ function Write-Fail($msg) {
     Write-Host "   ERROR: $msg" -ForegroundColor Red
 }
 
+function Stop-LaunchTranscript {
+    if (-not $script:TranscriptStarted) {
+        return
+    }
+
+    try {
+        Stop-Transcript | Out-Null
+    } catch {
+    }
+
+    $script:TranscriptStarted = $false
+}
+
+function Save-LaunchLogToApp {
+    if (-not (Test-Path $LaunchLogPath)) {
+        return
+    }
+
+    try {
+        $appLogsDir = Join-Path $AppDir "logs"
+        New-Item -ItemType Directory -Force -Path $appLogsDir | Out-Null
+        $dest = Join-Path $appLogsDir (Split-Path $LaunchLogPath -Leaf)
+        Copy-Item -Path $LaunchLogPath -Destination $dest -Force
+        Write-OK "Launch log saved: $dest"
+    } catch {
+        Write-Host "   Launch log copy failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+New-Item -ItemType Directory -Force -Path $LaunchLogsDir | Out-Null
+try {
+    Start-Transcript -Path $LaunchLogPath -Force | Out-Null
+    $script:TranscriptStarted = $true
+} catch {
+    Write-Host "   Warning: could not start transcript logging. $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 # ── Admin check ────────────────────────────────────────────────────────────────
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Fail "Phantom requires an elevated PowerShell session. Re-run as Administrator."
+    Stop-LaunchTranscript
     exit 1
 }
 
@@ -50,12 +92,14 @@ if (-not $hasNet8) {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
         Write-Fail "winget is not available. Please install the .NET 8 SDK manually from https://dot.net and re-run."
+        Stop-LaunchTranscript
         exit 1
     }
 
     winget install --id Microsoft.DotNet.SDK.8 --source winget --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Failed to install .NET 8 SDK via winget."
+        Stop-LaunchTranscript
         exit 1
     }
 
@@ -66,6 +110,7 @@ if (-not $hasNet8) {
     $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
     if (-not $dotnet) {
         Write-Fail ".NET SDK installed but 'dotnet' still not found in PATH. Please restart your shell and re-run."
+        Stop-LaunchTranscript
         exit 1
     }
 
@@ -76,8 +121,6 @@ if (-not $hasNet8) {
 
 # ── Download source ────────────────────────────────────────────────────────────
 Write-Step "Downloading Phantom source from GitHub..."
-
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $zip = "$InstallDir\phantom-main.zip"
 
 Invoke-WebRequest -Uri $RepoZip -OutFile $zip -UseBasicParsing
@@ -94,6 +137,7 @@ Remove-Item $zip
 $extracted = Get-ChildItem -Path $BuildDir -Directory | Select-Object -First 1
 if (-not $extracted) {
     Write-Fail "Extraction produced no folder. The repo zip may be empty or structured differently."
+    Stop-LaunchTranscript
     exit 1
 }
 
@@ -106,6 +150,7 @@ $project = Join-Path $extracted.FullName "Phantom\Phantom.csproj"
 
 if (-not (Test-Path $project)) {
     Write-Fail "Could not find Phantom.csproj at expected path: $project"
+    Stop-LaunchTranscript
     exit 1
 }
 
@@ -115,6 +160,8 @@ dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSi
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "dotnet publish failed. See output above."
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
     exit 1
 }
 
@@ -127,8 +174,12 @@ $exe = Join-Path $AppDir "Phantom.exe"
 
 if (-not (Test-Path $exe)) {
     Write-Fail "Phantom.exe not found in $AppDir after build."
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
     exit 1
 }
 
 Start-Process -FilePath $exe -Verb RunAs
 Write-OK "Phantom launched."
+Stop-LaunchTranscript
+Save-LaunchLogToApp
