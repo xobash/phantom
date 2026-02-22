@@ -2,9 +2,11 @@ namespace Phantom.Services;
 
 public sealed class AppPaths
 {
-    public AppPaths()
+    public AppPaths(string? baseDirectory = null)
     {
-        BaseDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        BaseDirectory = string.IsNullOrWhiteSpace(baseDirectory)
+            ? AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            : baseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         DataDirectory = Path.Combine(BaseDirectory, "data");
         LogsDirectory = Path.Combine(BaseDirectory, "logs");
         RuntimeDirectory = Path.Combine(BaseDirectory, "runtime");

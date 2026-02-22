@@ -38,14 +38,22 @@ public sealed class CliRunner
         _console.Publish("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}");
         await _log.WriteAsync("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}", cancellationToken).ConfigureAwait(false);
 
-        if (!File.Exists(configPath))
+        if (!TryNormalizeConfigPath(configPath, out var normalizedConfigPath, out var validationError))
         {
-            await _log.WriteAsync("Error", $"Config not found: {configPath}", cancellationToken).ConfigureAwait(false);
+            _console.Publish("Error", validationError);
+            await _log.WriteAsync("Error", validationError, cancellationToken).ConfigureAwait(false);
+            return 2;
+        }
+
+        _console.Publish("Trace", $"CliRunner normalized config path: {normalizedConfigPath}");
+        if (!File.Exists(normalizedConfigPath))
+        {
+            await _log.WriteAsync("Error", $"Config not found: {normalizedConfigPath}", cancellationToken).ConfigureAwait(false);
             return 2;
         }
 
         var settings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var config = await _definitions.LoadSelectionConfigAsync(configPath, cancellationToken).ConfigureAwait(false);
+        var config = await _definitions.LoadSelectionConfigAsync(normalizedConfigPath, cancellationToken).ConfigureAwait(false);
         var operations = await BuildOperationsAsync(config, cancellationToken).ConfigureAwait(false);
         _console.Publish("Trace", $"CliRunner resolved operations: {operations.Count}");
 
@@ -94,6 +102,82 @@ public sealed class CliRunner
 
         _console.Publish("Trace", $"CliRunner.RunAsync completed. success={result.Success}");
         return result.Success ? 0 : 1;
+    }
+
+    private bool TryNormalizeConfigPath(string configPath, out string normalizedPath, out string error)
+    {
+        normalizedPath = string.Empty;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(configPath))
+        {
+            error = "CLI config path is required.";
+            return false;
+        }
+
+        if (configPath.IndexOf('\0') >= 0)
+        {
+            error = "CLI config path contains invalid null characters.";
+            return false;
+        }
+
+        if (configPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        {
+            error = $"CLI config path contains invalid characters: {configPath}";
+            return false;
+        }
+
+        var trimmed = configPath.Trim();
+        if (trimmed.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            error = "UNC paths are blocked for CLI config. Use a local file path.";
+            return false;
+        }
+
+        var rooted = Path.IsPathRooted(trimmed);
+        var candidate = rooted
+            ? trimmed
+            : Path.Combine(_paths.RuntimeDirectory, trimmed);
+
+        try
+        {
+            normalizedPath = Path.GetFullPath(candidate);
+        }
+        catch (Exception ex)
+        {
+            error = $"CLI config path is invalid: {ex.Message}";
+            return false;
+        }
+
+        if (!normalizedPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "CLI config path must point to a .json file.";
+            return false;
+        }
+
+        if (!rooted)
+        {
+            var runtimeRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(_paths.RuntimeDirectory));
+            if (!normalizedPath.StartsWith(runtimeRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Path traversal detected in CLI config path. Relative paths must stay under runtime/.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string EnsureTrailingDirectorySeparator(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        return path.EndsWith(Path.DirectorySeparatorChar)
+            ? path
+            : path + Path.DirectorySeparatorChar;
     }
 
     private async Task<List<OperationDefinition>> BuildOperationsAsync(AutomationConfig config, CancellationToken cancellationToken)
