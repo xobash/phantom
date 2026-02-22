@@ -400,7 +400,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         }
 
         var escaped = key.Replace("'", "''");
-        return "$WarningPreference='SilentlyContinue'; " +
+        return "$WarningPreference='Continue'; " +
                $"$p='{escaped}'; " +
                "if (Test-Path $p) { " +
                "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +

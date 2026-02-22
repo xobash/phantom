@@ -2,7 +2,13 @@ $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'Phantom\\Phantom.csproj'
 $outDir = Join-Path $PSScriptRoot 'app'
 
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+try {
+  $dotnet = Get-Command dotnet -ErrorAction Stop
+} catch {
+  $dotnet = $null
+}
+
+if (-not $dotnet) {
   Write-Error 'dotnet SDK is required to build Phantom.'
   exit 1
 }

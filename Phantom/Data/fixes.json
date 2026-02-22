@@ -24,7 +24,7 @@
     "name": "Reset update components",
     "description": "Stops update services, clears update cache and starts services.",
     "riskTier": "Advanced",
-    "applyScript": "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction SilentlyContinue; Start-Service cryptsvc,bits,wuauserv",
+    "applyScript": "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction Stop; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction Stop; Start-Service cryptsvc,bits,wuauserv",
     "undoScript": "Write-Output 'No direct undo. Windows will recreate update cache.'",
     "reversible": false,
     "destructive": false
@@ -54,7 +54,7 @@
     "name": "Rebuild icon cache",
     "description": "Clears icon cache and restarts Explorer.",
     "riskTier": "Advanced",
-    "applyScript": "Stop-Process -Name explorer -Force; Remove-Item \"$env:LOCALAPPDATA\\IconCache.db\" -Force -ErrorAction SilentlyContinue; Start-Process explorer.exe",
+    "applyScript": "Stop-Process -Name explorer -Force; Remove-Item \"$env:LOCALAPPDATA\\IconCache.db\" -Force -ErrorAction Stop; Start-Process explorer.exe",
     "undoScript": "Write-Output 'Icon cache rebuild has no undo.'",
     "reversible": false,
     "destructive": false
@@ -64,7 +64,7 @@
     "name": "Reset print spooler",
     "description": "Clears print queue and restarts spooler service.",
     "riskTier": "Advanced",
-    "applyScript": "Stop-Service spooler -Force; Remove-Item -Path \"$env:SystemRoot\\System32\\spool\\PRINTERS\\*\" -Force -ErrorAction SilentlyContinue; Start-Service spooler",
+    "applyScript": "Stop-Service spooler -Force; Remove-Item -Path \"$env:SystemRoot\\System32\\spool\\PRINTERS\\*\" -Force -ErrorAction Stop; Start-Service spooler",
     "undoScript": "Write-Output 'Print queue reset has no undo.'",
     "reversible": false,
     "destructive": false
@@ -84,8 +84,8 @@
     "name": "Enable update services",
     "description": "Sets wuauserv and BITS to manual and starts them.",
     "riskTier": "Basic",
-    "applyScript": "Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction SilentlyContinue; Start-Service bits -ErrorAction SilentlyContinue",
-    "undoScript": "Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled; Stop-Service wuauserv -Force -ErrorAction SilentlyContinue; Stop-Service bits -Force -ErrorAction SilentlyContinue",
+    "applyScript": "Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop",
+    "undoScript": "Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled; Stop-Service wuauserv -Force -ErrorAction Stop; Stop-Service bits -Force -ErrorAction Stop",
     "reversible": true,
     "destructive": false
   }

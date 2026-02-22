@@ -51,7 +51,7 @@ public partial class App : Application
             _bootstrap = new AppBootstrap();
             _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
             _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
-            await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.").ConfigureAwait(false);
+            await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
 
             AppDomain.CurrentDomain.UnhandledException += async (_, args) =>
             {
@@ -83,13 +83,16 @@ public partial class App : Application
             }
 
             _bootstrap.Console.Publish("Trace", "Creating MainWindow instance.");
-            var window = new MainWindow
+            await Dispatcher.InvokeAsync(() =>
             {
-                DataContext = _bootstrap.Main
-            };
+                var window = new MainWindow
+                {
+                    DataContext = _bootstrap.Main
+                };
 
-            MainWindow = window;
-            window.Show();
+                MainWindow = window;
+                window.Show();
+            });
             _bootstrap.Console.Publish("Trace", "MainWindow shown.");
             await _bootstrap.Main.InitializeAsync(CancellationToken.None);
             _bootstrap.Console.Publish("Trace", "Startup completed.");
