@@ -48,11 +48,11 @@ public sealed class HomeDataService
         return snapshot;
     }
 
-    public async Task<(double CpuUsage, double MemoryUsage)> GetCpuMemoryUsageAsync(CancellationToken cancellationToken)
+    public async Task<(double CpuUsage, double MemoryUsage, string Uptime)> GetFastMetricsAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0);
+            return (0, 0, "Unavailable");
         }
 
         const string script = @"
@@ -60,15 +60,17 @@ $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
 $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
+$uptime = (Get-Date) - $os.LastBootUpTime
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)
   MemoryUsage = [math]::Round($memoryPct, 2)
+  Uptime = [string]::Format('{0:00}:{1:00}:{2:00}', [int]$uptime.TotalHours, $uptime.Minutes, $uptime.Seconds)
 } | ConvertTo-Json -Compress";
 
         var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
-            return (0, 0);
+            return (0, 0, "Unavailable");
         }
 
         try
@@ -76,12 +78,13 @@ $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalV
             using var doc = JsonDocument.Parse(json);
             var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
             var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
-            return (cpu, memory);
+            var uptime = doc.RootElement.GetProperty("Uptime").GetString() ?? "Unavailable";
+            return (cpu, memory, uptime);
         }
         catch (Exception ex)
         {
-            _console.Publish("Error", $"Live CPU/Memory parse failed: {ex.Message}");
-            return (0, 0);
+            _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
+            return (0, 0, "Unavailable");
         }
     }
 
@@ -196,7 +199,24 @@ catch {
 
         var deltaSent = Math.Max(0, totalSent - baselineSent);
         var deltaRecv = Math.Max(0, totalRecv - baselineRecv);
-        return $"Total {FormatBytes(deltaSent)} / {FormatBytes(deltaRecv)} since baseline";
+
+        var now = DateTimeOffset.UtcNow;
+        var sampleWindowSeconds = telemetry.LastNetworkSampleAt is null
+            ? 1
+            : Math.Max(1, (now - telemetry.LastNetworkSampleAt.Value).TotalSeconds);
+
+        var uploadRate = telemetry.LastNetworkSampleAt is null
+            ? 0
+            : Math.Max(0, (totalSent - telemetry.LastNetworkSentBytes) / sampleWindowSeconds);
+        var downloadRate = telemetry.LastNetworkSampleAt is null
+            ? 0
+            : Math.Max(0, (totalRecv - telemetry.LastNetworkReceivedBytes) / sampleWindowSeconds);
+
+        telemetry.LastNetworkSentBytes = totalSent;
+        telemetry.LastNetworkReceivedBytes = totalRecv;
+        telemetry.LastNetworkSampleAt = now;
+
+        return $"↑ {FormatBytes((long)uploadRate)}/s ↓ {FormatBytes((long)downloadRate)}/s|{FormatBytes(deltaSent + deltaRecv)}";
     }
 
     private static string FormatBytes(long bytes)
@@ -225,12 +245,37 @@ catch {
         sb.AppendLine("$disks = Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used");
         sb.AppendLine("$total = ($disks | Measure-Object -Property Used -Sum).Sum + ($disks | Measure-Object -Property Free -Sum).Sum");
         sb.AppendLine("$free = ($disks | Measure-Object -Property Free -Sum).Sum");
-        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue) | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion, Publisher");
+        sb.AppendLine("function Format-Size([double]$bytes) { if ($bytes -le 0) { return 'Unknown' }; $units = @('B','KB','MB','GB','TB'); $i = 0; while ($bytes -ge 1024 -and $i -lt ($units.Length - 1)) { $bytes = $bytes / 1024; $i++ }; return ('{0:N2} {1}' -f $bytes, $units[$i]) }");
+        sb.AppendLine("$apps = @(Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue; Get-ItemProperty HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue) | Where-Object { $_.DisplayName } | ForEach-Object {");
+        sb.AppendLine("  $installDate = 'Unknown'");
+        sb.AppendLine("  if ($_.InstallDate -and $_.InstallDate -match '^\\d{8}$') {");
+        sb.AppendLine("    try { $installDate = [datetime]::ParseExact($_.InstallDate, 'yyyyMMdd', $null).ToString('yyyy-MM-dd') } catch { $installDate = 'Unknown' }");
+        sb.AppendLine("  }");
+        sb.AppendLine("  $sizeBytes = 0");
+        sb.AppendLine("  if ($_.EstimatedSize -as [double]) { $sizeBytes = [double]$_.EstimatedSize * 1KB }");
+        sb.AppendLine("  $uninstall = if ($_.QuietUninstallString) { $_.QuietUninstallString } else { $_.UninstallString }");
+        sb.AppendLine("  [PSCustomObject]@{");
+        sb.AppendLine("    DisplayName = $_.DisplayName");
+        sb.AppendLine("    DisplayVersion = $_.DisplayVersion");
+        sb.AppendLine("    Publisher = $_.Publisher");
+        sb.AppendLine("    InstallDate = $installDate");
+        sb.AppendLine("    SizeOnDisk = (Format-Size $sizeBytes)");
+        sb.AppendLine("    InstallLocation = $_.InstallLocation");
+        sb.AppendLine("    UninstallCommand = $uninstall");
+        sb.AppendLine("    DisplayIcon = $_.DisplayIcon");
+        sb.AppendLine("  }");
+        sb.AppendLine("}");
         sb.AppendLine("$procs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 100 Name, Id, CPU, @{Name='MemoryMb';Expression={[math]::Round($_.WorkingSet64/1MB,2)}}");
-        sb.AppendLine("$services = Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running'} | Select-Object Name, DisplayName, StartMode, State");
+        sb.AppendLine("$services = Get-CimInstance Win32_Service | Select-Object Name, DisplayName, StartMode, State, PathName, Description");
         sb.AppendLine("$cpuCtr = (Get-Counter '\\Processor(_Total)\\% Processor Time').CounterSamples.CookedValue");
         sb.AppendLine("$gpuCtr = 0");
-        sb.AppendLine("try { $gpuCtr = ((Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples | Measure-Object -Property CookedValue -Sum).Sum } catch { $gpuCtr = 0 }");
+        sb.AppendLine("try {");
+        sb.AppendLine("  $gpuCounters = Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction Stop");
+        sb.AppendLine("  $samples = @($gpuCounters.CounterSamples | Select-Object -ExpandProperty CookedValue)");
+        sb.AppendLine("  if ($samples.Count -gt 0) {");
+        sb.AppendLine("    $gpuCtr = ($samples | Measure-Object -Average).Average");
+        sb.AppendLine("  }");
+        sb.AppendLine("} catch { $gpuCtr = 0 }");
         sb.AppendLine("$memoryPct = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 2)");
         sb.AppendLine("$uptime = (Get-Date) - $os.LastBootUpTime");
         sb.AppendLine("$obj = [PSCustomObject]@{");
@@ -247,11 +292,11 @@ catch {
         sb.AppendLine(" ProcessesCount = (Get-Process).Count");
         sb.AppendLine(" ServicesCount = $services.Count");
         sb.AppendLine(" CpuUsage = [math]::Round($cpuCtr,2)");
-        sb.AppendLine(" GpuUsage = [math]::Round($gpuCtr,2)");
+        sb.AppendLine(" GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr, 0), 100),2)");
         sb.AppendLine(" MemoryUsage = $memoryPct");
-        sb.AppendLine(" Apps = @($apps | ForEach-Object { [PSCustomObject]@{ Name = $_.DisplayName; Version = $_.DisplayVersion; Publisher = $_.Publisher } })");
+        sb.AppendLine(" Apps = @($apps | ForEach-Object { [PSCustomObject]@{ Name = $_.DisplayName; Version = $_.DisplayVersion; Publisher = $_.Publisher; InstallDate = if($_.InstallDate){$_.InstallDate}else{'Unknown'}; SizeOnDisk = if($_.SizeOnDisk){$_.SizeOnDisk}else{'Unknown'}; InstallLocation = if($_.InstallLocation){$_.InstallLocation}else{''}; UninstallCommand = if($_.UninstallCommand){$_.UninstallCommand}else{''}; DisplayIcon = if($_.DisplayIcon){$_.DisplayIcon}else{''} } })");
         sb.AppendLine(" Processes = @($procs | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Id = $_.Id; Cpu = $_.CPU; MemoryMb = $_.MemoryMb } })");
-        sb.AppendLine(" Services = @($services | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; DisplayName = $_.DisplayName; StartupType = $_.StartMode; Status = $_.State } })");
+        sb.AppendLine(" Services = @($services | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; DisplayName = $_.DisplayName; StartupType = $_.StartMode; Status = $_.State; PathName = if($_.PathName){$_.PathName}else{''}; Description = if($_.Description){$_.Description}else{''}; Summary = if([string]::IsNullOrWhiteSpace($_.Description)){'No description provided by this service.'}else{$_.Description} } })");
         sb.AppendLine("}");
         sb.AppendLine("$obj | ConvertTo-Json -Depth 5 -Compress");
         return sb.ToString();

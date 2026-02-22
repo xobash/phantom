@@ -9,6 +9,14 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
 {
     private readonly AppPaths _paths;
 
+    private string _aboutLogo = """
+██████╗ ██╗  ██╗ █████╗ ███╗   ██╗████████╗ ██████╗ ███╗   ███╗
+██╔══██╗██║  ██║██╔══██╗████╗  ██║╚══██╔══╝██╔═══██╗████╗ ████║
+██████╔╝███████║███████║██╔██╗ ██║   ██║   ██║   ██║██╔████╔██║
+██╔═══╝ ██╔══██║██╔══██║██║╚██╗██║   ██║   ██║   ██║██║╚██╔╝██║
+██║     ██║  ██║██║  ██║██║ ╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║
+╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝
+""";
     private string _aboutText = "Phantom portable admin utility.";
     private string _selectedLog = string.Empty;
     private string _selectedLogContent = string.Empty;
@@ -24,6 +32,12 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
     public string Title => "Logs/About";
 
     public ObservableCollection<string> LogFiles { get; }
+
+    public string AboutLogo
+    {
+        get => _aboutLogo;
+        set => SetProperty(ref _aboutLogo, value);
+    }
 
     public string AboutText
     {
@@ -49,7 +63,31 @@ public sealed class LogsAboutViewModel : ObservableObject, ISectionViewModel
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
-        AboutText = "Phantom\nPortable admin-only utility\nAll changes are executed by PowerShell operations\nOffline-first safety enforced.";
+        AboutText = """
+Phantom
+Portable, self-contained Windows admin utility built with WPF and .NET 8.
+
+What Phantom includes
+- Home dashboard for live system cards and KPI metrics.
+- Store for package management through winget / Chocolatey.
+- Tweaks, Features, and Fixes sections for curated system changes.
+- Updates controls with reversible Windows Update modes.
+- Logs/About with rolling local logs and operation history.
+- Settings for theme, safety gating, refresh interval, and log retention.
+
+Design and safety principles
+- Requires Administrator privileges.
+- Local-first data model (settings, undo state, telemetry, logs saved next to app data).
+- Dangerous operations are explicitly gated and require confirmation.
+- Operation output is streamed to the in-app console for transparency.
+- Offline blocking is enforced for network-required operations.
+
+Data locations
+- ./data/settings.json (UI and behavior preferences)
+- ./data/state.json (undo metadata)
+- ./data/telemetry-local.json (local telemetry)
+- ./logs/ (rolling session logs)
+""";
     }
 
     private async Task RefreshLogsAsync(CancellationToken cancellationToken)
