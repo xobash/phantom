@@ -22,7 +22,10 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
     private int _refreshQueued;
+    private int _fastRefreshQueued;
     private long? _uptimeSeconds;
+    private long? _uptimeSeedSeconds;
+    private DateTimeOffset? _uptimeSeededAt;
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
@@ -35,6 +38,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         KpiTiles = new ObservableCollection<KpiTile>();
 
         RefreshCommand = new RelayCommand(() => RequestRefresh(forceIfBusy: true));
+        RefreshCardCommand = new RelayCommand<string>(card => RequestCardRefresh(card));
         RunWinsatCommand = new AsyncRelayCommand(RunWinsatAsync, () => !_isRefreshing);
 
         _timer = new DispatcherTimer(DispatcherPriority.Background)
@@ -43,18 +47,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         };
         _timer.Tick += (_, _) => RequestRefresh(forceIfBusy: false);
 
-        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Render)
+        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Send)
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _fastMetricsTimer.Tick += async (_, _) =>
+        _fastMetricsTimer.Tick += (_, _) =>
         {
             TickUptimeDisplay();
-
-            if (!_isFastMetricsRefreshing)
-            {
-                await RefreshCpuMemoryTilesAsync(CancellationToken.None).ConfigureAwait(false);
-            }
+            _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
         };
     }
 
@@ -64,6 +64,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     public ObservableCollection<KpiTile> KpiTiles { get; }
 
     public RelayCommand RefreshCommand { get; }
+    public RelayCommand<string> RefreshCardCommand { get; }
     public AsyncRelayCommand RunWinsatCommand { get; }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -83,6 +84,37 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private void RequestRefresh(bool forceIfBusy)
     {
         _ = RefreshAsync(CancellationToken.None, queueIfBusy: forceIfBusy);
+    }
+
+    private void RequestCardRefresh(string? cardTitle)
+    {
+        if (string.IsNullOrWhiteSpace(cardTitle))
+        {
+            return;
+        }
+
+        var normalized = cardTitle.Trim();
+        if (string.Equals(normalized, "CPU %", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "Memory %", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "GPU %", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "Network", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
+            return;
+        }
+
+        if (string.Equals(normalized, "Uptime", StringComparison.OrdinalIgnoreCase))
+        {
+            var displayed = GetDisplayedUptimeSeconds();
+            if (displayed.HasValue)
+            {
+                UpdateUptimeCard(displayed.Value);
+            }
+
+            return;
+        }
+
+        _ = RefreshAsync(CancellationToken.None, queueIfBusy: true);
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken, bool queueIfBusy = true)
@@ -188,6 +220,12 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshCpuMemoryTilesAsync(CancellationToken cancellationToken)
     {
+        if (_isFastMetricsRefreshing)
+        {
+            Interlocked.Exchange(ref _fastRefreshQueued, 1);
+            return;
+        }
+
         _isFastMetricsRefreshing = true;
         try
         {
@@ -200,9 +238,10 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 UpsertKpiTile("GPU %", gpu.ToString("F2"));
                 UpsertKpiTile("Network", network);
 
-                if (_uptimeSeconds.HasValue)
+                var displayedUptime = GetDisplayedUptimeSeconds();
+                if (displayedUptime.HasValue)
                 {
-                    UpdateUptimeCard(_uptimeSeconds.Value);
+                    UpdateUptimeCard(displayedUptime.Value);
                 }
             });
         }
@@ -213,6 +252,10 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         finally
         {
             _isFastMetricsRefreshing = false;
+            if (Interlocked.Exchange(ref _fastRefreshQueued, 0) == 1)
+            {
+                _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
+            }
         }
     }
 
@@ -311,34 +354,48 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private void TickUptimeDisplay()
     {
-        if (!_uptimeSeconds.HasValue)
+        var displayed = GetDisplayedUptimeSeconds();
+        if (!displayed.HasValue)
         {
             return;
         }
 
-        _uptimeSeconds = Math.Max(0, _uptimeSeconds.Value + 1);
-        UpdateUptimeCard(_uptimeSeconds.Value);
+        UpdateUptimeCard(displayed.Value);
     }
 
     private void SeedUptimeFromSample(long sampledSeconds)
     {
         var sampled = Math.Max(0, sampledSeconds);
-        if (!_uptimeSeconds.HasValue)
+        if (!_uptimeSeedSeconds.HasValue || !_uptimeSeededAt.HasValue)
         {
+            _uptimeSeedSeconds = sampled;
+            _uptimeSeededAt = DateTimeOffset.UtcNow;
             _uptimeSeconds = sampled;
             return;
         }
 
-        // Uptime only resets on reboot; if sampled value drops significantly, re-seed.
-        if (sampled + 120 < _uptimeSeconds.Value)
+        var displayed = GetDisplayedUptimeSeconds() ?? sampled;
+
+        // Uptime should monotonically increase. Re-seed if sample drift is significant.
+        if (sampled + 120 < displayed || sampled > displayed + 120)
         {
+            _uptimeSeedSeconds = sampled;
+            _uptimeSeededAt = DateTimeOffset.UtcNow;
             _uptimeSeconds = sampled;
         }
     }
 
     private long? GetDisplayedUptimeSeconds()
     {
-        return _uptimeSeconds;
+        if (!_uptimeSeedSeconds.HasValue || !_uptimeSeededAt.HasValue)
+        {
+            return _uptimeSeconds;
+        }
+
+        var elapsed = Math.Max(0, (long)(DateTimeOffset.UtcNow - _uptimeSeededAt.Value).TotalSeconds);
+        var displayed = Math.Max(0, _uptimeSeedSeconds.Value + elapsed);
+        _uptimeSeconds = displayed;
+        return displayed;
     }
 
     private void UpdateUptimeCard(long uptimeSeconds)
