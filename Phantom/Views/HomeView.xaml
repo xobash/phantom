@@ -88,15 +88,23 @@
                                     </Grid.RowDefinitions>
 
                                     <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
-                                    <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontSize" Value="20"/>
+                                                <Setter Property="LineHeight" Value="24"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Title}" Value="Network">
+                                                        <Setter Property="FontSize" Value="16"/>
+                                                        <Setter Property="LineHeight" Value="22"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </Grid>
-                                <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding Title}" Value="Network">
-                                        <Setter TargetName="KpiValue" Property="FontSize" Value="16"/>
-                                        <Setter TargetName="KpiValue" Property="LineHeight" Value="22"/>
-                                        <Setter TargetName="KpiValue" Property="FontWeight" Value="SemiBold"/>
-                                    </DataTrigger>
-                                </DataTemplate.Triggers>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
