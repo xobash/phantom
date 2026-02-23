@@ -1,3 +1,8 @@
+using Microsoft.Win32;
+using Phantom.Models;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace Phantom.Services;
@@ -5,8 +10,55 @@ namespace Phantom.Services;
 public sealed class ThemeService
 {
     public bool IsDarkMode { get; private set; } = true;
+    public string CurrentMode { get; private set; } = AppThemeModes.Auto;
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkModeLegacy = 19;
+
+    public void ApplyThemeMode(string? mode)
+    {
+        var normalizedMode = AppThemeModes.Normalize(mode);
+        var darkMode = normalizedMode switch
+        {
+            AppThemeModes.Dark => true,
+            AppThemeModes.Light => false,
+            _ => IsSystemDarkModePreferred()
+        };
+
+        CurrentMode = normalizedMode;
+        ApplyThemeCore(darkMode);
+    }
 
     public void ApplyTheme(bool darkMode)
+    {
+        CurrentMode = darkMode ? AppThemeModes.Dark : AppThemeModes.Light;
+        ApplyThemeCore(darkMode);
+    }
+
+    public bool IsSystemDarkModePreferred()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        try
+        {
+            using var personalizeKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", false);
+            var appModeValue = personalizeKey?.GetValue("AppsUseLightTheme");
+            if (appModeValue is int appModeInt)
+            {
+                return appModeInt == 0;
+            }
+        }
+        catch
+        {
+        }
+
+        return true;
+    }
+
+    private void ApplyThemeCore(bool darkMode)
     {
         IsDarkMode = darkMode;
         var theme = darkMode ? ThemePalette.Dark : ThemePalette.Light;
@@ -39,8 +91,41 @@ public sealed class ThemeService
         SetBrushColor("RowAltBackgroundBrush", theme.GridRowAltBackground);
         SetBrushColor("RowHoverBackgroundBrush", theme.GridRowHoverBackground);
         SetBrushColor("RowSelectedBackgroundBrush", theme.GridRowSelectedBackground);
+        SetBrushColor("ScrollTrackBrush", theme.ScrollTrack);
+        SetBrushColor("ScrollThumbBrush", theme.ScrollThumb);
+        SetBrushColor("ScrollThumbHoverBrush", theme.ScrollThumbHover);
+        SetBrushColor("ScrollThumbPressedBrush", theme.ScrollThumbPressed);
         SetBrushColor("TerminalBackgroundBrush", theme.TerminalBackground);
         SetBrushColor("TerminalForegroundBrush", theme.TerminalForeground);
+
+        ApplyWindowChromeTheme(darkMode);
+    }
+
+    private static void ApplyWindowChromeTheme(bool darkMode)
+    {
+        if (!OperatingSystem.IsWindows() || Application.Current is null)
+        {
+            return;
+        }
+
+        foreach (Window window in Application.Current.Windows)
+        {
+            var hwnd = new WindowInteropHelper(window).Handle;
+            if (hwnd == IntPtr.Zero)
+            {
+                continue;
+            }
+
+            try
+            {
+                var dark = darkMode ? 1 : 0;
+                _ = DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int));
+                _ = DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeLegacy, ref dark, sizeof(int));
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static void SetBrushColor(string key, string hex)
@@ -122,6 +207,9 @@ public sealed class ThemeService
         return brush;
     }
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int attributeValue, int attributeSize);
+
     private sealed record ThemePalette(
         string AppBackground,
         string WindowBackground,
@@ -145,6 +233,10 @@ public sealed class ThemeService
         string GridRowAltBackground,
         string GridRowHoverBackground,
         string GridRowSelectedBackground,
+        string ScrollTrack,
+        string ScrollThumb,
+        string ScrollThumbHover,
+        string ScrollThumbPressed,
         string TerminalBackground,
         string TerminalForeground)
     {
@@ -171,6 +263,10 @@ public sealed class ThemeService
             GridRowAltBackground: "#2B2B2B",
             GridRowHoverBackground: "#333333",
             GridRowSelectedBackground: "#3D3D3D",
+            ScrollTrack: "#171717",
+            ScrollThumb: "#505050",
+            ScrollThumbHover: "#696969",
+            ScrollThumbPressed: "#818181",
             TerminalBackground: "#080808",
             TerminalForeground: "#DDE7FF");
 
@@ -197,6 +293,10 @@ public sealed class ThemeService
             GridRowAltBackground: "#F9F9F9",
             GridRowHoverBackground: "#F0F0F0",
             GridRowSelectedBackground: "#E3E3E3",
+            ScrollTrack: "#EEEEEE",
+            ScrollThumb: "#B8B8B8",
+            ScrollThumbHover: "#989898",
+            ScrollThumbPressed: "#7D7D7D",
             TerminalBackground: "#F6F8FC",
             TerminalForeground: "#1C2430");
     }

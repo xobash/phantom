@@ -6,6 +6,8 @@ namespace Phantom.ViewModels;
 
 public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 {
+    private static readonly IReadOnlyList<string> ThemeModeOptions = new[] { AppThemeModes.Auto, AppThemeModes.Light, AppThemeModes.Dark };
+
     private readonly SettingsStore _store;
     private readonly LogService _logService;
     private readonly SettingsProvider _provider;
@@ -26,6 +28,24 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 
     public AsyncRelayCommand SaveCommand { get; }
 
+    public IReadOnlyList<string> ThemeModes => ThemeModeOptions;
+
+    public string SelectedThemeMode
+    {
+        get => AppThemeModes.Normalize(_settings.ThemeMode);
+        set
+        {
+            var normalized = AppThemeModes.Normalize(value);
+            if (!string.Equals(_settings.ThemeMode, normalized, StringComparison.Ordinal))
+            {
+                _settings.ThemeMode = normalized;
+                ApplyThemeSelection();
+                Notify();
+                Notify(nameof(UseDarkMode));
+            }
+        }
+    }
+
     public bool UseDarkMode
     {
         get => _settings.UseDarkMode;
@@ -34,8 +54,10 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
             if (_settings.UseDarkMode != value)
             {
                 _settings.UseDarkMode = value;
-                _theme.ApplyTheme(value);
+                _settings.ThemeMode = value ? AppThemeModes.Dark : AppThemeModes.Light;
+                _theme.ApplyThemeMode(_settings.ThemeMode);
                 Notify();
+                Notify(nameof(SelectedThemeMode));
             }
         }
     }
@@ -123,9 +145,15 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        _settings = await _store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        _settings = await _store.LoadAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(_settings.ThemeMode))
+        {
+            _settings.ThemeMode = _settings.UseDarkMode ? AppThemeModes.Dark : AppThemeModes.Light;
+        }
+
+        ApplyThemeSelection();
         _provider.Update(_settings);
-        _theme.ApplyTheme(_settings.UseDarkMode);
+        Notify(nameof(SelectedThemeMode));
         Notify(nameof(UseDarkMode));
         Notify(nameof(EnableDestructiveOperations));
         Notify(nameof(CreateRestorePointBeforeDangerousOperations));
@@ -139,9 +167,16 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
-        await _store.SaveAsync(_settings, cancellationToken).ConfigureAwait(false);
+        ApplyThemeSelection();
+        await _store.SaveAsync(_settings, cancellationToken);
         _provider.Update(_settings);
-        _theme.ApplyTheme(_settings.UseDarkMode);
-        await _logService.EnforceRetentionAsync(cancellationToken).ConfigureAwait(false);
+        await _logService.EnforceRetentionAsync(cancellationToken);
+    }
+
+    private void ApplyThemeSelection()
+    {
+        _settings.ThemeMode = AppThemeModes.Normalize(_settings.ThemeMode);
+        _theme.ApplyThemeMode(_settings.ThemeMode);
+        _settings.UseDarkMode = _theme.IsDarkMode;
     }
 }

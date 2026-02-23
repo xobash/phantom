@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Phantom.Models;
 using Phantom.Services;
 using Phantom.Views;
 
@@ -69,8 +70,17 @@ public partial class App : Application
 
             _bootstrap = new AppBootstrap();
             var initialSettings = await _bootstrap.SettingsStore.LoadAsync(CancellationToken.None).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(initialSettings.ThemeMode))
+            {
+                initialSettings.ThemeMode = initialSettings.UseDarkMode ? AppThemeModes.Dark : AppThemeModes.Light;
+            }
+            else
+            {
+                initialSettings.ThemeMode = AppThemeModes.Normalize(initialSettings.ThemeMode);
+            }
+
             _bootstrap.SettingsProvider.Update(initialSettings);
-            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyTheme(initialSettings.UseDarkMode));
+            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode));
             _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
             _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
             await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
@@ -115,6 +125,7 @@ public partial class App : Application
 
                 MainWindow = window;
                 window.Show();
+                _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode);
             });
             _bootstrap.Console.Publish("Trace", "MainWindow shown.");
             await _bootstrap.Main.InitializeAsync(CancellationToken.None);

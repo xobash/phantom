@@ -41,6 +41,14 @@
             <Setter Property="MinWidth" Value="72"/>
         </Style>
 
+        <Style x:Key="OpenIconButtonStyle" TargetType="Button" BasedOn="{StaticResource CompactButtonStyle}">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinWidth" Value="36"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+
         <Style x:Key="FeatureInfoChipStyle" TargetType="Border">
             <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -199,7 +207,19 @@
                         <TextBlock Text="Controls scheduled drive optimization and opens Optimize Drives." Style="{StaticResource FeatureDescriptionStyle}"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="Open" Command="{Binding OpenDriveOptimizationCommand}" Style="{StaticResource CompactButtonStyle}" Margin="0,0,8,0"/>
+                        <Button Command="{Binding OpenDriveOptimizationCommand}" Style="{StaticResource OpenIconButtonStyle}" ToolTip="Open Optimize Drives">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="16" Height="16">
+                                    <Path Data="M1,4 L15,4 M1,12 L15,12"
+                                          Stroke="{DynamicResource DarkTextBrush}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="4" Canvas.Top="2"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="10" Canvas.Top="10"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
                         <ToggleButton IsChecked="{Binding DriveOptimizationEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}"/>
                     </StackPanel>
                 </Grid>
@@ -216,7 +236,19 @@
                         <TextBlock Text="Turns Storage Sense on or off and opens Storage settings." Style="{StaticResource FeatureDescriptionStyle}"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="Open" Command="{Binding OpenStorageSenseSettingsCommand}" Style="{StaticResource CompactButtonStyle}" Margin="0,0,8,0"/>
+                        <Button Command="{Binding OpenStorageSenseSettingsCommand}" Style="{StaticResource OpenIconButtonStyle}" ToolTip="Open Storage settings">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="16" Height="16">
+                                    <Path Data="M1,4 L15,4 M1,12 L15,12"
+                                          Stroke="{DynamicResource DarkTextBrush}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="4" Canvas.Top="2"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="10" Canvas.Top="10"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
                         <ToggleButton IsChecked="{Binding StorageSenseEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}"/>
                     </StackPanel>
                 </Grid>

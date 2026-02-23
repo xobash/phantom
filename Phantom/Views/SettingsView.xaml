@@ -8,15 +8,39 @@
     <StackPanel Background="{DynamicResource AppBgBrush}">
         <Border Style="{StaticResource DarkCardStyle}">
             <StackPanel>
-                <CheckBox Content="Dark mode" IsChecked="{Binding UseDarkMode}" Style="{StaticResource DarkCheckBoxStyle}"/>
-                <TextBlock Text="Switch between dark and light theme." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Theme" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                        <TextBlock Text="Auto follows Windows. Light and Dark override it." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                    <ComboBox Grid.Column="1"
+                              Width="140"
+                              Margin="12,0,0,0"
+                              VerticalAlignment="Center"
+                              ItemsSource="{Binding ThemeModes}"
+                              SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{StaticResource DarkComboBoxStyle}"/>
+                </Grid>
             </StackPanel>
         </Border>
 
         <Border Style="{StaticResource DarkCardStyle}">
             <StackPanel>
-                <CheckBox Content="Enable destructive operations" IsChecked="{Binding EnableDestructiveOperations}" Style="{StaticResource DarkCheckBoxStyle}"/>
-                <TextBlock Text="When OFF, destructive removals stay hidden/disabled." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Enable destructive operations" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                        <TextBlock Text="When OFF, destructive removals stay hidden/disabled." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" IsChecked="{Binding EnableDestructiveOperations}" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                </Grid>
             </StackPanel>
         </Border>
 
