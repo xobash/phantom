@@ -15,7 +15,7 @@ public sealed class ThemeService
         SetBrushColor("CardBrush", theme.CardBackground);
         SetBrushColor("BorderBrush", theme.Border);
 
-        SetBrushColor("AppBgBrush", theme.AppBackground);
+        SetAppBackgroundBrush(theme.AppBackground, darkMode);
         SetBrushColor("ShellBrush", theme.ShellBackground);
         SetBrushColor("ShellAltBrush", theme.ShellAltBackground);
 
@@ -61,6 +61,63 @@ public sealed class ThemeService
         {
             resources[key] = new SolidColorBrush(color);
         }
+    }
+
+    private static void SetAppBackgroundBrush(string hex, bool darkMode)
+    {
+        var resources = Application.Current.Resources;
+        var baseColor = (Color)ColorConverter.ConvertFromString(hex)!;
+        var start = ScaleColor(baseColor, darkMode ? 0.9 : 1.03);
+        var end = ScaleColor(baseColor, darkMode ? 1.15 : 0.97);
+
+        if (resources["AppBgBrush"] is LinearGradientBrush gradient)
+        {
+            if (gradient.IsFrozen)
+            {
+                resources["AppBgBrush"] = CreateAppGradientBrush(start, end);
+                return;
+            }
+
+            gradient.StartPoint = new Point(0, 0);
+            gradient.EndPoint = new Point(1, 1);
+            if (gradient.GradientStops.Count < 2)
+            {
+                gradient.GradientStops.Clear();
+                gradient.GradientStops.Add(new GradientStop(start, 0));
+                gradient.GradientStops.Add(new GradientStop(end, 1));
+                return;
+            }
+
+            gradient.GradientStops[0].Color = start;
+            gradient.GradientStops[0].Offset = 0;
+            gradient.GradientStops[1].Color = end;
+            gradient.GradientStops[1].Offset = 1;
+            return;
+        }
+
+        resources["AppBgBrush"] = CreateAppGradientBrush(start, end);
+    }
+
+    private static Color ScaleColor(Color color, double scale)
+    {
+        static byte ClampChannel(double value) => (byte)Math.Clamp((int)Math.Round(value), 0, 255);
+        return Color.FromArgb(
+            color.A,
+            ClampChannel(color.R * scale),
+            ClampChannel(color.G * scale),
+            ClampChannel(color.B * scale));
+    }
+
+    private static LinearGradientBrush CreateAppGradientBrush(Color start, Color end)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1)
+        };
+        brush.GradientStops.Add(new GradientStop(start, 0));
+        brush.GradientStops.Add(new GradientStop(end, 1));
+        return brush;
     }
 
     private sealed record ThemePalette(
