@@ -30,6 +30,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private bool _repairExpanded;
     private bool _optionalFeaturesExpanded;
     private bool _loadingSystemState;
+    private readonly SemaphoreSlim _toggleSemaphore = new(1, 1);
 
     public FeaturesViewModel(
         DefinitionCatalogService catalogService,
@@ -118,7 +119,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
                 return;
             }
 
-            _ = SetFastStartupAsync(value);
+            QueueSystemToggle("Fast startup", ct => SetFastStartupAsync(value, ct));
         }
     }
 
@@ -132,7 +133,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
                 return;
             }
 
-            _ = SetHibernationAsync(value);
+            QueueSystemToggle("Hibernation", ct => SetHibernationAsync(value, ct));
         }
     }
 
@@ -146,7 +147,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
                 return;
             }
 
-            _ = SetDriveOptimizationAsync(value);
+            QueueSystemToggle("Drive optimization", ct => SetDriveOptimizationAsync(value, ct));
         }
     }
 
@@ -160,7 +161,7 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
                 return;
             }
 
-            _ = SetStorageSenseAsync(value);
+            QueueSystemToggle("Storage Sense", ct => SetStorageSenseAsync(value, ct));
         }
     }
 
@@ -211,20 +212,18 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
     {
-        var operations = Features
-            .Where(f => f.Selected)
-            .Select(f => new OperationDefinition
+        var operations = new List<OperationDefinition>();
+        foreach (var feature in Features.Where(f => f.Selected))
+        {
+            try
             {
-                Id = $"feature.{f.Id}",
-                Title = $"Enable {f.Name}",
-                Description = f.Description,
-                RiskTier = RiskTier.Advanced,
-                Reversible = true,
-                RequiresReboot = true,
-                RunScripts = [new PowerShellStep { Name = "enable", Script = $"Enable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -All -NoRestart -ErrorAction Stop" }],
-                UndoScripts = [new PowerShellStep { Name = "disable", Script = $"Disable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -NoRestart -ErrorAction Stop" }]
-            })
-            .ToList();
+                operations.Add(BuildEnableFeatureOperation(feature));
+            }
+            catch (ArgumentException ex)
+            {
+                _console.Publish("Error", ex.Message);
+            }
+        }
 
         await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
@@ -232,20 +231,18 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
 
     private async Task UndoSelectedAsync(CancellationToken cancellationToken)
     {
-        var operations = Features
-            .Where(f => f.Selected)
-            .Select(f => new OperationDefinition
+        var operations = new List<OperationDefinition>();
+        foreach (var feature in Features.Where(f => f.Selected))
+        {
+            try
             {
-                Id = $"feature.{f.Id}",
-                Title = $"Disable {f.Name}",
-                Description = f.Description,
-                RiskTier = RiskTier.Advanced,
-                Reversible = true,
-                RequiresReboot = true,
-                RunScripts = [new PowerShellStep { Name = "disable", Script = $"Disable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -NoRestart -ErrorAction Stop" }],
-                UndoScripts = [new PowerShellStep { Name = "enable", Script = $"Enable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -All -NoRestart -ErrorAction Stop" }]
-            })
-            .ToList();
+                operations.Add(BuildDisableFeatureOperation(feature));
+            }
+            catch (ArgumentException ex)
+            {
+                _console.Publish("Error", ex.Message);
+            }
+        }
 
         await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
@@ -329,35 +326,58 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         }
     }
 
-    private async Task SetFastStartupAsync(bool enabled)
+    private void QueueSystemToggle(string toggleName, Func<CancellationToken, Task> action)
+    {
+        _ = QueueSystemToggleAsync(toggleName, action);
+    }
+
+    private async Task QueueSystemToggleAsync(string toggleName, Func<CancellationToken, Task> action)
+    {
+        await _toggleSemaphore.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await action(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"{toggleName} toggle failed: {ex.Message}");
+            await RefreshSystemStateAsync(CancellationToken.None, echoQueryToConsole: false).ConfigureAwait(false);
+        }
+        finally
+        {
+            _toggleSemaphore.Release();
+        }
+    }
+
+    private async Task SetFastStartupAsync(bool enabled, CancellationToken cancellationToken)
     {
         var script = enabled
             ? "powercfg /hibernate on | Out-Null; New-Item -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name HiberbootEnabled -Type DWord -Value 1"
             : "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name HiberbootEnabled -Type DWord -Value 0";
-        await ExecuteScriptAsync("feature.fast-startup", "toggle", script, CancellationToken.None, refreshSystemState: true).ConfigureAwait(false);
+        await ExecuteScriptAsync("feature.fast-startup", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
-    private async Task SetHibernationAsync(bool enabled)
+    private async Task SetHibernationAsync(bool enabled, CancellationToken cancellationToken)
     {
         var script = enabled
             ? "powercfg /hibernate on"
             : "powercfg /hibernate off";
-        await ExecuteScriptAsync("feature.hibernation", "toggle", script, CancellationToken.None, refreshSystemState: true).ConfigureAwait(false);
+        await ExecuteScriptAsync("feature.hibernation", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
-    private async Task SetDriveOptimizationAsync(bool enabled)
+    private async Task SetDriveOptimizationAsync(bool enabled, CancellationToken cancellationToken)
     {
         var script = enabled
             ? "Enable-ScheduledTask -TaskPath '\\Microsoft\\Windows\\Defrag\\' -TaskName 'ScheduledDefrag' -ErrorAction Stop"
             : "Disable-ScheduledTask -TaskPath '\\Microsoft\\Windows\\Defrag\\' -TaskName 'ScheduledDefrag' -ErrorAction Stop";
-        await ExecuteScriptAsync("feature.drive-optimization", "toggle", script, CancellationToken.None, refreshSystemState: true).ConfigureAwait(false);
+        await ExecuteScriptAsync("feature.drive-optimization", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
-    private async Task SetStorageSenseAsync(bool enabled)
+    private async Task SetStorageSenseAsync(bool enabled, CancellationToken cancellationToken)
     {
         var value = enabled ? 1 : 0;
         var script = $"New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy' -Name 01 -Type DWord -Value {value}";
-        await ExecuteScriptAsync("feature.storage-sense", "toggle", script, CancellationToken.None, refreshSystemState: true).ConfigureAwait(false);
+        await ExecuteScriptAsync("feature.storage-sense", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
     private Task OpenDriveOptimizationAsync(CancellationToken cancellationToken)
@@ -475,7 +495,18 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         var statuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var feature in snapshot)
         {
-            var script = $"$f=Get-WindowsOptionalFeature -Online -FeatureName '{feature.FeatureName}' -ErrorAction Stop; if($f){{$f.State}} else {{'Unknown'}}";
+            string script;
+            try
+            {
+                script = BuildFeatureStateScript(feature);
+            }
+            catch (ArgumentException ex)
+            {
+                _console.Publish("Error", ex.Message);
+                statuses[feature.Id] = "Invalid catalog entry";
+                continue;
+            }
+
             var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
             statuses[feature.Id] = result.ExitCode == 0 ? result.Stdout.Trim() : "Managed / Restricted";
         }
@@ -531,5 +562,56 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         return feature.Name.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                feature.Description.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                feature.FeatureName.Contains(Search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static OperationDefinition BuildEnableFeatureOperation(FeatureDefinition feature)
+    {
+        return new OperationDefinition
+        {
+            Id = $"feature.{feature.Id}",
+            Title = $"Enable {feature.Name}",
+            Description = feature.Description,
+            RiskTier = RiskTier.Advanced,
+            Reversible = true,
+            RequiresReboot = true,
+            RunScripts = [new PowerShellStep { Name = "enable", Script = BuildEnableFeatureScript(feature) }],
+            UndoScripts = [new PowerShellStep { Name = "disable", Script = BuildDisableFeatureScript(feature) }]
+        };
+    }
+
+    private static OperationDefinition BuildDisableFeatureOperation(FeatureDefinition feature)
+    {
+        return new OperationDefinition
+        {
+            Id = $"feature.{feature.Id}",
+            Title = $"Disable {feature.Name}",
+            Description = feature.Description,
+            RiskTier = RiskTier.Advanced,
+            Reversible = true,
+            RequiresReboot = true,
+            RunScripts = [new PowerShellStep { Name = "disable", Script = BuildDisableFeatureScript(feature) }],
+            UndoScripts = [new PowerShellStep { Name = "enable", Script = BuildEnableFeatureScript(feature) }]
+        };
+    }
+
+    private static string BuildEnableFeatureScript(FeatureDefinition feature)
+    {
+        return $"Enable-WindowsOptionalFeature -Online -FeatureName {GetFeatureNameLiteral(feature)} -All -NoRestart -ErrorAction Stop";
+    }
+
+    private static string BuildDisableFeatureScript(FeatureDefinition feature)
+    {
+        return $"Disable-WindowsOptionalFeature -Online -FeatureName {GetFeatureNameLiteral(feature)} -NoRestart -ErrorAction Stop";
+    }
+
+    private static string BuildFeatureStateScript(FeatureDefinition feature)
+    {
+        return $"$f=Get-WindowsOptionalFeature -Online -FeatureName {GetFeatureNameLiteral(feature)} -ErrorAction Stop; if($f){{$f.State}} else {{'Unknown'}}";
+    }
+
+    private static string GetFeatureNameLiteral(FeatureDefinition feature)
+    {
+        var safeFeatureName = PowerShellInputSanitizer.EnsureFeatureName(feature.FeatureName, $"feature '{feature.Id}'");
+        return PowerShellInputSanitizer.ToSingleQuotedLiteral(safeFeatureName);
     }
 }

@@ -170,7 +170,7 @@ public sealed class DefinitionCatalogService
         var displayName = ValidateString(item, "displayName", ctx, errors, required: true, allowEmpty: false);
         var wingetId = ValidateString(item, "wingetId", ctx, errors, required: false, allowEmpty: true);
         var chocoId = ValidateString(item, "chocoId", ctx, errors, required: false, allowEmpty: true);
-        ValidateString(item, "silentArgs", ctx, errors, required: false, allowEmpty: true);
+        var silentArgs = ValidateString(item, "silentArgs", ctx, errors, required: false, allowEmpty: true);
         ValidateString(item, "homepage", ctx, errors, required: false, allowEmpty: true);
         ValidateStringArray(item, "tags", ctx, errors, required: false);
 
@@ -182,6 +182,21 @@ public sealed class DefinitionCatalogService
         if (!string.IsNullOrWhiteSpace(displayName) && displayName.Length > 128)
         {
             errors.Add($"{ctx}.displayName: exceeds max length 128.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(wingetId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsurePackageId(wingetId, $"{ctx}.wingetId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(chocoId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsurePackageId(chocoId, $"{ctx}.chocoId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(silentArgs))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureSafeCliArguments(silentArgs, $"{ctx}.silentArgs"), errors);
         }
     }
 
@@ -221,8 +236,13 @@ public sealed class DefinitionCatalogService
 
         ValidateString(item, "id", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "name", ctx, errors, required: true, allowEmpty: false);
-        ValidateString(item, "featureName", ctx, errors, required: true, allowEmpty: false);
+        var featureName = ValidateString(item, "featureName", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "description", ctx, errors, required: true, allowEmpty: false);
+
+        if (!string.IsNullOrWhiteSpace(featureName))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureFeatureName(featureName, $"{ctx}.featureName"), errors);
+        }
     }
 
     private static void ValidateFix(JsonElement item, int index, List<string> errors)
@@ -259,7 +279,23 @@ public sealed class DefinitionCatalogService
         ValidateString(item, "id", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "name", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "description", ctx, errors, required: true, allowEmpty: false);
-        ValidateString(item, "launchScript", ctx, errors, required: true, allowEmpty: false);
+        var launchScript = ValidateString(item, "launchScript", ctx, errors, required: true, allowEmpty: false);
+        if (!string.IsNullOrWhiteSpace(launchScript))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureSafeLegacyLaunchScript(launchScript, $"{ctx}.launchScript"), errors);
+        }
+    }
+
+    private static void TryValidate(Func<string> validator, List<string> errors)
+    {
+        try
+        {
+            _ = validator();
+        }
+        catch (ArgumentException ex)
+        {
+            errors.Add(ex.Message);
+        }
     }
 
     private static bool EnsureObject(JsonElement element, string context, List<string> errors)
