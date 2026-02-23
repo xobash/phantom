@@ -41,18 +41,93 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["show-file-extensions"] = "fileexplorer",
             ["show-hidden-files"] = "fileexplorer",
             ["disable-web-search"] = "startmenu",
+            ["disable-start-recommendations"] = "startmenu",
+            ["hide-search-button-taskbar"] = "startmenu",
+            ["hide-task-view-button"] = "startmenu",
+            ["revert-new-start-menu"] = "startmenu",
             ["disable-telemetry"] = "privacy",
             ["disable-background-apps"] = "privacy",
             ["disable-delivery-optimization"] = "privacy",
             ["disable-copilot"] = "privacy",
+            ["disable-location-tracking"] = "privacy",
+            ["disable-activity-history"] = "privacy",
+            ["disable-powershell7-telemetry"] = "privacy",
+            ["disable-notification-tray-calendar"] = "privacy",
             ["disable-consumer-features"] = "ads",
             ["disable-windows-tips"] = "ads",
+            ["remove-widgets"] = "ads",
             ["disable-gamedvr"] = "system",
             ["high-performance-plan"] = "system",
+            ["add-ultimate-performance-profile"] = "system",
+            ["remove-ultimate-performance-profile"] = "system",
             ["disable-hibernation"] = "system",
+            ["center-taskbar-items"] = "desktop",
+            ["disable-cross-device-resume"] = "desktop",
+            ["dark-theme-windows"] = "desktop",
+            ["detailed-bsod"] = "desktop",
+            ["disable-multiplane-overlay"] = "desktop",
+            ["disable-mouse-acceleration"] = "desktop",
+            ["disable-new-outlook"] = "desktop",
+            ["numlock-on-startup"] = "desktop",
+            ["remove-settings-home-page"] = "desktop",
+            ["enable-s3-sleep"] = "desktop",
+            ["disable-sticky-keys"] = "desktop",
+            ["verbose-messages-during-logon"] = "desktop",
+            ["disable-explorer-auto-folder-discovery"] = "fileexplorer",
+            ["remove-gallery-from-explorer"] = "fileexplorer",
+            ["remove-home-from-explorer"] = "fileexplorer",
+            ["set-classic-right-click-menu"] = "fileexplorer",
+            ["set-display-for-performance"] = "system",
+            ["set-time-to-utc-dualboot"] = "system",
+            ["disable-storage-sense"] = "system",
+            ["disable-teredo"] = "system",
+            ["disable-fullscreen-optimizations"] = "system",
+            ["disable-ipv6"] = "system",
+            ["prefer-ipv4-over-ipv6"] = "system",
+            ["set-services-to-manual"] = "system",
+            ["create-restore-point"] = "system",
+            ["delete-temporary-files"] = "system",
+            ["run-disk-cleanup"] = "system",
+            ["disable-wpbt"] = "system",
+            ["enable-end-task-with-right-click"] = "system",
+            ["edge-debloat"] = "superuser",
+            ["brave-debloat"] = "superuser",
+            ["adobe-network-block"] = "superuser",
+            ["block-razer-software-installs"] = "superuser",
             ["disable-smb1"] = "superuser",
             ["remove-onedrive"] = "superuser",
-            ["remove-edge"] = "superuser"
+            ["remove-edge"] = "superuser",
+            ["remove-all-ms-store-apps"] = "superuser",
+            ["remove-xbox-gaming-components"] = "superuser"
+        };
+
+    private static readonly string[] DefaultDnsProfiles =
+    [
+        "Default",
+        "DHCP",
+        "Google",
+        "Cloudflare",
+        "Cloudflare_Malware",
+        "Cloudflare_Malware_Adult",
+        "Open_DNS",
+        "Quad9",
+        "AdGuard_Ads_Trackers",
+        "AdGuard_Ads_Trackers_Malware_Adult"
+    ];
+
+    private static readonly IReadOnlyDictionary<string, string[]> DnsServersByProfile =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Default"] = [],
+            ["DHCP"] = [],
+            ["Google"] = ["8.8.8.8", "8.8.4.4"],
+            ["Cloudflare"] = ["1.1.1.1", "1.0.0.1"],
+            ["Cloudflare_Malware"] = ["1.1.1.2", "1.0.0.2"],
+            ["Cloudflare_Malware_Adult"] = ["1.1.1.3", "1.0.0.3"],
+            ["Open_DNS"] = ["208.67.222.222", "208.67.220.220"],
+            ["Quad9"] = ["9.9.9.9", "149.112.112.112"],
+            ["AdGuard_Ads_Trackers"] = ["94.140.14.14", "94.140.15.15"],
+            ["AdGuard_Ads_Trackers_Malware_Adult"] = ["94.140.14.15", "94.140.15.16"]
         };
 
     private readonly DefinitionCatalogService _catalogService;
@@ -68,6 +143,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     private string _search = string.Empty;
     private bool _dryRun;
+    private string _selectedDnsProfile = DefaultDnsProfiles[0];
 
     public TweaksViewModel(
         DefinitionCatalogService catalogService,
@@ -109,6 +185,10 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         ExportSelectionCommand = new AsyncRelayCommand(ExportSelectionAsync);
         ImportSelectionCommand = new AsyncRelayCommand(ImportSelectionAsync);
+        RunOoShutUp10Command = new AsyncRelayCommand(RunOoShutUp10Async);
+        ApplyDnsProfileCommand = new AsyncRelayCommand(ApplyDnsProfileAsync);
+
+        DnsProfiles = new ObservableCollection<string>(DefaultDnsProfiles);
     }
 
     public string Title => "Tweaks";
@@ -125,6 +205,9 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     public RelayCommand ClearSelectionCommand { get; }
     public AsyncRelayCommand ExportSelectionCommand { get; }
     public AsyncRelayCommand ImportSelectionCommand { get; }
+    public AsyncRelayCommand RunOoShutUp10Command { get; }
+    public AsyncRelayCommand ApplyDnsProfileCommand { get; }
+    public ObservableCollection<string> DnsProfiles { get; }
 
     public string Search
     {
@@ -144,9 +227,16 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         set => SetProperty(ref _dryRun, value);
     }
 
+    public string SelectedDnsProfile
+    {
+        get => _selectedDnsProfile;
+        set => SetProperty(ref _selectedDnsProfile, value);
+    }
+
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var tweaks = await _catalogService.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
+        MergeRequestedTweaks(tweaks);
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             Tweaks.Clear();
@@ -164,6 +254,21 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         RefreshTweaksView();
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void MergeRequestedTweaks(List<TweakDefinition> tweaks)
+    {
+        var lookup = tweaks.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var requested in RequestedTweaksCatalog.CreateRequestedTweaks())
+        {
+            if (lookup.ContainsKey(requested.Id))
+            {
+                continue;
+            }
+
+            tweaks.Add(requested);
+            lookup[requested.Id] = requested;
+        }
     }
 
     public async Task ApplyToggleFromUiAsync(TweakDefinition? tweak, bool enabled, CancellationToken cancellationToken)
@@ -299,6 +404,116 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         await RunOperationsAsync(operations, undo: true, cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RunOoShutUp10Async(CancellationToken cancellationToken)
+    {
+        const string script = """
+                              $downloadUrl='https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe'
+                              $toolRoot=Join-Path $env:TEMP 'Phantom\Tools'
+                              $exePath=Join-Path $toolRoot 'OOSU10.exe'
+                              New-Item -Path $toolRoot -ItemType Directory -Force | Out-Null
+                              Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing -ErrorAction Stop
+                              if(-not (Test-Path $exePath)){ throw 'O&O ShutUp10 download failed.' }
+                              Start-Process -FilePath $exePath
+                              Write-Output "O&O ShutUp10 launched from $exePath"
+                              """;
+
+        var operation = new OperationDefinition
+        {
+            Id = "tweak.run-oo-shutup10",
+            Title = "Run O&O ShutUp10",
+            Description = "Downloads and launches O&O ShutUp10 from official source.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            Destructive = false,
+            Tags = ["tweak", "utility"],
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "download-run",
+                    Script = script,
+                    RequiresNetwork = true
+                }
+            ],
+            UndoScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "undo",
+                    Script = "Write-Output 'No undo action for O&O ShutUp10 execution.'"
+                }
+            ]
+        };
+
+        await RunOperationsAsync([operation], undo: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplyDnsProfileAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(SelectedDnsProfile) || !DnsServersByProfile.ContainsKey(SelectedDnsProfile))
+        {
+            _console.Publish("Warning", "Select a valid DNS profile first.");
+            return;
+        }
+
+        var profile = SelectedDnsProfile;
+        var script = BuildDnsApplyScript(profile);
+        var operation = new OperationDefinition
+        {
+            Id = $"tweak.dns.{profile.ToLowerInvariant()}",
+            Title = $"Set DNS: {profile}",
+            Description = $"Applies DNS profile '{profile}' to active adapter.",
+            RiskTier = RiskTier.Advanced,
+            Reversible = false,
+            Destructive = false,
+            Tags = ["tweak", "network", "dns"],
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "set-dns",
+                    Script = script
+                }
+            ],
+            UndoScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "undo",
+                    Script = "Write-Output 'Use DNS dropdown and apply Default/DHCP to revert.'"
+                }
+            ]
+        };
+
+        await RunOperationsAsync([operation], undo: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildDnsApplyScript(string profile)
+    {
+        var escapedProfile = profile.Replace("'", "''");
+        var adapterScript = "$adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } | Sort-Object -Property InterfaceMetric | Select-Object -First 1; " +
+                            "if ($null -eq $adapter) { $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 }; " +
+                            "if ($null -eq $adapter) { throw 'No active network adapter found.' }; ";
+
+        if (!DnsServersByProfile.TryGetValue(profile, out var servers))
+        {
+            throw new InvalidOperationException($"Unsupported DNS profile: {profile}");
+        }
+
+        if (servers.Length == 0)
+        {
+            return adapterScript +
+                   "Set-DnsClientServerAddress -InterfaceAlias $adapter.Name -ResetServerAddresses -ErrorAction Stop; " +
+                   $"Write-Output 'Applied DNS profile {escapedProfile} to adapter: ' + $adapter.Name";
+        }
+
+        var addresses = string.Join(", ", servers.Select(x => $"'{x}'"));
+        return adapterScript +
+               $"$servers=@({addresses}); " +
+               "Set-DnsClientServerAddress -InterfaceAlias $adapter.Name -ServerAddresses $servers -ErrorAction Stop; " +
+               $"Write-Output 'Applied DNS profile {escapedProfile} to adapter: ' + $adapter.Name";
     }
 
     private async Task<List<OperationDefinition>> BuildOperationsForDesiredStateAsync(

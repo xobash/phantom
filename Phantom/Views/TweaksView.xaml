@@ -205,9 +205,29 @@
             </ScrollViewer>
         </Border>
 
-        <TextBlock Grid.Row="2"
-                   Margin="10,2,10,0"
-                   Foreground="{DynamicResource MutedTextBrush}"
-                   Text="Dangerous or non-reversible tweaks still require explicit confirmation (Y)."/>
+        <StackPanel Grid.Row="2" Margin="10,2,10,0">
+            <TextBlock Foreground="{DynamicResource MutedTextBrush}"
+                       Text="Dangerous or non-reversible tweaks still require explicit confirmation (Y)."/>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Button Content="Run O&amp;O ShutUp10"
+                        Command="{Binding RunOoShutUp10Command}"
+                        Style="{StaticResource DarkButtonStyle}"/>
+                <StackPanel Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               Margin="0,0,8,0"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontWeight="SemiBold"
+                               Text="DNS"/>
+                    <ComboBox Width="280"
+                              ItemsSource="{Binding DnsProfiles}"
+                              SelectedItem="{Binding SelectedDnsProfile, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{StaticResource DarkComboBoxStyle}"/>
+                    <Button Content="Apply DNS"
+                            Margin="8,0,0,0"
+                            Command="{Binding ApplyDnsProfileCommand}"
+                            Style="{StaticResource DarkButtonStyle}"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
     </Grid>
 </UserControl>

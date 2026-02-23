@@ -23,7 +23,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "aka.ms",
         "community.chocolatey.org",
         "github.com",
-        "raw.githubusercontent.com"
+        "raw.githubusercontent.com",
+        "www.oo-software.com",
+        "dl5.oo-software.com"
     ];
     private static readonly HashSet<string> AllowedStartProcessTargets = new(StringComparer.OrdinalIgnoreCase)
     {
