@@ -17,9 +17,7 @@
 
         <Border Grid.Column="0" Background="{DynamicResource ShellBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Phantom" FontSize="38" FontWeight="SemiBold" Margin="16,14,16,14" Foreground="{DynamicResource DarkTextBrush}"/>
-
-                <ListBox ItemsSource="{Binding Navigation}" SelectedItem="{Binding SelectedNavigation}" Margin="12"
+                <ListBox ItemsSource="{Binding Navigation}" SelectedItem="{Binding SelectedNavigation}" Margin="12,8,12,12"
                          BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">

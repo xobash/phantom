@@ -39,6 +39,8 @@ public sealed class ThemeService
         SetBrushColor("RowAltBackgroundBrush", theme.GridRowAltBackground);
         SetBrushColor("RowHoverBackgroundBrush", theme.GridRowHoverBackground);
         SetBrushColor("RowSelectedBackgroundBrush", theme.GridRowSelectedBackground);
+        SetBrushColor("TerminalBackgroundBrush", theme.TerminalBackground);
+        SetBrushColor("TerminalForegroundBrush", theme.TerminalForeground);
     }
 
     private static void SetBrushColor(string key, string hex)
@@ -142,7 +144,9 @@ public sealed class ThemeService
         string GridRowBackground,
         string GridRowAltBackground,
         string GridRowHoverBackground,
-        string GridRowSelectedBackground)
+        string GridRowSelectedBackground,
+        string TerminalBackground,
+        string TerminalForeground)
     {
         public static ThemePalette Dark { get; } = new(
             AppBackground: "#141414",
@@ -166,7 +170,9 @@ public sealed class ThemeService
             GridRowBackground: "#252525",
             GridRowAltBackground: "#2B2B2B",
             GridRowHoverBackground: "#333333",
-            GridRowSelectedBackground: "#3D3D3D");
+            GridRowSelectedBackground: "#3D3D3D",
+            TerminalBackground: "#080808",
+            TerminalForeground: "#DDE7FF");
 
         public static ThemePalette Light { get; } = new(
             AppBackground: "#E8E8E8",
@@ -190,6 +196,8 @@ public sealed class ThemeService
             GridRowBackground: "#FFFFFF",
             GridRowAltBackground: "#F9F9F9",
             GridRowHoverBackground: "#F0F0F0",
-            GridRowSelectedBackground: "#E3E3E3");
+            GridRowSelectedBackground: "#E3E3E3",
+            TerminalBackground: "#F6F8FC",
+            TerminalForeground: "#1C2430");
     }
 }

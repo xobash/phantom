@@ -6,11 +6,12 @@
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
     <UserControl.Resources>
-        <Style x:Key="StoreGridTextStyle" TargetType="TextBlock">
+        <Style x:Key="StoreGridTextStyle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="17"/>
+            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
         </Style>
     </UserControl.Resources>
     <Grid Background="{DynamicResource AppBgBrush}">

@@ -1,4 +1,5 @@
 using Phantom.Models;
+using Microsoft.Win32;
 
 namespace Phantom.Services;
 
@@ -15,12 +16,43 @@ public sealed class SettingsStore
 
     public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
-        return _store.LoadAsync(_paths.SettingsFile, () => new AppSettings(), cancellationToken);
+        return _store.LoadAsync(_paths.SettingsFile, CreateDefaultSettings, cancellationToken);
     }
 
     public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
         return _store.SaveAsync(_paths.SettingsFile, settings, cancellationToken);
+    }
+
+    private static AppSettings CreateDefaultSettings()
+    {
+        var settings = new AppSettings();
+        settings.UseDarkMode = GetWindowsDarkModePreference();
+        return settings;
+    }
+
+    private static bool GetWindowsDarkModePreference()
+    {
+        try
+        {
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+            {
+                return true;
+            }
+
+            const string personalizePath = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+            using var key = Registry.CurrentUser.OpenSubKey(personalizePath, writable: false);
+            var raw = key?.GetValue("AppsUseLightTheme");
+            if (raw is int intValue)
+            {
+                return intValue == 0;
+            }
+        }
+        catch
+        {
+        }
+
+        return true;
     }
 }
 
