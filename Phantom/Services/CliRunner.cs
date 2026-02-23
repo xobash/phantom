@@ -102,7 +102,7 @@ public sealed class CliRunner
             EnableDestructiveOperations = settings.EnableDestructiveOperations,
             ForceDangerous = config.ConfirmDangerous && forceDangerous,
             InteractiveDangerousPrompt = false,
-            ConfirmDangerousAsync = _ => Task.FromResult(false)
+            ConfirmDangerousAsync = _ => Task.FromResult(config.ConfirmDangerous && forceDangerous)
         }, cancellationToken).ConfigureAwait(false);
 
         foreach (var item in result.Results)

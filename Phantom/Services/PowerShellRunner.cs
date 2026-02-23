@@ -5,6 +5,7 @@ using System.Management.Automation.Runspaces;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using Phantom.Models;
 
 namespace Phantom.Services;
@@ -24,9 +25,28 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "github.com",
         "raw.githubusercontent.com"
     ];
+    private static readonly HashSet<string> AllowedStartProcessTargets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer.exe",
+        "wsreset.exe",
+        "winsat.exe",
+        "appwiz.cpl",
+        "ncpa.cpl",
+        "services.msc",
+        "devmgmt.msc",
+        "diskmgmt.msc",
+        "gpedit.msc",
+        "sysdm.cpl",
+        "wf.msc",
+        "onedrivesetup.exe"
+    };
     private static readonly Regex UrlRegex = new(@"https?://[^\s'""`]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DownloadCommandRegex = new(@"\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm|curl|wget|Start-BitsTransfer|DownloadString)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DynamicExecutionRegex = new(@"\b(?:Invoke-Expression|IEX)\b|DownloadString\s*\(", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex EncodedCommandRegex = new(@"\B-(?:enc|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex UnsafeLanguageFeatureRegex = new(@"\b(?:Add-Type|Invoke-Command|Start-Job|Register-ScheduledJob)\b|FromBase64String\s*\(|System\.Reflection\.Assembly\s*::\s*Load", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex AlternateDataStreamRegex = new(@"[A-Za-z]:\\[^|;\r\n]*:[^\\/\r\n]+", RegexOptions.Compiled);
+    private static readonly Regex StartProcessLiteralRegex = new(@"Start-Process(?:\s+-FilePath)?\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex RegistryPathRegex = new(@"(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC):?\\[A-Za-z0-9_\\\-\.\{\}\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ServiceNameRegex = new(@"(?:Set|Stop|Start|Restart)-Service\b[^;\r\n]*?\b-Name\s+['""]?([A-Za-z0-9_.\-]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -94,108 +114,179 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private async Task<PowerShellExecutionResult> ExecuteViaRunspaceAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
         var sessionState = InitialSessionState.CreateDefault();
-        using var runspace = RunspaceFactory.CreateRunspace(sessionState);
-        runspace.Open();
+        Runspace? runspace = null;
+        PowerShell? ps = null;
+        PSDataCollection<PSObject>? output = null;
 
-        using var ps = PowerShell.Create();
-        ps.Runspace = runspace;
-        ps.AddScript(BootstrapScript);
-        ps.AddScript(request.Script);
+        EventHandler<DataAddedEventArgs>? outputDataAdded = null;
+        EventHandler<DataAddedEventArgs>? errorDataAdded = null;
+        EventHandler<DataAddedEventArgs>? warningDataAdded = null;
+        EventHandler<DataAddedEventArgs>? verboseDataAdded = null;
+        EventHandler<DataAddedEventArgs>? debugDataAdded = null;
+        EventHandler<DataAddedEventArgs>? informationDataAdded = null;
 
-        var output = new PSDataCollection<PSObject>();
         var combined = new StringBuilder();
-
-        output.DataAdded += (_, args) =>
+        try
         {
-            if (args.Index < 0 || args.Index >= output.Count)
+            runspace = RunspaceFactory.CreateRunspace(sessionState);
+            runspace.Open();
+
+            ps = PowerShell.Create();
+            ps.Runspace = runspace;
+            ps.AddScript(BootstrapScript);
+            ps.AddScript(request.Script);
+
+            output = new PSDataCollection<PSObject>();
+
+            outputDataAdded = (_, args) =>
             {
-                return;
+                if (args.Index < 0 || args.Index >= output.Count)
+                {
+                    return;
+                }
+
+                var text = output[args.Index]?.ToString() ?? string.Empty;
+                combined.AppendLine(text);
+                _console.Publish("Output", text);
+            };
+            output.DataAdded += outputDataAdded;
+
+            errorDataAdded = (_, args) =>
+            {
+                if (args.Index < 0 || args.Index >= ps.Streams.Error.Count)
+                {
+                    return;
+                }
+
+                var record = ps.Streams.Error[args.Index];
+                var text = record.ToString();
+                combined.AppendLine(text);
+                _console.Publish("Error", text);
+            };
+            ps.Streams.Error.DataAdded += errorDataAdded;
+
+            warningDataAdded = (_, args) =>
+            {
+                if (args.Index < 0 || args.Index >= ps.Streams.Warning.Count)
+                {
+                    return;
+                }
+
+                var text = ps.Streams.Warning[args.Index].ToString();
+                combined.AppendLine(text);
+                _console.Publish("Warning", text);
+            };
+            ps.Streams.Warning.DataAdded += warningDataAdded;
+
+            verboseDataAdded = (_, args) =>
+            {
+                if (args.Index < 0 || args.Index >= ps.Streams.Verbose.Count)
+                {
+                    return;
+                }
+
+                var text = ps.Streams.Verbose[args.Index].ToString();
+                combined.AppendLine(text);
+                _console.Publish("Verbose", text);
+            };
+            ps.Streams.Verbose.DataAdded += verboseDataAdded;
+
+            debugDataAdded = (_, args) =>
+            {
+                if (args.Index < 0 || args.Index >= ps.Streams.Debug.Count)
+                {
+                    return;
+                }
+
+                var text = ps.Streams.Debug[args.Index].ToString();
+                combined.AppendLine(text);
+                _console.Publish("Debug", text);
+            };
+            ps.Streams.Debug.DataAdded += debugDataAdded;
+
+            informationDataAdded = (_, args) =>
+            {
+                if (args.Index < 0 || args.Index >= ps.Streams.Information.Count)
+                {
+                    return;
+                }
+
+                var text = ps.Streams.Information[args.Index].ToString();
+                combined.AppendLine(text);
+                _console.Publish("Information", text);
+            };
+            ps.Streams.Information.DataAdded += informationDataAdded;
+
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    ps.Stop();
+                }
+                catch
+                {
+                }
+            });
+
+            var async = ps.BeginInvoke<PSObject, PSObject>(null, output);
+
+            while (!async.IsCompleted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
 
-            var text = output[args.Index]?.ToString() ?? string.Empty;
-            combined.AppendLine(text);
-            _console.Publish("Output", text);
-        };
-
-        ps.Streams.Error.DataAdded += (_, args) =>
-        {
-            if (args.Index < 0 || args.Index >= ps.Streams.Error.Count)
+            ps.EndInvoke(async);
+            var success = !ps.HadErrors;
+            _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
+            await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
             {
-                return;
-            }
-
-            var record = ps.Streams.Error[args.Index];
-            var text = record.ToString();
-            combined.AppendLine(text);
-            _console.Publish("Error", text);
-        };
-
-        ps.Streams.Warning.DataAdded += (_, args) =>
-        {
-            if (args.Index < 0 || args.Index >= ps.Streams.Warning.Count)
-            {
-                return;
-            }
-
-            var text = ps.Streams.Warning[args.Index].ToString();
-            combined.AppendLine(text);
-            _console.Publish("Warning", text);
-        };
-
-        ps.Streams.Verbose.DataAdded += (_, args) =>
-        {
-            if (args.Index < 0 || args.Index >= ps.Streams.Verbose.Count)
-            {
-                return;
-            }
-
-            var text = ps.Streams.Verbose[args.Index].ToString();
-            combined.AppendLine(text);
-            _console.Publish("Verbose", text);
-        };
-
-        ps.Streams.Debug.DataAdded += (_, args) =>
-        {
-            if (args.Index < 0 || args.Index >= ps.Streams.Debug.Count)
-            {
-                return;
-            }
-
-            var text = ps.Streams.Debug[args.Index].ToString();
-            combined.AppendLine(text);
-            _console.Publish("Debug", text);
-        };
-
-        ps.Streams.Information.DataAdded += (_, args) =>
-        {
-            if (args.Index < 0 || args.Index >= ps.Streams.Information.Count)
-            {
-                return;
-            }
-
-            var text = ps.Streams.Information[args.Index].ToString();
-            combined.AppendLine(text);
-            _console.Publish("Information", text);
-        };
-
-        var async = ps.BeginInvoke<PSObject, PSObject>(null, output);
-
-        while (!async.IsCompleted)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                Success = success,
+                ExitCode = success ? 0 : 1,
+                CombinedOutput = combined.ToString()
+            };
         }
-
-        ps.EndInvoke(async);
-        var success = !ps.HadErrors;
-        _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
-        await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
-        return new PowerShellExecutionResult
+        finally
         {
-            Success = success,
-            ExitCode = success ? 0 : 1,
-            CombinedOutput = combined.ToString()
-        };
+            if (output is not null && outputDataAdded is not null)
+            {
+                output.DataAdded -= outputDataAdded;
+            }
+
+            if (ps is not null)
+            {
+                if (errorDataAdded is not null)
+                {
+                    ps.Streams.Error.DataAdded -= errorDataAdded;
+                }
+
+                if (warningDataAdded is not null)
+                {
+                    ps.Streams.Warning.DataAdded -= warningDataAdded;
+                }
+
+                if (verboseDataAdded is not null)
+                {
+                    ps.Streams.Verbose.DataAdded -= verboseDataAdded;
+                }
+
+                if (debugDataAdded is not null)
+                {
+                    ps.Streams.Debug.DataAdded -= debugDataAdded;
+                }
+
+                if (informationDataAdded is not null)
+                {
+                    ps.Streams.Information.DataAdded -= informationDataAdded;
+                }
+
+                ps.Dispose();
+            }
+
+            runspace?.Dispose();
+            (sessionState as IDisposable)?.Dispose();
+        }
     }
 
     private async Task<PowerShellExecutionResult> ExecuteViaProcessAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
@@ -265,6 +356,45 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return true;
         }
 
+        if (EncodedCommandRegex.IsMatch(script))
+        {
+            reason = "Blocked encoded command invocation pattern (-EncodedCommand/-enc).";
+            return false;
+        }
+
+        if (UnsafeLanguageFeatureRegex.IsMatch(script))
+        {
+            reason = "Blocked unsafe PowerShell language feature pattern (dynamic runtime assembly/job/remote execution).";
+            return false;
+        }
+
+        if (AlternateDataStreamRegex.IsMatch(script))
+        {
+            reason = "Blocked alternate data stream path usage.";
+            return false;
+        }
+
+        foreach (Match match in StartProcessLiteralRegex.Matches(script))
+        {
+            var literalPath = match.Groups[1].Value.Trim();
+            if (literalPath.Length == 0)
+            {
+                continue;
+            }
+
+            var fileName = Path.GetFileName(literalPath);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = literalPath;
+            }
+
+            if (!AllowedStartProcessTargets.Contains(fileName))
+            {
+                reason = $"Blocked Start-Process target '{fileName}'.";
+                return false;
+            }
+        }
+
         if (DynamicExecutionRegex.IsMatch(script))
         {
             reason = "Blocked dynamic script execution pattern (Invoke-Expression/IEX/DownloadString).";
@@ -298,9 +428,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         try
         {
-            var registryKeys = ExtractRegistryKeys(request.Script).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var serviceNames = ExtractServiceNames(request.Script).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var scheduledTasks = ExtractScheduledTasks(request.Script).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var backupTargets = ExtractBackupTargets(request.Script);
+            var registryKeys = backupTargets.RegistryKeys;
+            var serviceNames = backupTargets.ServiceNames;
+            var scheduledTasks = backupTargets.ScheduledTasks;
 
             if (registryKeys.Count == 0 && serviceNames.Count == 0 && scheduledTasks.Count == 0)
             {
@@ -315,25 +446,32 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
             var backupFiles = new List<string>();
             var index = 0;
+            var registryExistsCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var key in registryKeys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var normalized = NormalizeRegistryPath(key);
-                if (string.IsNullOrWhiteSpace(normalized))
+                if (!registryExistsCache.TryGetValue(key, out var exists))
                 {
+                    exists = RegistryKeyExists(key);
+                    registryExistsCache[key] = exists;
+                }
+
+                if (!exists)
+                {
+                    _console.Publish("Warning", $"Registry backup skipped for {key}: key does not exist.");
                     continue;
                 }
 
-                var filePath = Path.Combine(backupRoot, $"registry-{index++:D2}-{SanitizeFileName(normalized)}.reg");
-                var export = await RunProcessAsync("reg.exe", $"export \"{normalized}\" \"{filePath}\" /y", cancellationToken).ConfigureAwait(false);
+                var filePath = Path.Combine(backupRoot, $"registry-{index++:D2}-{SanitizeFileName(key)}.reg");
+                var export = await RunProcessAsync("reg.exe", $"export \"{key}\" \"{filePath}\" /y", cancellationToken).ConfigureAwait(false);
                 if (export.ExitCode == 0 && File.Exists(filePath))
                 {
                     backupFiles.Add(filePath);
                 }
                 else
                 {
-                    _console.Publish("Warning", $"Registry backup skipped for {normalized}: {export.Stderr.Trim()}");
+                    _console.Publish("Warning", $"Registry backup skipped for {key}: {export.Stderr.Trim()}");
                 }
             }
 
@@ -409,6 +547,23 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
     }
 
+    private static BackupTargets ExtractBackupTargets(string script)
+    {
+        var registryKeys = ExtractRegistryKeys(script)
+            .Select(NormalizeRegistryPath)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var serviceNames = ExtractServiceNames(script)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var scheduledTasks = ExtractScheduledTasks(script)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new BackupTargets(registryKeys, serviceNames, scheduledTasks);
+    }
+
     private static IEnumerable<string> ExtractServiceNames(string script)
     {
         foreach (Match match in ServiceNameRegex.Matches(script))
@@ -463,6 +618,44 @@ public sealed class PowerShellRunner : IPowerShellRunner
         return task.StartsWith('\\') ? task : "\\" + task;
     }
 
+    private static bool RegistryKeyExists(string normalizedPath)
+    {
+        try
+        {
+            var value = normalizedPath.Trim();
+            var slash = value.IndexOf('\\');
+            var hive = slash < 0 ? value : value[..slash];
+            var subPath = slash < 0 ? string.Empty : value[(slash + 1)..];
+
+            var root = hive.ToUpperInvariant() switch
+            {
+                "HKEY_LOCAL_MACHINE" => Registry.LocalMachine,
+                "HKEY_CURRENT_USER" => Registry.CurrentUser,
+                "HKEY_CLASSES_ROOT" => Registry.ClassesRoot,
+                "HKEY_USERS" => Registry.Users,
+                "HKEY_CURRENT_CONFIG" => Registry.CurrentConfig,
+                _ => null
+            };
+
+            if (root is null)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(subPath))
+            {
+                return true;
+            }
+
+            using var key = root.OpenSubKey(subPath, writable: false);
+            return key is not null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string fileName, string arguments, CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
@@ -497,4 +690,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var normalized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
         return string.IsNullOrWhiteSpace(normalized) ? "item" : normalized;
     }
+
+    private sealed record BackupTargets(
+        List<string> RegistryKeys,
+        List<string> ServiceNames,
+        List<string> ScheduledTasks);
 }

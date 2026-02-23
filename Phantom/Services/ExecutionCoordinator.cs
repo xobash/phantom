@@ -5,8 +5,25 @@ public sealed class ExecutionCoordinator
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private bool _isRunning;
+    private EventHandler<bool>? _runningChanged;
 
-    public event EventHandler<bool>? RunningChanged;
+    public event EventHandler<bool>? RunningChanged
+    {
+        add
+        {
+            lock (_gate)
+            {
+                _runningChanged += value;
+            }
+        }
+        remove
+        {
+            lock (_gate)
+            {
+                _runningChanged -= value;
+            }
+        }
+    }
 
     public bool IsRunning
     {
@@ -35,7 +52,7 @@ public sealed class ExecutionCoordinator
             _isRunning = true;
             _cts = new CancellationTokenSource();
             token = _cts.Token;
-            runningChanged = RunningChanged;
+            runningChanged = _runningChanged;
         }
 
         runningChanged?.Invoke(this, true);
@@ -56,7 +73,7 @@ public sealed class ExecutionCoordinator
             _cts?.Dispose();
             _cts = null;
             _isRunning = false;
-            runningChanged = RunningChanged;
+            runningChanged = _runningChanged;
         }
 
         runningChanged?.Invoke(this, false);

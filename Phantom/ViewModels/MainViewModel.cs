@@ -9,15 +9,18 @@ using Phantom.Services;
 
 namespace Phantom.ViewModels;
 
-public sealed class MainViewModel : ObservableObject
+public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ExecutionCoordinator _executionCoordinator;
     private readonly AppPaths _paths;
     private readonly ConsoleStreamService _console;
+    private readonly EventHandler<PowerShellOutputEvent> _consoleMessageReceivedHandler;
+    private readonly EventHandler<bool> _runningChangedHandler;
 
     private NavigationItem? _selectedNavigation;
     private object? _currentSectionViewModel;
     private bool _isOperationRunning;
+    private bool _disposed;
 
     public MainViewModel(
         HomeViewModel home,
@@ -72,7 +75,7 @@ public sealed class MainViewModel : ObservableObject
             ConsoleMessages.Add(evt);
         }
 
-        console.MessageReceived += (_, evt) =>
+        _consoleMessageReceivedHandler = (_, evt) =>
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
@@ -83,8 +86,9 @@ public sealed class MainViewModel : ObservableObject
                 }
             });
         };
+        console.MessageReceived += _consoleMessageReceivedHandler;
 
-        _executionCoordinator.RunningChanged += (_, running) =>
+        _runningChangedHandler = (_, running) =>
         {
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher is null || dispatcher.CheckAccess())
@@ -95,6 +99,7 @@ public sealed class MainViewModel : ObservableObject
 
             dispatcher.BeginInvoke(new Action(() => IsOperationRunning = running));
         };
+        _executionCoordinator.RunningChanged += _runningChangedHandler;
 
         CancelCurrentOperationCommand = new RelayCommand(() => _executionCoordinator.Cancel());
         CopyLogCommand = new RelayCommand(() =>
@@ -206,5 +211,24 @@ public sealed class MainViewModel : ObservableObject
             FileName = _paths.LogsDirectory,
             UseShellExecute = true
         });
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _console.MessageReceived -= _consoleMessageReceivedHandler;
+        _executionCoordinator.RunningChanged -= _runningChangedHandler;
+        Home.StopTimer();
+        if (Tweaks is IDisposable disposableTweaks)
+        {
+            disposableTweaks.Dispose();
+        }
+
+        GC.SuppressFinalize(this);
     }
 }

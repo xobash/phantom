@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Principal;
 using Phantom.Models;
 
@@ -89,6 +90,8 @@ public sealed class OperationEngine
         var result = new OperationBatchResult();
         var undoState = await _undoStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var restorePointAttempted = false;
+        var restorePointReady = true;
+        var successfullyApplied = new List<OperationDefinition>();
 
         foreach (var operation in request.Operations)
         {
@@ -102,6 +105,7 @@ public sealed class OperationEngine
                 Success = false,
                 Message = "Not executed"
             };
+            var currentStepName = "precheck";
 
             try
             {
@@ -120,7 +124,20 @@ public sealed class OperationEngine
                     (operation.RiskTier == RiskTier.Dangerous || operation.Destructive))
                 {
                     restorePointAttempted = true;
-                    await TryCreateRestorePointAsync(operation, cancellationToken).ConfigureAwait(false);
+                    restorePointReady = await TryCreateRestorePointAsync(operation, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (!request.DryRun && !request.Undo &&
+                    _settingsAccessor().CreateRestorePointBeforeDangerousOperations &&
+                    (operation.RiskTier == RiskTier.Dangerous || operation.Destructive) &&
+                    !restorePointReady)
+                {
+                    opResult.Message = "Safety gate blocked operation: restore point creation failed.";
+                    _console.Publish("Error", $"{operation.Title}: {opResult.Message}");
+                    await _log.WriteAsync("Error", $"{operation.Id}: blocked because restore point creation failed.", cancellationToken).ConfigureAwait(false);
+                    result.Results.Add(opResult);
+                    await RollbackSuccessfulOperationsAsync(successfullyApplied, result, cancellationToken).ConfigureAwait(false);
+                    break;
                 }
 
                 if (scripts.Any(s => s.RequiresNetwork) && !_network.IsOnline())
@@ -193,6 +210,7 @@ public sealed class OperationEngine
                 var allSucceeded = true;
                 foreach (var step in scripts)
                 {
+                    currentStepName = step.Name;
                     _console.Publish("Trace", $"Operation step start: {operation.Id}/{step.Name}");
                     var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
                     {
@@ -217,6 +235,10 @@ public sealed class OperationEngine
                 if (allSucceeded)
                 {
                     opResult.Message = request.DryRun ? "Dry-run completed." : "Completed successfully.";
+                    if (!request.DryRun && !request.Undo)
+                    {
+                        successfullyApplied.Add(operation);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -227,26 +249,101 @@ public sealed class OperationEngine
             }
             catch (Exception ex)
             {
-                opResult.Message = ex.Message;
-                await _log.WriteAsync("Error", $"{operation.Id}: {ex}", cancellationToken).ConfigureAwait(false);
-                _console.Publish("Error", $"Operation exception: {operation.Id}: {ex.Message}");
+                opResult.Message = $"Operation '{operation.Id}' failed at step '{currentStepName}': {ex.Message}";
+                await _log.WriteAsync("Error", $"{operation.Id}/{currentStepName}: {ex}", cancellationToken).ConfigureAwait(false);
+                _console.Publish("Error", opResult.Message);
             }
 
             result.Results.Add(opResult);
             _console.Publish(opResult.Success ? "Info" : "Warning", $"Operation result: {operation.Id} => {opResult.Message}");
+
+            if (!opResult.Success && !opResult.Cancelled)
+            {
+                await RollbackSuccessfulOperationsAsync(successfullyApplied, result, cancellationToken).ConfigureAwait(false);
+                break;
+            }
         }
 
         _console.Publish("Trace", $"ExecuteBatchAsync completed. success={result.Success}, requiresReboot={result.RequiresReboot}");
         return result;
     }
 
-    private async Task TryCreateRestorePointAsync(OperationDefinition operation, CancellationToken cancellationToken)
+    private async Task RollbackSuccessfulOperationsAsync(
+        IReadOnlyList<OperationDefinition> successfullyApplied,
+        OperationBatchResult result,
+        CancellationToken cancellationToken)
+    {
+        if (successfullyApplied.Count == 0)
+        {
+            return;
+        }
+
+        _console.Publish("Warning", $"Batch failed. Starting compensation rollback for {successfullyApplied.Count} completed operation(s).");
+        await _log.WriteAsync("Warning", $"Batch failed. Starting compensation rollback for {successfullyApplied.Count} operation(s).", cancellationToken).ConfigureAwait(false);
+
+        for (var i = successfullyApplied.Count - 1; i >= 0; i--)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var operation = successfullyApplied[i];
+            var rollbackResult = new OperationExecutionResult
+            {
+                OperationId = $"{operation.Id}.rollback",
+                RequiresReboot = operation.RequiresReboot,
+                Success = false,
+                Message = "Rollback not started"
+            };
+
+            if (!operation.Reversible || operation.UndoScripts.Length == 0)
+            {
+                rollbackResult.Message = "Rollback skipped: operation is not reversible.";
+                result.Results.Add(rollbackResult);
+                _console.Publish("Warning", $"{operation.Id}: {rollbackResult.Message}");
+                continue;
+            }
+
+            var allRollbackStepsSucceeded = true;
+            var failedRollbackStep = string.Empty;
+            foreach (var step in operation.UndoScripts)
+            {
+                failedRollbackStep = step.Name;
+                var rollbackStep = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+                {
+                    OperationId = $"{operation.Id}.rollback",
+                    StepName = step.Name,
+                    Script = step.Script,
+                    DryRun = false
+                }, cancellationToken).ConfigureAwait(false);
+
+                if (!rollbackStep.Success)
+                {
+                    allRollbackStepsSucceeded = false;
+                    rollbackResult.Message = $"Rollback step failed: {step.Name}";
+                    break;
+                }
+            }
+
+            if (allRollbackStepsSucceeded)
+            {
+                rollbackResult.Success = true;
+                rollbackResult.Message = "Rollback completed successfully.";
+            }
+            else
+            {
+                rollbackResult.Message = $"Rollback failed for step '{failedRollbackStep}'.";
+            }
+
+            result.Results.Add(rollbackResult);
+            _console.Publish(rollbackResult.Success ? "Info" : "Error", $"{rollbackResult.OperationId}: {rollbackResult.Message}");
+        }
+    }
+
+    private async Task<bool> TryCreateRestorePointAsync(OperationDefinition operation, CancellationToken cancellationToken)
     {
         try
         {
             if (Environment.OSVersion.Platform != PlatformID.Win32NT)
             {
-                return;
+                return false;
             }
 
             var description = $"Phantom {DateTime.Now:yyyyMMdd-HHmmss} {operation.Id}";
@@ -268,16 +365,18 @@ public sealed class OperationEngine
             if (rpResult.Success)
             {
                 _console.Publish("Info", "Restore point created successfully.");
-                return;
+                return true;
             }
 
-            _console.Publish("Warning", "Restore point creation failed. Continuing operation with backup artifacts.");
+            _console.Publish("Warning", "Restore point creation failed. Dangerous operation blocked.");
             await _log.WriteAsync("Warning", $"Restore point creation failed for {operation.Id}.", cancellationToken).ConfigureAwait(false);
+            return false;
         }
         catch (Exception ex)
         {
             _console.Publish("Warning", $"Restore point creation error: {ex.Message}");
             await _log.WriteAsync("Warning", $"Restore point creation exception for {operation.Id}: {ex}", cancellationToken).ConfigureAwait(false);
+            return false;
         }
     }
 }
@@ -297,8 +396,9 @@ public static class AdminGuard
             var principal = new WindowsPrincipal(identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceError($"AdminGuard.IsAdministrator failed: {ex}");
             return false;
         }
     }
