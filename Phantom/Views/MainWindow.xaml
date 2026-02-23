@@ -61,11 +61,78 @@
 
         <Border Grid.Column="2" Margin="0" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="1,0,0,0" Background="{DynamicResource TerminalBackgroundBrush}">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
-                    <Button Content="Cancel" Width="86" Margin="4" Command="{Binding CancelCurrentOperationCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Copy Log" Width="96" Margin="4" Command="{Binding CopyLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Open Logs Folder" Width="146" Margin="4" Command="{Binding OpenLogsFolderCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                </StackPanel>
+                <Grid DockPanel.Dock="Top" Margin="8,8,8,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Button Content="Cancel" Width="86" Margin="4" Command="{Binding CancelCurrentOperationCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                            <Button Content="Copy Log" Width="96" Margin="4" Command="{Binding CopyLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                            <Button Content="Open Logs Folder" Width="146" Margin="4" Command="{Binding OpenLogsFolderCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        </StackPanel>
+                        <Border Grid.Column="1"
+                                Margin="8,4,4,4"
+                                Padding="10,4"
+                                CornerRadius="10"
+                                BorderBrush="{DynamicResource DarkBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource DarkCard2Brush}">
+                            <TextBlock FontSize="13" FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Text" Value="Idle"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsOperationRunning}" Value="True">
+                                                <Setter Property="Text" Value="Running"/>
+                                                <Setter Property="Foreground" Value="#87E0A2"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+                    </Grid>
+
+                    <DockPanel Grid.Row="1" Margin="4,4,4,0" LastChildFill="False">
+                        <ComboBox x:Name="ConsoleFilterCombo"
+                                  DockPanel.Dock="Left"
+                                  Width="160"
+                                  Margin="0,0,8,0"
+                                  SelectedIndex="0"
+                                  SelectionChanged="OnConsoleFilterChanged"
+                                  Style="{StaticResource DarkComboBoxStyle}">
+                            <ComboBoxItem Content="All logs"/>
+                            <ComboBoxItem Content="No Trace"/>
+                            <ComboBoxItem Content="Warnings+" />
+                            <ComboBoxItem Content="Errors only"/>
+                        </ComboBox>
+                        <ProgressBar DockPanel.Dock="Right"
+                                     Width="150"
+                                     Height="6"
+                                     Margin="8,12,0,0"
+                                     IsIndeterminate="True"
+                                     Foreground="#73C8FF"
+                                     Background="{DynamicResource DarkCard2Brush}">
+                            <ProgressBar.Style>
+                                <Style TargetType="ProgressBar">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsOperationRunning}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ProgressBar.Style>
+                        </ProgressBar>
+                    </DockPanel>
+                </Grid>
                 <RichTextBox Name="ConsoleTextBox"
                              IsReadOnly="True"
                              VerticalScrollBarVisibility="Auto"

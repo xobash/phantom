@@ -63,8 +63,9 @@
                             <DataTemplate>
                                 <Button Style="{StaticResource AppsActionButtonStyle}" Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}" Click="OpenRowMenu">
                                     <Button.ContextMenu>
-                                        <ContextMenu Style="{StaticResource DarkContextMenuStyle}" ItemContainerStyle="{StaticResource DarkContextMenuItemStyle}">
+                                        <ContextMenu Style="{StaticResource DarkContextMenuStyle}">
                                             <ContextMenu.Resources>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource DarkContextMenuItemStyle}"/>
                                                 <Style TargetType="Separator" BasedOn="{StaticResource DarkContextMenuSeparatorStyle}"/>
                                             </ContextMenu.Resources>
                                             <MenuItem Header="Browse folder"
