@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -17,7 +18,7 @@ public interface IPowerShellRunner
 
 public sealed class PowerShellRunner : IPowerShellRunner
 {
-    private const string BootstrapScript = "$ErrorActionPreference='Stop';$env:PSExecutionPolicyPreference='Bypass';Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Continue;";
+    private const string BootstrapScript = "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;";
     private static readonly HashSet<string> TrustedDownloadHosts =
     [
         "aka.ms",
@@ -54,11 +55,27 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCliRegex = new(@"schtasks(?:\.exe)?\b[^;\r\n]*?\b/TN\s+['""]?([^'""]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly string[] AllowedOperationPrefixes =
+    [
+        "tweak.",
+        "fix.",
+        "feature.",
+        "updates.",
+        "store.",
+        "apps.",
+        "services.",
+        "panel.",
+        "safety.",
+        "system.",
+        "home."
+    ];
 
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
     private readonly AppPaths _paths;
     private readonly Func<AppSettings> _settingsAccessor;
+    private readonly HashSet<string> _trustedCatalogScriptHashes;
 
     public PowerShellRunner(ConsoleStreamService console, LogService log, AppPaths paths, Func<AppSettings> settingsAccessor)
     {
@@ -66,13 +83,44 @@ public sealed class PowerShellRunner : IPowerShellRunner
         _log = log;
         _paths = paths;
         _settingsAccessor = settingsAccessor;
+        _trustedCatalogScriptHashes = BuildTrustedCatalogScriptHashAllowlist(paths);
     }
 
     public async Task<PowerShellExecutionResult> ExecuteAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
+        var scriptHash = ComputeScriptHash(request.Script);
         _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
         await _log.WriteAsync("Command", request.Script, cancellationToken).ConfigureAwait(false);
+        await _log.WriteAsync(
+                "Security",
+                $"ScriptAudit op={request.OperationId} step={request.StepName} hash={scriptHash} dryRun={request.DryRun} processMode={request.PreferProcessMode}",
+                cancellationToken)
+            .ConfigureAwait(false);
         _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}, processMode={request.PreferProcessMode}");
+
+        if (!ValidateOperationAllowlist(request.OperationId, out var blockedOperationReason))
+        {
+            _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {blockedOperationReason}");
+            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {blockedOperationReason}", cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
+            {
+                Success = false,
+                ExitCode = 1,
+                CombinedOutput = blockedOperationReason
+            };
+        }
+
+        if (!ValidateCatalogScriptAllowlist(request.OperationId, scriptHash, out var blockedAllowlistReason))
+        {
+            _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {blockedAllowlistReason}");
+            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {blockedAllowlistReason}", cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
+            {
+                Success = false,
+                ExitCode = 1,
+                CombinedOutput = blockedAllowlistReason
+            };
+        }
 
         if (!ValidateScriptSafety(request.Script, out var blockedReason))
         {
@@ -86,7 +134,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             };
         }
 
-        if (!request.DryRun)
+        if (!request.DryRun && !request.SkipSafetyBackup)
         {
             await CreatePreExecutionBackupsAsync(request, cancellationToken).ConfigureAwait(false);
         }
@@ -111,10 +159,30 @@ public sealed class PowerShellRunner : IPowerShellRunner
             _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
             return runspaceResult;
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (PSInvalidOperationException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-            await _log.WriteAsync("Warning", $"Runspace fallback: {ex}", cancellationToken).ConfigureAwait(false);
+            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
+            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+            return processResult;
+        }
+        catch (InvalidOperationException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
+            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
+            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+            return processResult;
+        }
+        catch (RuntimeException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
+            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
             var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
             _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
             return processResult;
@@ -227,15 +295,21 @@ public sealed class PowerShellRunner : IPowerShellRunner
             };
             ps.Streams.Information.DataAdded += informationDataAdded;
 
+            var invocationCompleted = 0;
             using var cancellationRegistration = cancellationToken.Register(() =>
             {
-                try
+                if (Interlocked.CompareExchange(ref invocationCompleted, 0, 0) != 0)
                 {
-                    ps.Stop();
+                    return;
                 }
-                catch
+
+                var powerShell = ps;
+                if (powerShell is null)
                 {
+                    return;
                 }
+
+                TryStopRunspacePipeline(powerShell, request.OperationId, request.StepName);
             });
 
             var async = ps.BeginInvoke<PSObject, PSObject>(null, output);
@@ -247,6 +321,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
 
             ps.EndInvoke(async);
+            Interlocked.Exchange(ref invocationCompleted, 1);
             var success = !ps.HadErrors;
             _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
             await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
@@ -305,19 +380,36 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var wrapped = $"$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& {{ {request.Script} }} *>&1";
         _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 
+        if (!ValidateExternalScriptSignatures(request.Script, out var signatureError))
+        {
+            _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {signatureError}");
+            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {signatureError}", cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
+            {
+                Success = false,
+                ExitCode = 1,
+                CombinedOutput = signatureError
+            };
+        }
+
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{wrapped.Replace("\"", "\\\"")}\"",
+            Arguments = $"-NoProfile -ExecutionPolicy RemoteSigned -Command \"{wrapped.Replace("\"", "\\\"")}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
 
+        var externalCommandLine = $"{psi.FileName} {psi.Arguments}";
+        _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
+        await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken).ConfigureAwait(false);
+
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
         process.Start();
+        var processCompleted = 0;
 
         var stdoutTask = PumpProcessStreamAsync(process.StandardOutput, line =>
         {
@@ -333,17 +425,12 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         using var cancellationRegistration = cancellationToken.Register(() =>
         {
-            try
+            if (Interlocked.CompareExchange(ref processCompleted, 0, 0) != 0)
             {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
+                return;
             }
-            catch
-            {
-                // Ignore kill failures during cancellation race.
-            }
+
+            TryCancelExternalProcess(process, request.OperationId, request.StepName);
         });
 
         try
@@ -375,6 +462,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
             _console.Publish("Warning", $"{request.OperationId}/{request.StepName}: cancelled.");
             throw;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref processCompleted, 1);
         }
     }
 
@@ -448,6 +539,188 @@ public sealed class PowerShellRunner : IPowerShellRunner
             if (!TrustedDownloadHosts.Contains(host))
             {
                 reason = $"Blocked download host '{host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool ValidateOperationAllowlist(string operationId, out string reason)
+    {
+        reason = string.Empty;
+        if (!_settingsAccessor().EnforceScriptSafetyGuards)
+        {
+            return true;
+        }
+
+        if (AllowedOperationPrefixes.Any(prefix => operationId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        reason = $"Blocked operation id '{operationId}' because it is not in the PowerShell operation allowlist.";
+        return false;
+    }
+
+    private bool ValidateCatalogScriptAllowlist(string operationId, string scriptHash, out string reason)
+    {
+        reason = string.Empty;
+        if (!_settingsAccessor().EnforceScriptSafetyGuards)
+        {
+            return true;
+        }
+
+        if (!IsCatalogBackedOperation(operationId))
+        {
+            return true;
+        }
+
+        if (operationId.StartsWith("tweak.dns.", StringComparison.OrdinalIgnoreCase) ||
+            operationId.Equals("tweak.run-oo-shutup10", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (_trustedCatalogScriptHashes.Contains(scriptHash))
+        {
+            return true;
+        }
+
+        reason = $"Blocked script for operation '{operationId}' because hash {scriptHash} is not in the trusted catalog allowlist.";
+        return false;
+    }
+
+    private static bool IsCatalogBackedOperation(string operationId)
+    {
+        return operationId.StartsWith("tweak.", StringComparison.OrdinalIgnoreCase) ||
+               operationId.StartsWith("fix.", StringComparison.OrdinalIgnoreCase) ||
+               operationId.StartsWith("panel.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> BuildTrustedCatalogScriptHashAllowlist(AppPaths paths)
+    {
+        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        try
+        {
+            if (File.Exists(paths.TweaksFile))
+            {
+                var tweaksJson = File.ReadAllText(paths.TweaksFile);
+                var tweaks = JsonSerializer.Deserialize<List<TweakDefinition>>(tweaksJson, options) ?? new List<TweakDefinition>();
+                foreach (var tweak in tweaks)
+                {
+                    AddScriptHash(hashes, tweak.DetectScript);
+                    AddScriptHash(hashes, tweak.ApplyScript);
+                    AddScriptHash(hashes, tweak.UndoScript);
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (File.Exists(paths.FixesFile))
+            {
+                var fixesJson = File.ReadAllText(paths.FixesFile);
+                var fixes = JsonSerializer.Deserialize<List<FixDefinition>>(fixesJson, options) ?? new List<FixDefinition>();
+                foreach (var fix in fixes)
+                {
+                    AddScriptHash(hashes, fix.ApplyScript);
+                    AddScriptHash(hashes, fix.UndoScript);
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (File.Exists(paths.LegacyPanelsFile))
+            {
+                var panelsJson = File.ReadAllText(paths.LegacyPanelsFile);
+                var panels = JsonSerializer.Deserialize<List<LegacyPanelDefinition>>(panelsJson, options) ?? new List<LegacyPanelDefinition>();
+                foreach (var panel in panels)
+                {
+                    AddScriptHash(hashes, panel.LaunchScript);
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        foreach (var tweak in RequestedTweaksCatalog.CreateRequestedTweaks())
+        {
+            AddScriptHash(hashes, tweak.DetectScript);
+            AddScriptHash(hashes, tweak.ApplyScript);
+            AddScriptHash(hashes, tweak.UndoScript);
+        }
+
+        return hashes;
+    }
+
+    private static void AddScriptHash(HashSet<string> hashes, string script)
+    {
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            return;
+        }
+
+        hashes.Add(ComputeScriptHash(script));
+    }
+
+    private static string ComputeScriptHash(string script)
+    {
+        var bytes = Encoding.UTF8.GetBytes(script ?? string.Empty);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
+    }
+
+    private static bool ValidateExternalScriptSignatures(string script, out string reason)
+    {
+        reason = string.Empty;
+        var paths = ScriptFilePathRegex.Matches(script)
+            .Cast<Match>()
+            .Select(match => match.Groups["path"].Value.Trim())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path))
+            {
+                reason = $"Blocked external invocation: script file '{path}' does not exist.";
+                return false;
+            }
+
+            try
+            {
+                using var ps = PowerShell.Create();
+                ps.AddCommand("Get-AuthenticodeSignature");
+                ps.AddParameter("FilePath", path);
+                var signatures = ps.Invoke();
+                if (ps.HadErrors || signatures.Count == 0)
+                {
+                    reason = $"Blocked external invocation: failed to validate script signature for '{path}'.";
+                    return false;
+                }
+
+                var status = signatures[0].Properties["Status"]?.Value?.ToString() ?? "Unknown";
+                if (!string.Equals(status, "Valid", StringComparison.OrdinalIgnoreCase))
+                {
+                    reason = $"Blocked external invocation: script '{path}' signature status is '{status}' (expected Valid).";
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                reason = $"Blocked external invocation: signature validation error for '{path}': {ex.Message}";
                 return false;
             }
         }
@@ -658,17 +931,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
             var hive = slash < 0 ? value : value[..slash];
             var subPath = slash < 0 ? string.Empty : value[(slash + 1)..];
 
-            var root = hive.ToUpperInvariant() switch
+            var registryHive = hive.ToUpperInvariant() switch
             {
-                "HKEY_LOCAL_MACHINE" => Registry.LocalMachine,
-                "HKEY_CURRENT_USER" => Registry.CurrentUser,
-                "HKEY_CLASSES_ROOT" => Registry.ClassesRoot,
-                "HKEY_USERS" => Registry.Users,
-                "HKEY_CURRENT_CONFIG" => Registry.CurrentConfig,
-                _ => null
+                "HKEY_LOCAL_MACHINE" => RegistryHive.LocalMachine,
+                "HKEY_CURRENT_USER" => RegistryHive.CurrentUser,
+                "HKEY_CLASSES_ROOT" => RegistryHive.ClassesRoot,
+                "HKEY_USERS" => RegistryHive.Users,
+                "HKEY_CURRENT_CONFIG" => RegistryHive.CurrentConfig,
+                _ => (RegistryHive?)null
             };
 
-            if (root is null)
+            if (registryHive is null)
             {
                 return false;
             }
@@ -678,6 +951,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 return true;
             }
 
+            using var root = RegistryKey.OpenBaseKey(registryHive.Value, WindowsSupportPolicy.PreferredRegistryView);
             using var key = root.OpenSubKey(subPath, writable: false);
             return key is not null;
         }
@@ -765,6 +1039,74 @@ public sealed class PowerShellRunner : IPowerShellRunner
         if (lineBuilder.Length > 0)
         {
             onLine(lineBuilder.ToString());
+        }
+    }
+
+    private void TryStopRunspacePipeline(PowerShell ps, string operationId, string stepName)
+    {
+        try
+        {
+            var state = ps.InvocationStateInfo.State;
+            if (state is PSInvocationState.Completed or PSInvocationState.Failed or PSInvocationState.Stopped)
+            {
+                return;
+            }
+
+            ps.Stop();
+            _console.Publish("Warning", $"{operationId}/{stepName}: cancellation requested. Runspace pipeline stop issued.");
+        }
+        catch (ObjectDisposedException)
+        {
+            // Cancellation raced disposal; no action required.
+        }
+        catch (InvalidOperationException)
+        {
+            // Pipeline already finished while cancellation was processed.
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Warning", $"{operationId}/{stepName}: runspace cancellation warning: {ex.Message}");
+        }
+    }
+
+    private void TryCancelExternalProcess(Process process, string operationId, string stepName)
+    {
+        try
+        {
+            if (process.HasExited)
+            {
+                return;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            _console.Publish("Warning", $"{operationId}/{stepName}: cancellation requested. Attempting graceful external PowerShell shutdown.");
+            _ = process.CloseMainWindow();
+            if (!process.WaitForExit(500))
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Process exited while attempting shutdown.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Process disposed concurrently.
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Warning", $"{operationId}/{stepName}: external cancellation warning: {ex.Message}");
         }
     }
 

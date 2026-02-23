@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Security.Cryptography;
 
 namespace Phantom.Services;
 
@@ -17,11 +18,12 @@ public sealed class PowerShellQueryService
     public async Task<(int ExitCode, string Stdout, string Stderr)> InvokeAsync(string script, CancellationToken cancellationToken, bool echoToConsole = true)
     {
         var startedAt = Stopwatch.GetTimestamp();
+        var scriptHash = ComputeScriptHash(script);
         if (echoToConsole)
         {
             _console.Publish("Query", BuildQueryPreview(script), persist: false);
         }
-        await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
         await _log.WriteAsync("Query", script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
 
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
@@ -35,7 +37,7 @@ public sealed class PowerShellQueryService
             return (1, string.Empty, "Not running on Windows.");
         }
 
-        var (process, host, error) = StartPowerShellProcess(script);
+        var (process, host, error, commandLine) = StartPowerShellProcess(script);
         if (process is null)
         {
             var failedStart = string.IsNullOrWhiteSpace(error)
@@ -50,12 +52,31 @@ public sealed class PowerShellQueryService
         }
 
         await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        await _log.WriteAsync("Security", $"PowerShellQuery invocation: {commandLine}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
 
         using (process)
         {
+            var processCompleted = 0;
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                if (Interlocked.CompareExchange(ref processCompleted, 0, 0) != 0)
+                {
+                    return;
+                }
+
+                TryCancelProcess(process);
+            });
+
             var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
             var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref processCompleted, 1);
+            }
 
             var stdout = await stdoutTask.ConfigureAwait(false);
             var stderr = await stderrTask.ConfigureAwait(false);
@@ -112,9 +133,8 @@ public sealed class PowerShellQueryService
         }
     }
 
-    private static (Process? Process, string Host, string Error) StartPowerShellProcess(string script)
+    private static (Process? Process, string Host, string Error, string CommandLine) StartPowerShellProcess(string script)
     {
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         Exception? lastError = null;
 
         foreach (var host in new[] { "pwsh.exe", "powershell.exe" })
@@ -132,16 +152,17 @@ public sealed class PowerShellQueryService
             psi.ArgumentList.Add("-NoProfile");
             psi.ArgumentList.Add("-NonInteractive");
             psi.ArgumentList.Add("-ExecutionPolicy");
-            psi.ArgumentList.Add("Bypass");
-            psi.ArgumentList.Add("-EncodedCommand");
-            psi.ArgumentList.Add(encodedScript);
+            psi.ArgumentList.Add("RemoteSigned");
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add(script);
 
             try
             {
                 var process = Process.Start(psi);
                 if (process is not null)
                 {
-                    return (process, host, string.Empty);
+                    var fullCommandLine = $"{host} {string.Join(" ", psi.ArgumentList.Select(QuoteArgument))}";
+                    return (process, host, string.Empty, fullCommandLine);
                 }
             }
             catch (Exception ex)
@@ -150,7 +171,7 @@ public sealed class PowerShellQueryService
             }
         }
 
-        return (null, "none", lastError?.Message ?? "Unable to launch pwsh.exe or powershell.exe.");
+        return (null, "none", lastError?.Message ?? "Unable to launch pwsh.exe or powershell.exe.", string.Empty);
     }
 
     private static string BuildQueryPreview(string script)
@@ -198,5 +219,61 @@ public sealed class PowerShellQueryService
             .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    private static void TryCancelProcess(Process process)
+    {
+        try
+        {
+            if (process.HasExited)
+            {
+                return;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            _ = process.CloseMainWindow();
+            if (!process.WaitForExit(500))
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "\"\"";
+        }
+
+        if (!value.Contains(' ') && !value.Contains('"'))
+        {
+            return value;
+        }
+
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static string ComputeScriptHash(string script)
+    {
+        var bytes = Encoding.UTF8.GetBytes(script ?? string.Empty);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
     }
 }
