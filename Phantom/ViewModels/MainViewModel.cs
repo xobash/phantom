@@ -16,6 +16,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly ConsoleStreamService _console;
     private readonly EventHandler<PowerShellOutputEvent> _consoleMessageReceivedHandler;
     private readonly EventHandler<bool> _runningChangedHandler;
+    private readonly NavigationItem _settingsNavigationItem;
 
     private NavigationItem? _selectedNavigation;
     private object? _currentSectionViewModel;
@@ -64,9 +65,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             new() { Section = AppSection.Features, Label = "Features", Icon = "\uE115" },
             new() { Section = AppSection.Fixes, Label = "Fixes", Icon = "\uE90F" },
             new() { Section = AppSection.Updates, Label = "Updates", Icon = "\uE895" },
-            new() { Section = AppSection.LogsAbout, Label = "Logs/About", Icon = "\uE9D2" },
-            new() { Section = AppSection.Settings, Label = "Settings", Icon = "\uE713" }
+            new() { Section = AppSection.LogsAbout, Label = "Logs/About", Icon = "\uE9D2" }
         };
+        _settingsNavigationItem = new NavigationItem { Section = AppSection.Settings, Label = "Settings", Icon = "\uE713" };
 
         ConsoleMessages = new ObservableCollection<PowerShellOutputEvent>();
         ConsoleView = CollectionViewSource.GetDefaultView(ConsoleMessages);
@@ -108,12 +109,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Clipboard.SetText(text);
         });
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
+        OpenSettingsCommand = new RelayCommand(() => SelectedNavigation = _settingsNavigationItem);
 
         SelectedNavigation = Navigation.First();
         _console.Publish("Trace", "MainViewModel constructor complete.");
     }
 
     public ObservableCollection<NavigationItem> Navigation { get; }
+    public NavigationItem SettingsNavigationItem => _settingsNavigationItem;
 
     public ObservableCollection<PowerShellOutputEvent> ConsoleMessages { get; }
 
@@ -134,6 +137,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public RelayCommand CancelCurrentOperationCommand { get; }
     public RelayCommand CopyLogCommand { get; }
     public RelayCommand OpenLogsFolderCommand { get; }
+    public RelayCommand OpenSettingsCommand { get; }
 
     public NavigationItem? SelectedNavigation
     {
@@ -143,6 +147,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _selectedNavigation, value) && value is not null)
             {
                 _console.Publish("Trace", $"Navigation selected: {value.Section}");
+                Notify(nameof(IsSettingsSelected));
                 CurrentSectionViewModel = value.Section switch
                 {
                     AppSection.Home => Home,
@@ -172,6 +177,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _isOperationRunning;
         set => SetProperty(ref _isOperationRunning, value);
     }
+
+    public bool IsSettingsSelected => SelectedNavigation?.Section == AppSection.Settings;
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {

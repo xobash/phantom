@@ -98,7 +98,7 @@ $uptime = (Get-Date) - $os.LastBootUpTime
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0, 0, "Upload: 0.00 B/s\nDownload: 0.00 B/s\nSession: 0.00 B");
+            return (0, 0, 0, "↑ 0 B/s  ↓ 0 B/s\n0 B");
         }
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -295,10 +295,13 @@ catch {
         telemetry.LastNetworkReceivedBytes = totalRecv;
         telemetry.LastNetworkSampleAt = now;
 
-        return $"Upload: {FormatBytes((long)uploadRate)}/s\nDownload: {FormatBytes((long)downloadRate)}/s\nSession: {FormatBytes(deltaSent + deltaRecv)}";
+        var uploadText = FormatBytes((long)uploadRate, decimals: 0);
+        var downloadText = FormatBytes((long)downloadRate, decimals: 0);
+        var sessionText = FormatBytes(deltaSent + deltaRecv, decimals: 1);
+        return $"↑ {uploadText}/s  ↓ {downloadText}/s\n{sessionText}";
     }
 
-    private static string FormatBytes(long bytes)
+    private static string FormatBytes(long bytes, int decimals = 2)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
         double value = bytes;
@@ -309,7 +312,8 @@ catch {
             unit++;
         }
 
-        return $"{value:F2} {units[unit]}";
+        var safeDecimals = unit == 0 ? 0 : Math.Max(0, decimals);
+        return $"{value.ToString($"F{safeDecimals}")} {units[unit]}";
     }
 
     private static string BuildSnapshotScript(bool includeDetails)
