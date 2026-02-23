@@ -30,10 +30,7 @@ public partial class App : Application
     {
         try
         {
-            if (_bootstrap?.Main is IDisposable disposableMain)
-            {
-                disposableMain.Dispose();
-            }
+            _bootstrap?.Dispose();
         }
         catch (Exception ex)
         {
@@ -65,6 +62,14 @@ public partial class App : Application
 
                 MessageBox.Show("Phantom requires Administrator privileges. Please approve the elevation prompt and relaunch.", "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(10);
+                return;
+            }
+
+            if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osSupportMessage))
+            {
+                WriteEmergencyStartupTrace($"OS support check failed: {osSupportMessage}");
+                MessageBox.Show(osSupportMessage, "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(11);
                 return;
             }
 
@@ -182,7 +187,7 @@ public partial class App : Application
             if (_bootstrap is not null)
             {
                 _bootstrap.Console.Publish("UnobservedTaskException", e.Exception.ToString());
-                _bootstrap.Log.WriteAsync("UnobservedTaskException", e.Exception.ToString()).GetAwaiter().GetResult();
+                _ = _bootstrap.Log.WriteAsync("UnobservedTaskException", e.Exception.ToString());
             }
             else
             {

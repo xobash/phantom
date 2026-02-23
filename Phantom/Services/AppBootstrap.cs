@@ -2,8 +2,10 @@ using Phantom.ViewModels;
 
 namespace Phantom.Services;
 
-public sealed class AppBootstrap
+public sealed class AppBootstrap : IDisposable
 {
+    private bool _disposed;
+
     public AppBootstrap()
     {
         Paths = new AppPaths();
@@ -81,4 +83,29 @@ public sealed class AppBootstrap
 
     public MainViewModel Main { get; }
     public CliRunner CliRunner { get; }
+
+    /// <summary>
+    /// Disposes managed runtime services owned by the bootstrap container.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        if (Main is IDisposable disposableMain)
+        {
+            disposableMain.Dispose();
+        }
+
+        if (Runner is IDisposable disposableRunner)
+        {
+            disposableRunner.Dispose();
+        }
+
+        GC.SuppressFinalize(this);
+    }
 }
