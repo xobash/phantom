@@ -319,7 +319,9 @@
                     <DockPanel Margin="0,0,0,10">
                         <TextBox Width="260" Margin="0,0,12,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}"/>
                         <WrapPanel>
-                            <Button Content="Refresh" Command="{Binding RefreshStatusCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                            <Button Command="{Binding RefreshStatusCommand}"
+                                    Style="{StaticResource RefreshIconButtonStyle}"
+                                    ToolTip="Refresh optional feature status"/>
                             <Button Content="Enable selected" Command="{Binding ApplySelectedCommand}" Style="{StaticResource CompactButtonStyle}"/>
                             <Button Content="Disable selected" Command="{Binding UndoSelectedCommand}" Style="{StaticResource CompactButtonStyle}"/>
                         </WrapPanel>

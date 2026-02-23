@@ -77,7 +77,9 @@
                     </StackPanel>
 
                     <WrapPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Top">
-                        <Button Content="Refresh managers" Command="{Binding RefreshManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Command="{Binding RefreshManagersCommand}"
+                                Style="{StaticResource RefreshIconButtonStyle}"
+                                ToolTip="Refresh package manager status"/>
                         <Button Content="Install missing managers" Command="{Binding InstallMissingManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
                         <Button Content="Install winget" Command="{Binding InstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
                         <Button Content="Uninstall winget" Command="{Binding UninstallWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>

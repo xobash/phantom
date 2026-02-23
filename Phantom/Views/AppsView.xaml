@@ -26,7 +26,10 @@
             <DockPanel LastChildFill="False">
                 <TextBlock DockPanel.Dock="Left" Text="Installed Apps" FontSize="22" FontWeight="SemiBold" Margin="0,0,12,0" VerticalAlignment="Center"/>
                 <TextBox DockPanel.Dock="Left" Width="300" Margin="0,0,12,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}" />
-                <Button DockPanel.Dock="Left" Content="Refresh" Command="{Binding RefreshCommand}" Style="{StaticResource DarkButtonStyle}" />
+                <Button DockPanel.Dock="Left"
+                        Command="{Binding RefreshCommand}"
+                        Style="{StaticResource RefreshIconButtonStyle}"
+                        ToolTip="Refresh installed apps list"/>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding AppsCountLabel}" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}" FontSize="14" Margin="12,0,0,0"/>
             </DockPanel>
         </Border>

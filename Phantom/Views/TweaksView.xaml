@@ -110,7 +110,9 @@
                          Style="{StaticResource DarkTextBoxStyle}"/>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    <Button Command="{Binding RefreshStatusCommand}"
+                            Style="{StaticResource RefreshIconButtonStyle}"
+                            ToolTip="Refresh tweak status"/>
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                         <CheckBox IsChecked="{Binding DryRun}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
                         <TextBlock Text="Dry-run" Margin="8,2,0,0"/>

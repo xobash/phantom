@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
@@ -23,9 +22,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
     private int _refreshQueued;
-    private long? _uptimeBaselineSeconds;
-    private long _uptimeBaselineTimestamp;
-    private long? _lastRenderedUptimeSeconds;
+    private long? _uptimeSeconds;
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
@@ -108,15 +105,15 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             var snapshot = await _homeData.GetSnapshotAsync(cancellationToken, includeDetails: false).ConfigureAwait(false);
             var telemetry = await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
             var snapshotUptime = TryParseUptimeSeconds(snapshot.Uptime);
-            if (snapshotUptime.HasValue)
-            {
-                MaybeResyncUptimeBaseline(snapshotUptime.Value);
-            }
-
-            var displayedUptime = GetDisplayedUptimeSeconds();
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
+                if (snapshotUptime.HasValue)
+                {
+                    SeedUptimeFromSample(snapshotUptime.Value);
+                }
+
+                var displayedUptime = GetDisplayedUptimeSeconds();
                 UpsertTopCard("System", snapshot.Motherboard);
                 UpsertTopCard("Graphics", snapshot.Graphics, $"Driver {snapshot.GraphicsDriverVersion} ({snapshot.GraphicsDriverDate})");
                 UpsertTopCard("Storage", snapshot.Storage);
@@ -194,14 +191,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _isFastMetricsRefreshing = true;
         try
         {
-            var (cpu, memory, gpu, uptimeSeconds, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
-
-            if (uptimeSeconds > 0)
-            {
-                MaybeResyncUptimeBaseline(uptimeSeconds);
-            }
-
-            var displayedUptime = GetDisplayedUptimeSeconds();
+            var (cpu, memory, gpu, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
@@ -210,9 +200,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 UpsertKpiTile("GPU %", gpu.ToString("F2"));
                 UpsertKpiTile("Network", network);
 
-                if (displayedUptime.HasValue)
+                if (_uptimeSeconds.HasValue)
                 {
-                    UpdateUptimeCard(displayedUptime.Value);
+                    UpdateUptimeCard(_uptimeSeconds.Value);
                 }
             });
         }
@@ -321,97 +311,40 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private void TickUptimeDisplay()
     {
-        var uptimeSeconds = GetDisplayedUptimeSeconds();
-        if (!uptimeSeconds.HasValue)
+        if (!_uptimeSeconds.HasValue)
         {
             return;
         }
 
-        UpdateUptimeCard(uptimeSeconds.Value);
+        _uptimeSeconds = Math.Max(0, _uptimeSeconds.Value + 1);
+        UpdateUptimeCard(_uptimeSeconds.Value);
     }
 
-    private void SyncUptimeBaseline(long uptimeSeconds, bool resetRendered = false)
-    {
-        _uptimeBaselineSeconds = Math.Max(0, uptimeSeconds);
-        _uptimeBaselineTimestamp = Stopwatch.GetTimestamp();
-        if (resetRendered)
-        {
-            _lastRenderedUptimeSeconds = null;
-        }
-    }
-
-    private void MaybeResyncUptimeBaseline(long sampledSeconds)
+    private void SeedUptimeFromSample(long sampledSeconds)
     {
         var sampled = Math.Max(0, sampledSeconds);
-        if (!_uptimeBaselineSeconds.HasValue)
+        if (!_uptimeSeconds.HasValue)
         {
-            SyncUptimeBaseline(sampled, resetRendered: true);
+            _uptimeSeconds = sampled;
             return;
         }
 
-        var displayed = GetDisplayedUptimeSecondsRaw();
-        if (!displayed.HasValue)
+        // Uptime only resets on reboot; if sampled value drops significantly, re-seed.
+        if (sampled + 120 < _uptimeSeconds.Value)
         {
-            SyncUptimeBaseline(sampled, resetRendered: true);
-            return;
-        }
-
-        var drift = sampled - displayed.Value;
-        if (drift > 2)
-        {
-            SyncUptimeBaseline(sampled);
-            return;
-        }
-
-        // If uptime drops by a large amount, treat it as reboot and reset the baseline.
-        if (drift < -120)
-        {
-            SyncUptimeBaseline(sampled, resetRendered: true);
+            _uptimeSeconds = sampled;
         }
     }
 
     private long? GetDisplayedUptimeSeconds()
     {
-        var raw = GetDisplayedUptimeSecondsRaw();
-        if (!raw.HasValue)
-        {
-            return null;
-        }
-
-        if (_lastRenderedUptimeSeconds.HasValue && raw.Value < _lastRenderedUptimeSeconds.Value)
-        {
-            return _lastRenderedUptimeSeconds.Value;
-        }
-
-        return raw.Value;
-    }
-
-    private long? GetDisplayedUptimeSecondsRaw()
-    {
-        if (!_uptimeBaselineSeconds.HasValue)
-        {
-            return null;
-        }
-
-        var elapsedTicks = Stopwatch.GetTimestamp() - _uptimeBaselineTimestamp;
-        if (elapsedTicks < 0)
-        {
-            elapsedTicks = 0;
-        }
-
-        var elapsedSeconds = (long)(elapsedTicks / (double)Stopwatch.Frequency);
-        return _uptimeBaselineSeconds.Value + elapsedSeconds;
+        return _uptimeSeconds;
     }
 
     private void UpdateUptimeCard(long uptimeSeconds)
     {
         var safeSeconds = Math.Max(0, uptimeSeconds);
-        if (_lastRenderedUptimeSeconds.HasValue && safeSeconds < _lastRenderedUptimeSeconds.Value)
-        {
-            safeSeconds = _lastRenderedUptimeSeconds.Value;
-        }
-
-        _lastRenderedUptimeSeconds = safeSeconds;
+        _uptimeSeconds = safeSeconds;
         var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
         if (uptimeIndex < 0)
         {
