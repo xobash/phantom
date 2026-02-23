@@ -401,14 +401,23 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private Task CleanupRestorePointsAsync(CancellationToken cancellationToken)
         => ExecuteScriptAsync("feature.cleanup.system-restore", "clean", "vssadmin Delete Shadows /For=C: /Oldest /Quiet", cancellationToken);
 
-    private Task RepairDismAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.repair.dism", "repair", "DISM /Online /Cleanup-Image /RestoreHealth", cancellationToken);
+    private async Task RepairDismAsync(CancellationToken cancellationToken)
+    {
+        _console.Publish("Progress", "1 of 1: Repairing component store using DISM 0%");
+        await ExecuteScriptAsync("feature.repair.dism", "repair", "DISM /Online /Cleanup-Image /RestoreHealth", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+    }
 
-    private Task RepairSfcAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.repair.sfc", "repair", "sfc /scannow", cancellationToken);
+    private async Task RepairSfcAsync(CancellationToken cancellationToken)
+    {
+        _console.Publish("Progress", "1 of 1: Checking system files using SFC 0%");
+        await ExecuteScriptAsync("feature.repair.sfc", "repair", "sfc /scannow", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+    }
 
-    private Task RepairChkdskAsync(CancellationToken cancellationToken)
-        => ExecuteScriptAsync("feature.repair.chkdsk", "repair", "chkdsk C: /scan", cancellationToken);
+    private async Task RepairChkdskAsync(CancellationToken cancellationToken)
+    {
+        _console.Publish("Progress", "1 of 1: Scanning volume using CHKDSK 0%");
+        await ExecuteScriptAsync("feature.repair.chkdsk", "repair", "chkdsk C: /scan", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+    }
 
     private Task RunMemoryDiagnosticAsync(CancellationToken cancellationToken)
         => ExecuteScriptAsync("feature.memory-diagnostic", "launch", "Start-Process -FilePath \"$env:SystemRoot\\System32\\mdsched.exe\"", cancellationToken);
@@ -526,24 +535,55 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         });
     }
 
-    private async Task ExecuteScriptAsync(string operationId, string stepName, string script, CancellationToken cancellationToken, bool refreshSystemState = false)
+    private async Task ExecuteScriptAsync(
+        string operationId,
+        string stepName,
+        string script,
+        CancellationToken cancellationToken,
+        bool refreshSystemState = false,
+        bool forceProcessMode = false)
     {
-        var result = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+        CancellationToken coordinatorToken;
+        try
         {
-            OperationId = operationId,
-            StepName = stepName,
-            Script = script,
-            DryRun = false
-        }, cancellationToken).ConfigureAwait(false);
-
-        if (!result.Success)
+            coordinatorToken = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
         {
-            _console.Publish("Error", $"{operationId}: command failed.");
+            _console.Publish("Warning", ex.Message);
+            return;
         }
 
-        if (refreshSystemState)
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(coordinatorToken, cancellationToken);
+
+        try
         {
-            await RefreshSystemStateAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
+            var result = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+            {
+                OperationId = operationId,
+                StepName = stepName,
+                Script = script,
+                DryRun = false,
+                PreferProcessMode = forceProcessMode
+            }, linked.Token).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                _console.Publish("Error", $"{operationId}: command failed.");
+            }
+
+            if (refreshSystemState)
+            {
+                await RefreshSystemStateAsync(linked.Token, echoQueryToConsole: false).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", $"{operationId}: operation cancelled.");
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
         }
     }
 

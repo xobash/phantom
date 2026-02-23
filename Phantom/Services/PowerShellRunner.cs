@@ -53,6 +53,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly Regex ServiceNameRegex = new(@"(?:Set|Stop|Start|Restart)-Service\b[^;\r\n]*?\b-Name\s+['""]?([A-Za-z0-9_.\-]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCliRegex = new(@"schtasks(?:\.exe)?\b[^;\r\n]*?\b/TN\s+['""]?([^'""]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
@@ -71,7 +72,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
         await _log.WriteAsync("Command", request.Script, cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}");
+        _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}, processMode={request.PreferProcessMode}");
 
         if (!ValidateScriptSafety(request.Script, out var blockedReason))
         {
@@ -95,6 +96,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
             _console.Publish("DryRun", "Dry-run enabled. Command was not executed.");
             await _log.WriteAsync("DryRun", "Dry-run enabled. Command was not executed.", cancellationToken).ConfigureAwait(false);
             return new PowerShellExecutionResult { Success = true, ExitCode = 0 };
+        }
+
+        if (request.PreferProcessMode)
+        {
+            var processModeResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync preferred process mode completed. op={request.OperationId}, step={request.StepName}, exit={processModeResult.ExitCode}, success={processModeResult.Success}");
+            return processModeResult;
         }
 
         try
@@ -309,44 +317,65 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
-        process.OutputDataReceived += (_, args) =>
-        {
-            if (args.Data is null)
-            {
-                return;
-            }
-
-            outputBuilder.AppendLine(args.Data);
-            _console.Publish("Output", args.Data);
-        };
-
-        process.ErrorDataReceived += (_, args) =>
-        {
-            if (args.Data is null)
-            {
-                return;
-            }
-
-            outputBuilder.AppendLine(args.Data);
-            _console.Publish("Error", args.Data);
-        };
-
         process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
 
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        var success = process.ExitCode == 0;
-        _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputBuilder.Length}");
-
-        await _log.WriteAsync(success ? "Info" : "Error", outputBuilder.ToString(), cancellationToken).ConfigureAwait(false);
-
-        return new PowerShellExecutionResult
+        var stdoutTask = PumpProcessStreamAsync(process.StandardOutput, line =>
         {
-            Success = success,
-            ExitCode = process.ExitCode,
-            CombinedOutput = outputBuilder.ToString()
-        };
+            outputBuilder.AppendLine(line);
+            _console.Publish(IsProgressMessage(line) ? "Progress" : "Output", line);
+        }, cancellationToken);
+
+        var stderrTask = PumpProcessStreamAsync(process.StandardError, line =>
+        {
+            outputBuilder.AppendLine(line);
+            _console.Publish("Error", line);
+        }, cancellationToken);
+
+        using var cancellationRegistration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Ignore kill failures during cancellation race.
+            }
+        });
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            var success = process.ExitCode == 0;
+            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputBuilder.Length}");
+
+            await _log.WriteAsync(success ? "Info" : "Error", outputBuilder.ToString(), cancellationToken).ConfigureAwait(false);
+
+            return new PowerShellExecutionResult
+            {
+                Success = success,
+                ExitCode = process.ExitCode,
+                CombinedOutput = outputBuilder.ToString()
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ignore stream pump errors during cancellation.
+            }
+
+            _console.Publish("Warning", $"{request.OperationId}/{request.StepName}: cancelled.");
+            throw;
+        }
     }
 
     private bool ValidateScriptSafety(string script, out string reason)
@@ -691,6 +720,52 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var invalid = Path.GetInvalidFileNameChars();
         var normalized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
         return string.IsNullOrWhiteSpace(normalized) ? "item" : normalized;
+    }
+
+    private static bool IsProgressMessage(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        return ProgressLineRegex.IsMatch(line);
+    }
+
+    private static async Task PumpProcessStreamAsync(StreamReader reader, Action<string> onLine, CancellationToken cancellationToken)
+    {
+        var lineBuilder = new StringBuilder();
+        var buffer = new char[1];
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = await reader.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            var ch = buffer[0];
+            if (ch == '\r' || ch == '\n')
+            {
+                if (lineBuilder.Length == 0)
+                {
+                    continue;
+                }
+
+                onLine(lineBuilder.ToString());
+                lineBuilder.Clear();
+                continue;
+            }
+
+            lineBuilder.Append(ch);
+        }
+
+        if (lineBuilder.Length > 0)
+        {
+            onLine(lineBuilder.ToString());
+        }
     }
 
     private sealed record BackupTargets(

@@ -16,42 +16,89 @@
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Background="{DynamicResource ShellBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,0,1,0">
-            <DockPanel>
-                <ListBox ItemsSource="{Binding Navigation}" SelectedItem="{Binding SelectedNavigation}" Margin="12,8,12,12"
-                         BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+            <Border.Resources>
+                <Style x:Key="NavigationListItemStyle" TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Margin" Value="0,4"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="ItemBorder" CornerRadius="10" Padding="10" Background="{DynamicResource NavItemBackgroundBrush}" BorderBrush="{DynamicResource NavItemBorderBrush}" BorderThickness="1">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemHoverBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <DataTemplate x:Key="NavigationItemTemplate">
+                    <DockPanel>
+                        <TextBlock Text="{Binding Icon}" FontFamily="Segoe MDL2 Assets" FontSize="18" Width="24" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}"/>
+                        <TextBlock Text="{Binding Label}" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource DarkTextBrush}"/>
+                    </DockPanel>
+                </DataTemplate>
+            </Border.Resources>
+
+            <DockPanel Margin="12,8,12,12">
+                <ListBox DockPanel.Dock="Top"
+                         ItemsSource="{Binding Navigation}"
+                         SelectedItem="{Binding SelectedNavigation}"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         HorizontalContentAlignment="Stretch"
+                         ItemContainerStyle="{StaticResource NavigationListItemStyle}"
+                         ItemTemplate="{StaticResource NavigationItemTemplate}"/>
+
+                <Button DockPanel.Dock="Bottom"
+                        Margin="0,10,0,0"
+                        Command="{Binding OpenSettingsCommand}"
+                        Background="{DynamicResource NavItemBackgroundBrush}"
+                        BorderBrush="{DynamicResource NavItemBorderBrush}"
+                        BorderThickness="1"
+                        Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="Padding" Value="10"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="Margin" Value="0,4"/>
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="ItemBorder" CornerRadius="10" Padding="10" Background="{DynamicResource NavItemBackgroundBrush}" BorderBrush="{DynamicResource NavItemBorderBrush}" BorderThickness="1">
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="SettingsBorder"
+                                                CornerRadius="10"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                Padding="{TemplateBinding Padding}">
                                             <ContentPresenter/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemHoverBrush}"/>
+                                                <Setter TargetName="SettingsBorder" Property="Background" Value="{DynamicResource NavItemHoverBrush}"/>
                                             </Trigger>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
-                                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
-                                            </Trigger>
+                                            <DataTrigger Binding="{Binding IsSettingsSelected}" Value="True">
+                                                <Setter TargetName="SettingsBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                                                <Setter TargetName="SettingsBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                            </DataTrigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <DockPanel>
-                                <TextBlock Text="{Binding Icon}" FontFamily="Segoe MDL2 Assets" FontSize="18" Width="24" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}"/>
-                                <TextBlock Text="{Binding Label}" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource DarkTextBrush}"/>
-                            </DockPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                    </Button.Style>
+                    <DockPanel>
+                        <TextBlock Text="{Binding SettingsNavigationItem.Icon}" FontFamily="Segoe MDL2 Assets" FontSize="18" Width="24" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}"/>
+                        <TextBlock Text="{Binding SettingsNavigationItem.Label}" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource DarkTextBrush}"/>
+                    </DockPanel>
+                </Button>
             </DockPanel>
         </Border>
 

@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Documents;
@@ -9,7 +10,7 @@ namespace Phantom.Views;
 
 public partial class MainWindow : Window
 {
-    private static readonly Regex ProgressPercentRegex = new(@"(?<!\d)(100|[1-9]?\d)\s*%", RegexOptions.Compiled);
+    private static readonly Regex ProgressPercentRegex = new(@"(?<!\d)(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled);
 
     private MainViewModel? _viewModel;
     private string _activeConsoleFilter = "All logs";
@@ -163,6 +164,7 @@ public partial class MainWindow : Window
             "info" => darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue,
             "query" => darkTheme ? Brushes.DeepSkyBlue : Brushes.Teal,
             "command" => darkTheme ? Brushes.Plum : Brushes.MediumPurple,
+            "progress" => darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen,
             "output" => darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray,
             "trace" => darkTheme ? Brushes.SlateGray : Brushes.Gray,
             _ => darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray,
@@ -207,6 +209,11 @@ public partial class MainWindow : Window
         if (stream.Equals("Query", StringComparison.OrdinalIgnoreCase))
         {
             return darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue;
+        }
+
+        if (stream.Equals("Progress", StringComparison.OrdinalIgnoreCase))
+        {
+            return darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen;
         }
 
         if (stream.Equals("Trace", StringComparison.OrdinalIgnoreCase))
@@ -257,12 +264,12 @@ public partial class MainWindow : Window
         }
 
         var match = ProgressPercentRegex.Match(text);
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var parsed))
+        if (!match.Success || !double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
             return false;
         }
 
-        percent = Math.Clamp(parsed, 0, 100);
+        percent = Math.Clamp((int)Math.Round(parsed, MidpointRounding.AwayFromZero), 0, 100);
         return true;
     }
 

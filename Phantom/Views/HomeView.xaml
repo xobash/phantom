@@ -95,6 +95,7 @@
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
@@ -107,9 +108,35 @@
                                                 <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Title}" Value="Network">
-                                                        <Setter Property="FontSize" Value="15"/>
-                                                        <Setter Property="LineHeight" Value="20"/>
+                                                        <Setter Property="FontSize" Value="13"/>
+                                                        <Setter Property="LineHeight" Value="16"/>
                                                         <Setter Property="FontWeight" Value="SemiBold"/>
+                                                        <Setter Property="TextAlignment" Value="Right"/>
+                                                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock x:Name="KpiSecondary"
+                                               Grid.Row="2"
+                                               Text="{Binding SecondaryValue}"
+                                               FontSize="32"
+                                               FontWeight="SemiBold"
+                                               Margin="0,8,0,0"
+                                               HorizontalAlignment="Right"
+                                               Visibility="Collapsed"
+                                               Foreground="{DynamicResource DarkTextBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="FontSize" Value="30"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Title}" Value="Network">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Setter Property="FontSize" Value="34"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>

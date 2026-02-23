@@ -65,6 +65,7 @@ public sealed class PowerShellExecutionRequest
     public string StepName { get; set; } = string.Empty;
     public string Script { get; set; } = string.Empty;
     public bool DryRun { get; set; }
+    public bool PreferProcessMode { get; set; }
 }
 
 public sealed class PowerShellExecutionResult

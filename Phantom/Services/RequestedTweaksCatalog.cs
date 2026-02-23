@@ -682,6 +682,165 @@ internal static class RequestedTweaksCatalog
                 Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name RealTimeIsUniversal -ErrorAction Stop
                 """),
 
+            T("ultimate-performance-power-plan", "Ultimate performance power plan", "Enables and activates the Ultimate Performance plan.", RiskTier.Advanced, "System", true,
+                """
+                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                if((powercfg /GetActiveScheme) -match $guid){'Applied'} else {'Not Applied'}
+                """,
+                """
+                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                if(-not ((powercfg /L) -match $guid)){
+                  powercfg -duplicatescheme $guid | Out-Null
+                }
+                powercfg /setactive $guid
+                """,
+                """
+                powercfg /setactive SCHEME_BALANCED
+                """),
+
+            T("hags-hardware-accelerated-gpu-scheduling", "HAGS (hardware-accelerated GPU scheduling)", "Enables hardware accelerated GPU scheduling.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
+                if((Get-ItemProperty -Path $p -Name HwSchMode -ErrorAction Stop).HwSchMode -eq 2){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -Type DWord -Value 2
+                """,
+                """
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -Type DWord -Value 1
+                """),
+
+            T("vbs-virtualization-based-security", "VBS (virtualization-based security)", "Enables virtualization-based security.", RiskTier.Advanced, "HKLM", true,
+                """
+                $a='HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'
+                $b='HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
+                $vbs=(Get-ItemProperty -Path $a -Name EnableVirtualizationBasedSecurity -ErrorAction Stop).EnableVirtualizationBasedSecurity
+                $lsa=(Get-ItemProperty -Path $b -Name LsaCfgFlags -ErrorAction Stop).LsaCfgFlags
+                if($vbs -eq 1 -and $lsa -eq 1){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Force | Out-Null
+                New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name EnableVirtualizationBasedSecurity -Type DWord -Value 1
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name LsaCfgFlags -Type DWord -Value 1
+                """,
+                """
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name EnableVirtualizationBasedSecurity -Type DWord -Value 0
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name LsaCfgFlags -Type DWord -Value 0
+                """),
+
+            T("relaunch-apps", "Relaunch apps", "Restarts supported apps after sign-in.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+                if((Get-ItemProperty -Path $p -Name RestartApps -ErrorAction Stop).RestartApps -eq 1){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name RestartApps -Type DWord -Value 1
+                """,
+                """
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name RestartApps -Type DWord -Value 0
+                """),
+
+            T("background-apps", "Background apps", "Allows supported apps to run in the background.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications'
+                if(-not (Test-Path $p)){ 'Applied' }
+                else {
+                  try {
+                    $item=Get-ItemProperty -Path $p -Name GlobalUserDisabled -ErrorAction Stop
+                    if($item.GlobalUserDisabled -eq 0){'Applied'} else {'Not Applied'}
+                  } catch {
+                    'Applied'
+                  }
+                }
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Name GlobalUserDisabled -Type DWord -Value 0
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Name GlobalUserDisabled -Type DWord -Value 1
+                """),
+
+            T("activity-history", "Activity history", "Enables activity history collection and sync policy.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
+                $pub=$null
+                $upl=$null
+                try { $pub=(Get-ItemProperty -Path $p -Name PublishUserActivities -ErrorAction Stop).PublishUserActivities } catch {}
+                try { $upl=(Get-ItemProperty -Path $p -Name UploadUserActivities -ErrorAction Stop).UploadUserActivities } catch {}
+                if(($pub -eq 1 -or $null -eq $pub) -and ($upl -eq 1 -or $null -eq $upl)){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name PublishUserActivities -Type DWord -Value 1
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name UploadUserActivities -Type DWord -Value 1
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name PublishUserActivities -Type DWord -Value 0
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name UploadUserActivities -Type DWord -Value 0
+                """),
+
+            T("search-indexing", "Search indexing", "Keeps Windows Search service enabled for indexed results.", RiskTier.Basic, "System", true,
+                """
+                $s=Get-Service -Name 'WSearch' -ErrorAction Stop
+                if($s.StartType -in @('Automatic','AutomaticDelayedStart') -and $s.Status -eq 'Running'){'Applied'} else {'Not Applied'}
+                """,
+                """
+                Set-Service -Name 'WSearch' -StartupType Automatic -ErrorAction Stop
+                Start-Service -Name 'WSearch' -ErrorAction Continue
+                """,
+                """
+                Set-Service -Name 'WSearch' -StartupType Manual -ErrorAction Stop
+                Stop-Service -Name 'WSearch' -Force -ErrorAction Continue
+                """),
+
+            T("delivery-optimization", "Delivery optimization", "Enables Delivery Optimization service and default download mode.", RiskTier.Advanced, "System", true,
+                """
+                $svc=Get-Service -Name 'DoSvc' -ErrorAction Stop
+                $p='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config'
+                $mode=$null
+                try { $mode=(Get-ItemProperty -Path $p -Name DODownloadMode -ErrorAction Stop).DODownloadMode } catch {}
+                if($svc.StartType -in @('Automatic','AutomaticDelayedStart') -and ($null -eq $mode -or $mode -in 0,1,2,3)){'Applied'} else {'Not Applied'}
+                """,
+                """
+                Set-Service -Name 'DoSvc' -StartupType Automatic -ErrorAction Stop
+                Start-Service -Name 'DoSvc' -ErrorAction Continue
+                New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Name DODownloadMode -Type DWord -Value 1
+                """,
+                """
+                Set-Service -Name 'DoSvc' -StartupType Manual -ErrorAction Stop
+                Stop-Service -Name 'DoSvc' -Force -ErrorAction Continue
+                New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Name DODownloadMode -Type DWord -Value 100
+                """),
+
+            T("network-adapter-onboard-processor", "Network adapter onboard processor", "Enables Receive Side Scaling (RSS) on active adapter.", RiskTier.Advanced, "System", true,
+                """
+                $adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } | Sort-Object InterfaceMetric | Select-Object -First 1
+                if($null -eq $adapter){$adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1}
+                if($null -eq $adapter){throw 'No active network adapter found.'}
+                $rss=Get-NetAdapterRss -Name $adapter.Name -ErrorAction Stop
+                if($rss.Enabled){'Applied'} else {'Not Applied'}
+                """,
+                """
+                $adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } | Sort-Object InterfaceMetric | Select-Object -First 1
+                if($null -eq $adapter){$adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1}
+                if($null -eq $adapter){throw 'No active network adapter found.'}
+                Set-NetAdapterRss -Name $adapter.Name -Enabled $true -ErrorAction Stop
+                """,
+                """
+                $adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } | Sort-Object InterfaceMetric | Select-Object -First 1
+                if($null -eq $adapter){$adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1}
+                if($null -eq $adapter){throw 'No active network adapter found.'}
+                Set-NetAdapterRss -Name $adapter.Name -Enabled $false -ErrorAction Stop
+                """),
+
             
         ];
     }

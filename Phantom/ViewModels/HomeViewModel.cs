@@ -155,30 +155,31 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 UpsertTopCard("Windows", snapshot.Windows);
                 UpsertTopCard("Performance", snapshot.PerformanceScore, PerformanceTooltipText);
 
-                UpsertKpiTile("Apps count", snapshot.AppsCount.ToString());
-                UpsertKpiTile("Processes count", snapshot.ProcessesCount.ToString());
-                UpsertKpiTile("Services count", snapshot.ServicesCount.ToString());
-                UpsertKpiTile("Space cleaned total", FormatBytes(telemetry.SpaceCleanedBytes));
+                UpsertKpiTile("Apps", snapshot.AppsCount.ToString());
+                UpsertKpiTile("Processes", snapshot.ProcessesCount.ToString());
+                UpsertKpiTile("Services", snapshot.ServicesCount.ToString());
+                UpsertKpiTile("Space cleaned", FormatBytes(telemetry.SpaceCleanedBytes));
 
                 // Live KPI values are driven by the 1-second timer.
                 if (!ContainsKpiTile("CPU %"))
                 {
-                    UpsertKpiTile("CPU %", snapshot.CpuUsage.ToString("F2"));
+                    UpsertKpiTile("CPU %", FormatPercent(snapshot.CpuUsage));
                 }
 
                 if (!ContainsKpiTile("GPU %"))
                 {
-                    UpsertKpiTile("GPU %", snapshot.GpuUsage.ToString("F2"));
+                    UpsertKpiTile("GPU %", FormatPercent(snapshot.GpuUsage));
                 }
 
                 if (!ContainsKpiTile("Memory %"))
                 {
-                    UpsertKpiTile("Memory %", snapshot.MemoryUsage.ToString("F2"));
+                    UpsertKpiTile("Memory %", FormatPercent(snapshot.MemoryUsage));
                 }
 
                 if (!ContainsKpiTile("Network"))
                 {
-                    UpsertKpiTile("Network", snapshot.NetworkUsage);
+                    var (rates, total) = FormatNetworkTile(snapshot.NetworkUsage);
+                    UpsertKpiTile("Network", rates, total);
                 }
             });
         }
@@ -233,10 +234,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                UpsertKpiTile("CPU %", cpu.ToString("F2"));
-                UpsertKpiTile("Memory %", memory.ToString("F2"));
-                UpsertKpiTile("GPU %", gpu.ToString("F2"));
-                UpsertKpiTile("Network", network);
+                UpsertKpiTile("CPU %", FormatPercent(cpu));
+                UpsertKpiTile("Memory %", FormatPercent(memory));
+                UpsertKpiTile("GPU %", FormatPercent(gpu));
+                var (rates, total) = FormatNetworkTile(network);
+                UpsertKpiTile("Network", rates, total);
 
                 var displayedUptime = GetDisplayedUptimeSeconds();
                 if (displayedUptime.HasValue)
@@ -283,13 +285,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         TopCards.Add(next);
     }
 
-    private void UpsertKpiTile(string title, string value)
+    private void UpsertKpiTile(string title, string value, string secondaryValue = "")
     {
         var index = KpiTiles.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
         var next = new KpiTile
         {
             Title = title,
-            Value = value
+            Value = value,
+            SecondaryValue = secondaryValue
         };
 
         if (index >= 0)
@@ -313,6 +316,65 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
 
         return $"{value:F2} {units[index]}";
+    }
+
+    private static string FormatPercent(double value)
+    {
+        var rounded = (int)Math.Round(Math.Clamp(value, 0, 100), MidpointRounding.AwayFromZero);
+        return rounded.ToString();
+    }
+
+    private static (string Rates, string Total) FormatNetworkTile(string networkText)
+    {
+        if (string.IsNullOrWhiteSpace(networkText))
+        {
+            return ("↑ 0 B/s  ↓ 0 B/s", "0 B");
+        }
+
+        var lines = networkText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+
+        if (lines.Count == 0)
+        {
+            return ("↑ 0 B/s  ↓ 0 B/s", "0 B");
+        }
+
+        if (lines[0].Contains('↑') || lines[0].Contains('↓'))
+        {
+            var total = lines.Count > 1 ? lines[1] : "0 B";
+            return (lines[0], total);
+        }
+
+        var upload = ExtractNetworkValue(lines, "Upload:");
+        var download = ExtractNetworkValue(lines, "Download:");
+        var session = ExtractNetworkValue(lines, "Session:");
+        if (session.Length == 0)
+        {
+            session = lines.Count > 2 ? lines[2] : "0 B";
+        }
+
+        return ($"↑ {upload}  ↓ {download}", session);
+    }
+
+    private static string ExtractNetworkValue(IReadOnlyList<string> lines, string key)
+    {
+        foreach (var line in lines)
+        {
+            if (!line.StartsWith(key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = line[key.Length..].Trim();
+            if (value.Length > 0)
+            {
+                return value;
+            }
+        }
+
+        return key.Contains("Session", StringComparison.OrdinalIgnoreCase) ? "0 B" : "0 B/s";
     }
 
     private static long? TryParseUptimeSeconds(string uptime)
