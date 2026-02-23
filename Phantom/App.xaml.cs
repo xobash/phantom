@@ -51,6 +51,9 @@ public partial class App : Application
             }
 
             _bootstrap = new AppBootstrap();
+            var initialSettings = await _bootstrap.SettingsStore.LoadAsync(CancellationToken.None).ConfigureAwait(false);
+            _bootstrap.SettingsProvider.Update(initialSettings);
+            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyTheme(initialSettings.UseDarkMode));
             _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
             _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
             await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
