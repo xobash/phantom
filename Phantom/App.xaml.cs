@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Phantom.Services;
 using Phantom.Views;
 
@@ -83,6 +85,7 @@ public partial class App : Application
             }
 
             _bootstrap.Console.Publish("Trace", "Creating MainWindow instance.");
+            await Dispatcher.InvokeAsync(StartAmbientAnimations);
             await Dispatcher.InvokeAsync(() =>
             {
                 var window = new MainWindow
@@ -230,6 +233,48 @@ public partial class App : Application
         }
 
         return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private void StartAmbientAnimations()
+    {
+        try
+        {
+            if (Resources["AppBgBrush"] is not LinearGradientBrush appBrush)
+            {
+                return;
+            }
+
+            var duration = new Duration(TimeSpan.FromSeconds(24));
+            var easing = new SineEase { EasingMode = EasingMode.EaseInOut };
+
+            appBrush.BeginAnimation(
+                LinearGradientBrush.StartPointProperty,
+                new PointAnimation
+                {
+                    From = new Point(0, 0),
+                    To = new Point(0.12, 0.06),
+                    Duration = duration,
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = easing
+                });
+
+            appBrush.BeginAnimation(
+                LinearGradientBrush.EndPointProperty,
+                new PointAnimation
+                {
+                    From = new Point(1, 1),
+                    To = new Point(0.88, 0.94),
+                    Duration = duration,
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = easing
+                });
+        }
+        catch (Exception ex)
+        {
+            WriteEmergencyStartupTrace($"Ambient animation setup failed: {ex}");
+        }
     }
 
     private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous)
