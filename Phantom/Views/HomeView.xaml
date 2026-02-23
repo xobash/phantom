@@ -29,7 +29,12 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Style="{StaticResource DarkCardStyle}" ToolTip="{Binding Tooltip}">
+                            <Border Style="{StaticResource DarkCardStyle}" ToolTip="{Binding Tooltip}" Cursor="Hand">
+                                <Border.InputBindings>
+                                    <MouseBinding Gesture="LeftClick"
+                                                  Command="{Binding DataContext.RefreshCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                  CommandParameter="{Binding Title}"/>
+                                </Border.InputBindings>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -80,7 +85,12 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Style="{StaticResource DarkCardStyle}">
+                            <Border Style="{StaticResource DarkCardStyle}" Cursor="Hand">
+                                <Border.InputBindings>
+                                    <MouseBinding Gesture="LeftClick"
+                                                  Command="{Binding DataContext.RefreshCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                  CommandParameter="{Binding Title}"/>
+                                </Border.InputBindings>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -97,8 +107,8 @@
                                                 <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Title}" Value="Network">
-                                                        <Setter Property="FontSize" Value="16"/>
-                                                        <Setter Property="LineHeight" Value="22"/>
+                                                        <Setter Property="FontSize" Value="15"/>
+                                                        <Setter Property="LineHeight" Value="20"/>
                                                         <Setter Property="FontWeight" Value="SemiBold"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>

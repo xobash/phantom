@@ -98,8 +98,7 @@ $uptime = (Get-Date) - $os.LastBootUpTime
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            _console.Publish("Warning", "HomeDataService.GetLiveMetricsAsync unavailable on non-Windows host.");
-            return (0, 0, 0, "Up 0.00 B/s\nDown 0.00 B/s\nTotal 0.00 B");
+            return (0, 0, 0, "Upload: 0.00 B/s\nDownload: 0.00 B/s\nSession: 0.00 B");
         }
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -107,26 +106,28 @@ $uptime = (Get-Date) - $os.LastBootUpTime
         const string script = @"
 $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
-$cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
+$cpuSample = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples | Select-Object -First 1
+$cpu = if ($cpuSample) { $cpuSample.CookedValue } else { 0 }
 $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
-function Get-GpuCounterAverage([string]$counterPath) {
-  try {
-    $null = Get-Counter $counterPath -ErrorAction Stop
-    Start-Sleep -Milliseconds 180
-    $gpuCounters = Get-Counter $counterPath -ErrorAction Stop
-    $samples = @($gpuCounters.CounterSamples | Where-Object { $_.CookedValue -ge 0 } | Select-Object -ExpandProperty CookedValue)
-    if ($samples.Count -gt 0) {
-      return ($samples | Measure-Object -Average).Average
-    }
-  } catch {}
-  return $null
+$gpuCtr = 0
+try {
+  $gpuCounters = Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop
+  $preferred = @($gpuCounters.CounterSamples |
+    Where-Object {
+      $_.InstanceName -match 'engtype_3D|engtype_Compute|engtype_VideoDecode|engtype_VideoEncode|engtype_VideoProcessing'
+    } |
+    Where-Object { $_.CookedValue -ge 0 } |
+    Select-Object -ExpandProperty CookedValue)
+  $samples = if ($preferred.Count -gt 0) {
+    $preferred
+  } else {
+    @($gpuCounters.CounterSamples | Where-Object { $_.CookedValue -ge 0 } | Select-Object -ExpandProperty CookedValue)
+  }
+  if ($samples.Count -gt 0) {
+    $gpuCtr = ($samples | Measure-Object -Average).Average
+  }
 }
-
-$gpuCtr = Get-GpuCounterAverage '\GPU Engine(_Total)\Utilization Percentage'
-if ($null -eq $gpuCtr) {
-  $gpuCtr = Get-GpuCounterAverage '\GPU Engine(*)\Utilization Percentage'
-}
-if ($null -eq $gpuCtr) {
+catch {
   try {
     $engineSamples = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop |
       Where-Object { $_.Name -notlike '*_Total*' -and $_.UtilizationPercentage -ne $null } |
@@ -136,7 +137,6 @@ if ($null -eq $gpuCtr) {
     }
   } catch {}
 }
-if ($null -eq $gpuCtr) { $gpuCtr = 0 }
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)
   MemoryUsage = [math]::Round($memoryPct, 2)
@@ -295,7 +295,7 @@ catch {
         telemetry.LastNetworkReceivedBytes = totalRecv;
         telemetry.LastNetworkSampleAt = now;
 
-        return $"Up {FormatBytes((long)uploadRate)}/s\nDown {FormatBytes((long)downloadRate)}/s\nTotal {FormatBytes(deltaSent + deltaRecv)}";
+        return $"Upload: {FormatBytes((long)uploadRate)}/s\nDownload: {FormatBytes((long)downloadRate)}/s\nSession: {FormatBytes(deltaSent + deltaRecv)}";
     }
 
     private static string FormatBytes(long bytes)
