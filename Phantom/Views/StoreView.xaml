@@ -5,6 +5,14 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
+    <UserControl.Resources>
+        <Style x:Key="StoreGridTextStyle" TargetType="TextBlock">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="17"/>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -95,13 +103,38 @@
             <DataGrid ItemsSource="{Binding CatalogView}" AutoGenerateColumns="False"
                       Style="{StaticResource DarkDataGridStyle}"
                       VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                      ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
                     <DataGridCheckBoxColumn Header="Sel" Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="56"/>
-                    <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="260"/>
-                    <DataGridTextColumn Header="Winget" Binding="{Binding WingetId}" Width="240"/>
-                    <DataGridTextColumn Header="Choco" Binding="{Binding ChocoId}" Width="180"/>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                    <DataGridTemplateColumn Header="Name" Width="1.3*" MinWidth="180">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}" Style="{StaticResource StoreGridTextStyle}" ToolTip="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Winget" Width="1.35*" MinWidth="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding WingetId}" Style="{StaticResource StoreGridTextStyle}" ToolTip="{Binding WingetId}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Choco" Width="1.15*" MinWidth="170">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ChocoId}" Style="{StaticResource StoreGridTextStyle}" ToolTip="{Binding ChocoId}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Status" Width="1*" MinWidth="150">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Status}" Style="{StaticResource StoreGridTextStyle}" ToolTip="{Binding Status}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

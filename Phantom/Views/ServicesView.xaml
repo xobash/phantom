@@ -22,17 +22,6 @@
             <Setter Property="Height" Value="24"/>
             <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
         </Style>
-        <Style x:Key="DarkMenuItemStyle" TargetType="MenuItem">
-            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
-            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Style.Triggers>
-                <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource AppBgBrush}">
@@ -103,9 +92,9 @@
                             <DataTemplate>
                                 <Button Style="{StaticResource ServicesActionButtonStyle}" Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}" Click="OpenRowMenu">
                                     <Button.ContextMenu>
-                                        <ContextMenu Background="{DynamicResource DarkCard2Brush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="1">
+                                        <ContextMenu Style="{StaticResource DarkContextMenuStyle}" ItemContainerStyle="{StaticResource DarkContextMenuItemStyle}">
                                             <ContextMenu.Resources>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource DarkMenuItemStyle}"/>
+                                                <Style TargetType="Separator" BasedOn="{StaticResource DarkContextMenuSeparatorStyle}"/>
                                             </ContextMenu.Resources>
                                             <MenuItem Header="Stop"
                                                       Command="{Binding PlacementTarget.Tag.StopServiceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"

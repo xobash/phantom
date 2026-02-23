@@ -7,59 +7,78 @@
              Background="{DynamicResource AppBgBrush}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
-        <Style x:Key="TweakChevronButtonStyle" TargetType="ToggleButton">
-            <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="34"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+
+        <Style x:Key="FeatureRowBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource DarkCardBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="6,4"/>
+            <Setter Property="Padding" Value="14,10"/>
+        </Style>
+
+        <Style x:Key="FeatureTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
+        </Style>
+
+        <Style x:Key="FeatureDescriptionStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+        </Style>
+
+        <Style x:Key="CompactButtonStyle" TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+
+        <Style x:Key="ChevronToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Content" Value="▸"/>
+            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="ChevronBg"
-                                CornerRadius="6"
+                        <Border x:Name="ChevronBorder"
+                                CornerRadius="7"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}">
-                            <Grid>
-                                <Path x:Name="ChevronPath"
-                                      Width="10"
-                                      Height="7"
-                                      Stretch="Fill"
-                                      Stroke="{DynamicResource DarkTextBrush}"
-                                      StrokeThickness="1.8"
-                                      StrokeStartLineCap="Round"
-                                      StrokeEndLineCap="Round"
-                                      Data="M 1 1 L 5 5 L 9 1"
-                                      HorizontalAlignment="Center"
-                                      VerticalAlignment="Center"
-                                      RenderTransformOrigin="0.5,0.5">
-                                    <Path.RenderTransform>
-                                        <RotateTransform Angle="0"/>
-                                    </Path.RenderTransform>
-                                </Path>
-                            </Grid>
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="ChevronPath" Property="RenderTransform">
-                                    <Setter.Value>
-                                        <RotateTransform Angle="180"/>
-                                    </Setter.Value>
-                                </Setter>
-                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ChevronBg" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
-                                <Setter TargetName="ChevronBg" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                <Setter TargetName="ChevronBorder" Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+                                <Setter TargetName="ChevronBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ChevronBg" Property="Background" Value="{DynamicResource RowSelectedBackgroundBrush}"/>
+                                <Setter TargetName="ChevronBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ChevronBorder" Property="Opacity" Value="0.45"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Content" Value="▾"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </UserControl.Resources>
     <Grid Background="{DynamicResource AppBgBrush}">
@@ -91,7 +110,7 @@
                          Style="{StaticResource DarkTextBoxStyle}"/>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource CompactButtonStyle}"/>
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                         <CheckBox IsChecked="{Binding DryRun}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
                         <TextBlock Text="Dry-run" Margin="8,2,0,0"/>
@@ -105,46 +124,41 @@
                 <ItemsControl ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="0,0,0,8"
-                                    CornerRadius="10"
-                                    BorderBrush="{DynamicResource DarkBorderBrush}"
-                                    BorderThickness="1"
-                                    Background="{DynamicResource DarkCard2Brush}">
+                            <Border Style="{StaticResource FeatureRowBorderStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
-                                    <Border Grid.Row="0" Padding="10,8" Background="{DynamicResource DarkCard2Brush}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource MutedTextBrush}" FontSize="14"/>
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="1"
-                                                       VerticalAlignment="Center"
-                                                       Margin="10,0,12,0"
-                                                       Foreground="{DynamicResource MutedTextBrush}"
-                                                       Text="{Binding Tweaks.Count, StringFormat={}{0}}"/>
-                                            <ToggleButton Grid.Column="2"
-                                                          VerticalAlignment="Center"
-                                                          IsChecked="{Binding IsExpanded, Mode=TwoWay}"
-                                                          Style="{StaticResource TweakChevronButtonStyle}"/>
-                                        </Grid>
-                                    </Border>
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Title}" Style="{StaticResource FeatureTitleStyle}"/>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource FeatureDescriptionStyle}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0,12,0"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   FontSize="16"
+                                                   Text="{Binding Tweaks.Count, StringFormat={}{0}}"/>
+                                        <ToggleButton Grid.Column="2"
+                                                      VerticalAlignment="Center"
+                                                      IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                      Style="{StaticResource ChevronToggleStyle}"/>
+                                    </Grid>
 
                                     <ItemsControl Grid.Row="1"
                                                   Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}"
                                                   ItemsSource="{Binding Tweaks}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,1,0,0" Padding="10,10">
+                                                <Border BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,1,0,0" Padding="8,10">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*"/>
@@ -155,8 +169,7 @@
                                                             <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold"/>
                                                             <TextBlock Text="{Binding Description}"
                                                                        Margin="0,2,0,0"
-                                                                       FontSize="14"
-                                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                                       Style="{StaticResource FeatureDescriptionStyle}"
                                                                        TextWrapping="Wrap"/>
                                                         </StackPanel>
 
@@ -164,8 +177,7 @@
                                                                    VerticalAlignment="Center"
                                                                    Margin="0,0,16,0"
                                                                    Text="{Binding Status}"
-                                                                   FontSize="14"
-                                                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                                                                   Style="{StaticResource FeatureDescriptionStyle}"/>
 
                                                         <CheckBox Grid.Column="2"
                                                                   VerticalAlignment="Center"
