@@ -21,6 +21,9 @@ public sealed class ExecutionCoordinator
 
     public CancellationToken Begin()
     {
+        EventHandler<bool>? runningChanged;
+        CancellationToken token;
+
         lock (_gate)
         {
             if (_isRunning)
@@ -28,31 +31,45 @@ public sealed class ExecutionCoordinator
                 throw new InvalidOperationException("Another operation is already running.");
             }
 
+            _cts?.Dispose();
             _isRunning = true;
             _cts = new CancellationTokenSource();
+            token = _cts.Token;
+            runningChanged = RunningChanged;
         }
 
-        RunningChanged?.Invoke(this, true);
-        return _cts.Token;
+        runningChanged?.Invoke(this, true);
+        return token;
     }
 
     public void Complete()
     {
+        EventHandler<bool>? runningChanged;
+
         lock (_gate)
         {
+            if (!_isRunning && _cts is null)
+            {
+                return;
+            }
+
             _cts?.Dispose();
             _cts = null;
             _isRunning = false;
+            runningChanged = RunningChanged;
         }
 
-        RunningChanged?.Invoke(this, false);
+        runningChanged?.Invoke(this, false);
     }
 
     public void Cancel()
     {
+        CancellationTokenSource? cts;
         lock (_gate)
         {
-            _cts?.Cancel();
+            cts = _cts;
         }
+
+        cts?.Cancel();
     }
 }

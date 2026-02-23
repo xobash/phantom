@@ -172,9 +172,20 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
+        string safeMode;
+        try
+        {
+            safeMode = PowerShellInputSanitizer.EnsureServiceStartupMode(mode);
+        }
+        catch (ArgumentException ex)
+        {
+            _console.Publish("Error", ex.Message);
+            return Task.CompletedTask;
+        }
+
         var name = EscapeSingleQuotes(service.Name);
-        var script = $"Set-Service -Name '{name}' -StartupType {mode}";
-        return ExecuteScriptAsync($"services.mode.{mode.ToLowerInvariant()}", service.Name, script, cancellationToken, refreshAfter: true);
+        var script = $"Set-Service -Name '{name}' -StartupType {safeMode}";
+        return ExecuteScriptAsync($"services.mode.{safeMode.ToLowerInvariant()}", service.Name, script, cancellationToken, refreshAfter: true);
     }
 
     private async Task ExecuteScriptAsync(string operationId, string serviceName, string script, CancellationToken cancellationToken, bool refreshAfter)
@@ -243,7 +254,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         return text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     }
 
-    private static string EscapeSingleQuotes(string text) => text.Replace("'", "''");
+    private static string EscapeSingleQuotes(string text) => PowerShellInputSanitizer.EscapeSingleQuotes(text);
 
     private static string ResolveSummary(ServiceInfoRow service)
     {

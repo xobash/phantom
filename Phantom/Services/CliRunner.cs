@@ -54,7 +54,18 @@ public sealed class CliRunner
 
         var settings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var config = await _definitions.LoadSelectionConfigAsync(normalizedConfigPath, cancellationToken).ConfigureAwait(false);
-        var operations = await BuildOperationsAsync(config, cancellationToken).ConfigureAwait(false);
+        List<OperationDefinition> operations;
+        try
+        {
+            operations = await BuildOperationsAsync(config, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            var error = $"CLI operation generation failed: {ex.Message}";
+            _console.Publish("Error", error);
+            await _log.WriteAsync("Error", error, cancellationToken).ConfigureAwait(false);
+            return 6;
+        }
         _console.Publish("Trace", $"CliRunner resolved operations: {operations.Count}");
 
         if (operations.Count == 0)
@@ -210,16 +221,21 @@ public sealed class CliRunner
         var features = await _definitions.LoadFeaturesAsync(cancellationToken).ConfigureAwait(false);
         operations.AddRange(features
             .Where(f => config.Features.Contains(f.Id, StringComparer.OrdinalIgnoreCase))
-            .Select(f => new OperationDefinition
+            .Select(f =>
             {
-                Id = $"feature.{f.Id}",
-                Title = $"Enable {f.Name}",
-                Description = f.Description,
-                RiskTier = RiskTier.Advanced,
-                Reversible = true,
-                RequiresReboot = true,
-                RunScripts = [new PowerShellStep { Name = "enable", Script = $"Enable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -All -NoRestart -ErrorAction Stop" }],
-                UndoScripts = [new PowerShellStep { Name = "disable", Script = $"Disable-WindowsOptionalFeature -Online -FeatureName '{f.FeatureName}' -NoRestart -ErrorAction Stop" }]
+                var safeFeatureName = PowerShellInputSanitizer.EnsureFeatureName(f.FeatureName, $"feature '{f.Id}'");
+                var featureLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeFeatureName);
+                return new OperationDefinition
+                {
+                    Id = $"feature.{f.Id}",
+                    Title = $"Enable {f.Name}",
+                    Description = f.Description,
+                    RiskTier = RiskTier.Advanced,
+                    Reversible = true,
+                    RequiresReboot = true,
+                    RunScripts = [new PowerShellStep { Name = "enable", Script = $"Enable-WindowsOptionalFeature -Online -FeatureName {featureLiteral} -All -NoRestart -ErrorAction Stop" }],
+                    UndoScripts = [new PowerShellStep { Name = "disable", Script = $"Disable-WindowsOptionalFeature -Online -FeatureName {featureLiteral} -NoRestart -ErrorAction Stop" }]
+                };
             }));
 
         var fixes = await _definitions.LoadFixesAsync(cancellationToken).ConfigureAwait(false);
@@ -292,8 +308,24 @@ public sealed class CliRunner
 
     private static OperationDefinition BuildStoreInstallOperation(CatalogApp app)
     {
-        string winget = string.IsNullOrWhiteSpace(app.WingetId) ? string.Empty : $"winget install --id {app.WingetId} -e --accept-source-agreements --accept-package-agreements --silent";
-        string choco = string.IsNullOrWhiteSpace(app.ChocoId) ? string.Empty : $"choco install {app.ChocoId} -y";
+        var wingetId = string.IsNullOrWhiteSpace(app.WingetId)
+            ? string.Empty
+            : PowerShellInputSanitizer.EnsurePackageId(app.WingetId, $"store app '{app.DisplayName}' wingetId");
+        var chocoId = string.IsNullOrWhiteSpace(app.ChocoId)
+            ? string.Empty
+            : PowerShellInputSanitizer.EnsurePackageId(app.ChocoId, $"store app '{app.DisplayName}' chocoId");
+
+        if (wingetId.Length == 0 && chocoId.Length == 0)
+        {
+            throw new ArgumentException($"store app '{app.DisplayName}': at least one package id is required.");
+        }
+
+        string winget = wingetId.Length == 0
+            ? string.Empty
+            : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-source-agreements --accept-package-agreements --silent";
+        string choco = chocoId.Length == 0
+            ? string.Empty
+            : $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y";
 
         var managerProbeScript =
             "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; " +
@@ -313,7 +345,16 @@ public sealed class CliRunner
             RiskTier = RiskTier.Basic,
             Reversible = true,
             RunScripts = [new PowerShellStep { Name = "install", Script = script, RequiresNetwork = true }],
-            UndoScripts = [new PowerShellStep { Name = "uninstall", Script = string.IsNullOrWhiteSpace(app.WingetId) ? $"choco uninstall {app.ChocoId} -y" : $"winget uninstall --id {app.WingetId} -e --silent" }]
+            UndoScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall",
+                    Script = wingetId.Length == 0
+                        ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
+                        : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent"
+                }
+            ]
         };
     }
 }

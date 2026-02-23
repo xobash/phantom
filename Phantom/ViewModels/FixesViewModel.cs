@@ -118,11 +118,22 @@ public sealed class FixesViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
+        string launchScript;
+        try
+        {
+            launchScript = PowerShellInputSanitizer.EnsureSafeLegacyLaunchScript(panel.LaunchScript, $"legacy panel '{panel.Id}'");
+        }
+        catch (ArgumentException ex)
+        {
+            _console.Publish("Error", ex.Message);
+            return;
+        }
+
         await _runner.ExecuteAsync(new PowerShellExecutionRequest
         {
             OperationId = $"panel.{panel.Id}",
             StepName = "launch",
-            Script = panel.LaunchScript,
+            Script = launchScript,
             DryRun = false
         }, cancellationToken).ConfigureAwait(false);
     }

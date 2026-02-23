@@ -102,27 +102,36 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     private async Task ResetUpdateComponentsAsync(CancellationToken cancellationToken)
     {
+        var confirmed = await _promptService
+            .ConfirmDangerousAsync("Reset update components renames SoftwareDistribution and catroot2 caches before recreating them. Continue? (Y/N)")
+            .ConfigureAwait(false);
+        if (!confirmed)
+        {
+            _console.Publish("Info", "Reset update components cancelled.");
+            return;
+        }
+
         var operation = new OperationDefinition
         {
             Id = "updates.reset.components",
             Title = "Reset update components",
             Description = "Resets Windows Update components and cache.",
-            RiskTier = RiskTier.Advanced,
+            RiskTier = RiskTier.Dangerous,
             Reversible = false,
             RunScripts =
             [
                 new PowerShellStep
                 {
                     Name = "reset-components",
-                    Script = "Stop-Service wuauserv,bits,cryptsvc -Force; Remove-Item -Path $env:SystemRoot\\SoftwareDistribution -Recurse -Force -ErrorAction Stop; Remove-Item -Path $env:SystemRoot\\System32\\catroot2 -Recurse -Force -ErrorAction Stop; Start-Service cryptsvc,bits,wuauserv"
+                    Script = "$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'; Stop-Service wuauserv,bits,cryptsvc -Force -ErrorAction Stop; $softwareDistribution = Join-Path $env:SystemRoot 'SoftwareDistribution'; $catroot2 = Join-Path $env:SystemRoot 'System32\\catroot2'; if (Test-Path $softwareDistribution) { Rename-Item -Path $softwareDistribution -NewName (\"SoftwareDistribution.phantom.bak.\" + $stamp) -ErrorAction Stop }; if (Test-Path $catroot2) { Rename-Item -Path $catroot2 -NewName (\"catroot2.phantom.bak.\" + $stamp) -ErrorAction Stop }; New-Item -Path $softwareDistribution -ItemType Directory -Force | Out-Null; New-Item -Path $catroot2 -ItemType Directory -Force | Out-Null; Start-Service cryptsvc,bits,wuauserv -ErrorAction Stop"
                 }
             ]
         };
 
-        await ExecuteUpdateOperationAsync(operation, cancellationToken).ConfigureAwait(false);
+        await ExecuteUpdateOperationAsync(operation, cancellationToken, forceDangerous: true).ConfigureAwait(false);
     }
 
-    private async Task ExecuteUpdateOperationAsync(OperationDefinition operation, CancellationToken externalToken)
+    private async Task ExecuteUpdateOperationAsync(OperationDefinition operation, CancellationToken externalToken, bool forceDangerous = false)
     {
         CancellationToken token;
         try
@@ -152,7 +161,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 Undo = false,
                 DryRun = false,
                 EnableDestructiveOperations = _settingsAccessor().EnableDestructiveOperations,
-                ForceDangerous = false,
+                ForceDangerous = forceDangerous,
                 ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
             }, linked.Token).ConfigureAwait(false);
 
@@ -189,7 +198,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 new PowerShellStep
                 {
                     Name = "restore-default",
-                    Script = "Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force -ErrorAction Stop; Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Recurse -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop"
+                    Script = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if (Test-Path $au) { Remove-Item -Path $au -Recurse -Force -ErrorAction Stop }; if (Test-Path $wu) { Remove-Item -Path $wu -Recurse -Force -ErrorAction Stop }; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop"
                 }
             ],
             UndoScripts =

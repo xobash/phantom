@@ -175,21 +175,21 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
     {
         var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = selected.Select(BuildInstallOperation).ToList();
+        var operations = BuildOperationsForSelected(selected, BuildInstallOperation);
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UninstallSelectedAsync(CancellationToken cancellationToken)
     {
         var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = selected.Select(BuildUninstallOperation).ToList();
+        var operations = BuildOperationsForSelected(selected, BuildUninstallOperation);
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UpgradeSelectedAsync(CancellationToken cancellationToken)
     {
         var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = selected.Select(BuildUpgradeOperation).ToList();
+        var operations = BuildOperationsForSelected(selected, BuildUpgradeOperation);
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
     }
 
@@ -206,8 +206,18 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        var text = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(false);
-        var apps = JsonSerializer.Deserialize<List<CatalogApp>>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<CatalogApp>();
+        List<CatalogApp> apps;
+        try
+        {
+            var text = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(false);
+            apps = JsonSerializer.Deserialize<List<CatalogApp>>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<CatalogApp>();
+            ValidateCatalogEntries(apps);
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Catalog import failed: {ex.Message}");
+            return;
+        }
 
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
@@ -319,6 +329,26 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private IReadOnlyList<OperationDefinition> BuildOperationsForSelected(
+        IReadOnlyList<CatalogApp> selected,
+        Func<CatalogApp, OperationDefinition> operationBuilder)
+    {
+        var operations = new List<OperationDefinition>();
+        foreach (var app in selected)
+        {
+            try
+            {
+                operations.Add(operationBuilder(app));
+            }
+            catch (ArgumentException ex)
+            {
+                _console.Publish("Error", ex.Message);
+            }
+        }
+
+        return operations;
+    }
+
     private static OperationDefinition BuildInstallWingetOperation()
     {
         return new OperationDefinition
@@ -405,12 +435,23 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private OperationDefinition BuildInstallOperation(CatalogApp app)
     {
-        var wingetScript = !string.IsNullOrWhiteSpace(app.WingetId)
-            ? $"winget install --id {app.WingetId} -e --accept-package-agreements --accept-source-agreements --silent {app.SilentArgs}".Trim()
+        var context = $"store app '{app.DisplayName}'";
+        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
+        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
+        if (wingetId.Length == 0 && chocoId.Length == 0)
+        {
+            throw new ArgumentException($"{context}: at least one package identifier is required.");
+        }
+
+        var silentArgs = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
+        var silentArgsSegment = silentArgs.Length == 0 ? string.Empty : $" {silentArgs}";
+
+        var wingetScript = wingetId.Length > 0
+            ? $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}"
             : string.Empty;
 
-        var chocoScript = !string.IsNullOrWhiteSpace(app.ChocoId)
-            ? $"choco install {app.ChocoId} -y {app.SilentArgs}".Trim()
+        var chocoScript = chocoId.Length > 0
+            ? $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y{silentArgsSegment}"
             : string.Empty;
 
         return new OperationDefinition
@@ -436,8 +477,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                     Name = "uninstall",
                     RequiresNetwork = false,
                     Script = BuildManagerFallbackScript(
-                        !string.IsNullOrWhiteSpace(app.WingetId) ? $"winget uninstall --id {app.WingetId} -e --silent" : string.Empty,
-                        !string.IsNullOrWhiteSpace(app.ChocoId) ? $"choco uninstall {app.ChocoId} -y" : string.Empty)
+                        wingetId.Length > 0 ? $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent" : string.Empty,
+                        chocoId.Length > 0 ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y" : string.Empty)
                 }
             ]
         };
@@ -456,12 +497,20 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private OperationDefinition BuildUpgradeOperation(CatalogApp app)
     {
-        var wingetScript = !string.IsNullOrWhiteSpace(app.WingetId)
-            ? $"winget upgrade --id {app.WingetId} -e --accept-package-agreements --accept-source-agreements"
+        var context = $"store app '{app.DisplayName}'";
+        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
+        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
+        if (wingetId.Length == 0 && chocoId.Length == 0)
+        {
+            throw new ArgumentException($"{context}: at least one package identifier is required.");
+        }
+
+        var wingetScript = wingetId.Length > 0
+            ? $"winget upgrade --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements"
             : string.Empty;
 
-        var chocoScript = !string.IsNullOrWhiteSpace(app.ChocoId)
-            ? $"choco upgrade {app.ChocoId} -y"
+        var chocoScript = chocoId.Length > 0
+            ? $"choco upgrade {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
             : string.Empty;
 
         return new OperationDefinition
@@ -505,6 +554,41 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         }
 
         return "throw 'No installer metadata defined for this app.'";
+    }
+
+    private static string NormalizePackageId(string? raw, string context)
+    {
+        return string.IsNullOrWhiteSpace(raw)
+            ? string.Empty
+            : PowerShellInputSanitizer.EnsurePackageId(raw, context);
+    }
+
+    private static string NormalizeSilentArgs(string? raw, string context)
+    {
+        return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
+    }
+
+    private static void ValidateCatalogEntries(IEnumerable<CatalogApp> apps)
+    {
+        var index = 0;
+        foreach (var app in apps)
+        {
+            index++;
+            var context = $"catalog entry #{index}";
+            if (string.IsNullOrWhiteSpace(app.DisplayName))
+            {
+                throw new ArgumentException($"{context}: displayName is required.");
+            }
+
+            var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
+            var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
+            if (wingetId.Length == 0 && chocoId.Length == 0)
+            {
+                throw new ArgumentException($"{context}: at least one package identifier is required.");
+            }
+
+            _ = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
+        }
     }
 
     private bool FilterCatalog(object obj)
