@@ -25,6 +25,23 @@ public partial class App : Application
         _ = StartAsync(e);
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try
+        {
+            if (_bootstrap?.Main is IDisposable disposableMain)
+            {
+                disposableMain.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteEmergencyStartupTrace($"OnExit disposal failed: {ex}");
+        }
+
+        base.OnExit(e);
+    }
+
     private async Task StartAsync(StartupEventArgs e)
     {
         try

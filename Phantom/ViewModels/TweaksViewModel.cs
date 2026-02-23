@@ -10,7 +10,7 @@ using Phantom.Services;
 
 namespace Phantom.ViewModels;
 
-public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
+public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
     private static readonly IReadOnlyDictionary<string, (string Title, string Description)> SectionMetadata =
         new Dictionary<string, (string Title, string Description)>(StringComparer.OrdinalIgnoreCase)
@@ -64,6 +64,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
     private readonly Func<AppSettings> _settingsAccessor;
     private readonly SemaphoreSlim _toggleApplyLock = new(1, 1);
     private readonly Dictionary<string, bool> _sectionExpansionState = new(StringComparer.OrdinalIgnoreCase);
+    private bool _disposed;
 
     private string _search = string.Empty;
     private bool _dryRun;
@@ -165,27 +166,31 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public void ApplyToggleFromUi(TweakDefinition? tweak, bool enabled)
+    public async Task ApplyToggleFromUiAsync(TweakDefinition? tweak, bool enabled, CancellationToken cancellationToken)
     {
         if (tweak is null)
         {
             return;
         }
 
-        _ = ApplyToggleFromUiAsync(tweak, enabled);
-    }
-
-    private async Task ApplyToggleFromUiAsync(TweakDefinition tweak, bool enabled)
-    {
-        await _toggleApplyLock.WaitAsync().ConfigureAwait(false);
+        await _toggleApplyLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (await IsTweakInDesiredStateAsync(tweak, enabled, cancellationToken).ConfigureAwait(false))
+            {
+                tweak.Status = enabled ? "Applied" : "Not Applied";
+                tweak.Selected = enabled;
+                RefreshTweaksView();
+                _console.Publish("Info", $"{tweak.Name}: already in desired state, skipping.");
+                return;
+            }
+
             tweak.Status = enabled ? "Applying..." : "Undoing...";
             RefreshTweaksView();
 
             var operation = BuildApplyOperation(tweak);
-            await RunOperationsAsync([operation], undo: !enabled, CancellationToken.None).ConfigureAwait(false);
-            await RefreshStatusAsync(CancellationToken.None).ConfigureAwait(false);
+            await RunOperationsAsync([operation], undo: !enabled, cancellationToken).ConfigureAwait(false);
+            await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -265,7 +270,13 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        var operations = selected.Select(BuildApplyOperation).ToList();
+        var operations = await BuildOperationsForDesiredStateAsync(selected, undo: false, cancellationToken).ConfigureAwait(false);
+        if (operations.Count == 0)
+        {
+            _console.Publish("Info", "Selected tweaks are already applied.");
+            return;
+        }
+
         await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -279,9 +290,36 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        var operations = selected.Select(BuildApplyOperation).ToList();
+        var operations = await BuildOperationsForDesiredStateAsync(selected, undo: true, cancellationToken).ConfigureAwait(false);
+        if (operations.Count == 0)
+        {
+            _console.Publish("Info", "Selected tweaks are already not applied.");
+            return;
+        }
+
         await RunOperationsAsync(operations, undo: true, cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<OperationDefinition>> BuildOperationsForDesiredStateAsync(
+        IReadOnlyList<TweakDefinition> selected,
+        bool undo,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<OperationDefinition>(selected.Count);
+        foreach (var tweak in selected)
+        {
+            var desiredApplied = !undo;
+            if (await IsTweakInDesiredStateAsync(tweak, desiredApplied, cancellationToken).ConfigureAwait(false))
+            {
+                _console.Publish("Info", $"{tweak.Name}: already {(desiredApplied ? "applied" : "not applied")}, skipping.");
+                continue;
+            }
+
+            operations.Add(BuildApplyOperation(tweak));
+        }
+
+        return operations;
     }
 
     private async Task RunOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool undo, CancellationToken externalToken)
@@ -484,6 +522,38 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
         _console.Publish("Info", $"Selection imported: {dialog.FileName}");
     }
 
+    private async Task<bool> IsTweakInDesiredStateAsync(TweakDefinition tweak, bool desiredApplied, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(tweak.Status))
+        {
+            if (IsAppliedStatus(tweak.Status) == desiredApplied)
+            {
+                return true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(tweak.DetectScript))
+        {
+            return false;
+        }
+
+        var result = await _queryService.InvokeAsync(tweak.DetectScript, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        var output = (result.Stdout + "\n" + result.Stderr).Trim();
+
+        if (result.ExitCode == 0)
+        {
+            var status = string.IsNullOrWhiteSpace(output) ? "Detected" : output;
+            return IsAppliedStatus(status) == desiredApplied;
+        }
+
+        if (DetectMissingSettingState(output))
+        {
+            return !desiredApplied;
+        }
+
+        return false;
+    }
+
     private static bool DetectManagedRestriction(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -643,6 +713,18 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel
             RebuildSections();
             Notify(nameof(Tweaks));
         });
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _toggleApplyLock.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     public sealed class TweakSection : ObservableObject
