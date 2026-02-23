@@ -614,6 +614,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
             RiskTier = RiskTier.Advanced,
             Reversible = true,
             RequiresReboot = true,
+            Compatibility = feature.Compatibility ?? Array.Empty<string>(),
             RunScripts = [new PowerShellStep { Name = "enable", Script = BuildEnableFeatureScript(feature) }],
             UndoScripts = [new PowerShellStep { Name = "disable", Script = BuildDisableFeatureScript(feature) }]
         };
@@ -629,6 +630,7 @@ if ($null -eq $storageSense) { $storageSense = 0 }
             RiskTier = RiskTier.Advanced,
             Reversible = true,
             RequiresReboot = true,
+            Compatibility = feature.Compatibility ?? Array.Empty<string>(),
             RunScripts = [new PowerShellStep { Name = "disable", Script = BuildDisableFeatureScript(feature) }],
             UndoScripts = [new PowerShellStep { Name = "enable", Script = BuildEnableFeatureScript(feature) }]
         };

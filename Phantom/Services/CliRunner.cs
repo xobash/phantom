@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Phantom.Models;
 
 namespace Phantom.Services;
@@ -53,7 +54,25 @@ public sealed class CliRunner
         }
 
         var settings = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var config = await _definitions.LoadSelectionConfigAsync(normalizedConfigPath, cancellationToken).ConfigureAwait(false);
+        AutomationConfig config;
+        try
+        {
+            config = await _definitions.LoadSelectionConfigAsync(normalizedConfigPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidDataException ex)
+        {
+            var error = $"CLI config validation failed: {ex.Message}";
+            _console.Publish("Error", error);
+            await _log.WriteAsync("Error", error, cancellationToken).ConfigureAwait(false);
+            return 2;
+        }
+        catch (JsonException ex)
+        {
+            var error = $"CLI config parsing failed: {ex.Message}";
+            _console.Publish("Error", error);
+            await _log.WriteAsync("Error", error, cancellationToken).ConfigureAwait(false);
+            return 2;
+        }
         List<OperationDefinition> operations;
         try
         {
@@ -202,16 +221,18 @@ public sealed class CliRunner
         var tweaks = await _definitions.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
         operations.AddRange(tweaks
             .Where(t => config.Tweaks.Contains(t.Id, StringComparer.OrdinalIgnoreCase))
-            .Select(t => new OperationDefinition
-            {
-                Id = $"tweak.{t.Id}",
-                Title = t.Name,
-                Description = t.Description,
-                RiskTier = t.RiskTier,
-                Reversible = t.Reversible,
-                RunScripts = [new PowerShellStep { Name = "apply", Script = t.ApplyScript }],
-                UndoScripts = [new PowerShellStep { Name = "undo", Script = t.UndoScript }],
-                StateCaptureScripts = t.StateCaptureKeys.Select(k => new PowerShellStep
+                .Select(t => new OperationDefinition
+                {
+                    Id = $"tweak.{t.Id}",
+                    Title = t.Name,
+                    Description = t.Description,
+                    RiskTier = t.RiskTier,
+                    Reversible = t.Reversible,
+                    Compatibility = t.Compatibility ?? Array.Empty<string>(),
+                    DetectScript = t.DetectScript,
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = t.ApplyScript }],
+                    UndoScripts = [new PowerShellStep { Name = "undo", Script = t.UndoScript }],
+                    StateCaptureScripts = t.StateCaptureKeys.Select(k => new PowerShellStep
                 {
                     Name = k,
                     Script = BuildRegistryCaptureScript(k)
@@ -233,6 +254,7 @@ public sealed class CliRunner
                     RiskTier = RiskTier.Advanced,
                     Reversible = true,
                     RequiresReboot = true,
+                    Compatibility = f.Compatibility ?? Array.Empty<string>(),
                     RunScripts = [new PowerShellStep { Name = "enable", Script = $"Enable-WindowsOptionalFeature -Online -FeatureName {featureLiteral} -All -NoRestart -ErrorAction Stop" }],
                     UndoScripts = [new PowerShellStep { Name = "disable", Script = $"Disable-WindowsOptionalFeature -Online -FeatureName {featureLiteral} -NoRestart -ErrorAction Stop" }]
                 };
@@ -248,6 +270,7 @@ public sealed class CliRunner
                 Description = f.Description,
                 RiskTier = f.RiskTier,
                 Reversible = f.Reversible,
+                Compatibility = f.Compatibility ?? Array.Empty<string>(),
                 RunScripts = [new PowerShellStep { Name = "apply", Script = f.ApplyScript }],
                 UndoScripts = [new PowerShellStep { Name = "undo", Script = f.UndoScript }]
             }));

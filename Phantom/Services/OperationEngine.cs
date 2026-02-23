@@ -58,10 +58,29 @@ public sealed class OperationEngine
             return PrecheckResult.Failure("Administrator privileges are required.");
         }
 
-        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+        if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osMessage))
         {
-            _console.Publish("Error", "Batch precheck failed: Windows is required.");
-            return PrecheckResult.Failure("Windows is required for operation execution.");
+            _console.Publish("Error", $"Batch precheck failed: {osMessage}");
+            return PrecheckResult.Failure(osMessage);
+        }
+
+        var currentOsVersion = WindowsSupportPolicy.GetCurrentOsVersion();
+        _console.Publish(
+            "Trace",
+            $"OS validation passed. version={currentOsVersion}, arch={(Environment.Is64BitOperatingSystem ? "x64" : "x86")}, registryView={WindowsSupportPolicy.PreferredRegistryView}");
+        await _log.WriteAsync(
+                "Security",
+                $"OS validation passed. version={currentOsVersion}, arch={(Environment.Is64BitOperatingSystem ? "x64" : "x86")}, registryView={WindowsSupportPolicy.PreferredRegistryView}",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var incompatible = operationList.Where(op => !IsOperationCompatible(op, currentOsVersion)).Select(op => op.Id).ToList();
+        if (incompatible.Count > 0)
+        {
+            var summary = string.Join(", ", incompatible.Take(8));
+            var message = $"Operation compatibility check failed for current OS version {currentOsVersion}. Unsupported operation(s): {summary}";
+            _console.Publish("Error", message);
+            return PrecheckResult.Failure(message);
         }
 
         var systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) ?? "C:\\";
@@ -118,6 +137,19 @@ public sealed class OperationEngine
                 }
 
                 var scripts = request.Undo ? operation.UndoScripts : operation.RunScripts;
+                var desiredApplied = !request.Undo;
+
+                var alreadyInDesiredState = await IsOperationInDesiredStateAsync(operation, desiredApplied, cancellationToken).ConfigureAwait(false);
+                if (alreadyInDesiredState == true)
+                {
+                    opResult.Success = true;
+                    opResult.Message = desiredApplied
+                        ? "Skipped: operation is already applied."
+                        : "Skipped: operation is already not applied.";
+                    result.Results.Add(opResult);
+                    _console.Publish("Info", $"{operation.Id}: {opResult.Message}");
+                    continue;
+                }
 
                 if (!request.DryRun && !request.Undo && !restorePointAttempted &&
                     _settingsAccessor().CreateRestorePointBeforeDangerousOperations &&
@@ -162,7 +194,8 @@ public sealed class OperationEngine
                             OperationId = operation.Id,
                             StepName = $"capture:{capture.Name}",
                             Script = capture.Script,
-                            DryRun = request.DryRun
+                            DryRun = request.DryRun,
+                            SkipSafetyBackup = true
                         }, cancellationToken).ConfigureAwait(false);
 
                         if (!captureResult.Success)
@@ -378,6 +411,118 @@ public sealed class OperationEngine
             await _log.WriteAsync("Warning", $"Restore point creation exception for {operation.Id}: {ex}", cancellationToken).ConfigureAwait(false);
             return false;
         }
+    }
+
+    private async Task<bool?> IsOperationInDesiredStateAsync(
+        OperationDefinition operation,
+        bool desiredApplied,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(operation.DetectScript))
+        {
+            return null;
+        }
+
+        var detect = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = operation.Id,
+            StepName = "detect",
+            Script = operation.DetectScript,
+            DryRun = false,
+            SkipSafetyBackup = true
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!detect.Success)
+        {
+            _console.Publish("Warning", $"{operation.Id}: detect script failed, continuing with execution.");
+            return null;
+        }
+
+        var status = string.IsNullOrWhiteSpace(detect.CombinedOutput)
+            ? "Unknown"
+            : detect.CombinedOutput.Trim();
+        var applied = IsAppliedStatus(status);
+        return applied == desiredApplied;
+    }
+
+    private static bool IsAppliedStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        var normalized = status.Trim();
+        if (normalized.Equals("Applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Detected", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Installed", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.Contains("not applied", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("not installed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("error", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("installed", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOperationCompatible(OperationDefinition operation, Version currentOsVersion)
+    {
+        if (operation.Compatibility is null || operation.Compatibility.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var tokenRaw in operation.Compatibility)
+        {
+            if (string.IsNullOrWhiteSpace(tokenRaw))
+            {
+                continue;
+            }
+
+            var token = tokenRaw.Trim();
+            if (token.Equals("win10", StringComparison.OrdinalIgnoreCase) &&
+                currentOsVersion.Major == 10 &&
+                currentOsVersion.Build < 22000)
+            {
+                return true;
+            }
+
+            if (token.Equals("win11", StringComparison.OrdinalIgnoreCase) &&
+                currentOsVersion.Major == 10 &&
+                currentOsVersion.Build >= 22000)
+            {
+                return true;
+            }
+
+            if (token.StartsWith(">=", StringComparison.Ordinal))
+            {
+                var versionText = token[2..].Trim();
+                if (Version.TryParse(versionText, out var minVersion) && currentOsVersion >= minVersion)
+                {
+                    return true;
+                }
+            }
+
+            if (token.StartsWith("<=", StringComparison.Ordinal))
+            {
+                var versionText = token[2..].Trim();
+                if (Version.TryParse(versionText, out var maxVersion) && currentOsVersion <= maxVersion)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
 
