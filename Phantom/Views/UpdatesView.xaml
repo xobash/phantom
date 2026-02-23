@@ -20,7 +20,9 @@
                     <Button Content="Apply mode" Command="{Binding ApplyModeCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Undo to default" Command="{Binding RestoreDefaultCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Reset update components" Command="{Binding ResetUpdateComponentsCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Command="{Binding RefreshStatusCommand}"
+                            Style="{StaticResource RefreshIconButtonStyle}"
+                            ToolTip="Refresh update service status"/>
                 </WrapPanel>
             </StackPanel>
         </Border>

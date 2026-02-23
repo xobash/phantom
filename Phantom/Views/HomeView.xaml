@@ -13,7 +13,10 @@
 
         <StackPanel Orientation="Horizontal" Margin="4">
             <TextBlock Text="Home Dashboard" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,12,0"/>
-            <Button Content="Refresh" Margin="4" Command="{Binding RefreshCommand}"/>
+            <Button Margin="4"
+                    Command="{Binding RefreshCommand}"
+                    Style="{StaticResource RefreshIconButtonStyle}"
+                    ToolTip="Refresh home snapshot"/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -87,6 +90,13 @@
                                     <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
                                     <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Title}" Value="Network">
+                                        <Setter TargetName="KpiValue" Property="FontSize" Value="16"/>
+                                        <Setter TargetName="KpiValue" Property="LineHeight" Value="22"/>
+                                        <Setter TargetName="KpiValue" Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

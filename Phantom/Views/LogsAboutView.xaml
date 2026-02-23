@@ -35,7 +35,9 @@
 
                 <DockPanel Grid.Row="1">
                     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                        <Button Content="Refresh logs" Command="{Binding RefreshLogsCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                        <Button Command="{Binding RefreshLogsCommand}"
+                                Style="{StaticResource RefreshIconButtonStyle}"
+                                ToolTip="Refresh log file list"/>
                         <Button Content="Open logs folder" Command="{Binding OpenLogCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     </WrapPanel>
                     <ListBox ItemsSource="{Binding LogFiles}"
