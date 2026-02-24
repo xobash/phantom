@@ -132,9 +132,10 @@ Data locations
                 UseShellExecute = true,
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort action.
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                SelectedLogContent = $"Failed to open log location:{Environment.NewLine}{ex.Message}");
         }
     }
 

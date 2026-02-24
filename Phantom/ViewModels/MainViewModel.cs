@@ -208,16 +208,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void OpenLogsFolder()
     {
-        if (!Directory.Exists(_paths.LogsDirectory))
+        try
         {
-            Directory.CreateDirectory(_paths.LogsDirectory);
-        }
+            if (!Directory.Exists(_paths.LogsDirectory))
+            {
+                Directory.CreateDirectory(_paths.LogsDirectory);
+            }
 
-        Process.Start(new ProcessStartInfo
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _paths.LogsDirectory,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
         {
-            FileName = _paths.LogsDirectory,
-            UseShellExecute = true
-        });
+            _console.Publish("Error", $"Failed to open logs folder: {ex.Message}");
+        }
     }
 
     public void Dispose()

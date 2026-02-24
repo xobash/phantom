@@ -56,7 +56,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCliRegex = new(@"schtasks(?:\.exe)?\b[^;\r\n]*?\b/TN\s+['""]?([^'""]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+(?:['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]|(?<path>[A-Za-z]:\\\S+\.ps1))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly HashSet<string> DynamicInvokeAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         "Invoke-Expression",
@@ -137,6 +137,18 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 Success = false,
                 ExitCode = 1,
                 CombinedOutput = blockedReason
+            };
+        }
+
+        if (!ValidateExternalScriptSignatures(request.Script, out var signatureError))
+        {
+            _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {signatureError}");
+            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {signatureError}", cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
+            {
+                Success = false,
+                ExitCode = 1,
+                CombinedOutput = signatureError
             };
         }
 
@@ -494,18 +506,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var wrapped = $"$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& {{ {request.Script} }} *>&1";
         _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 
-        if (!ValidateExternalScriptSignatures(request.Script, out var signatureError))
-        {
-            _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {signatureError}");
-            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {signatureError}", cancellationToken).ConfigureAwait(false);
-            return new PowerShellExecutionResult
-            {
-                Success = false,
-                ExitCode = 1,
-                CombinedOutput = signatureError
-            };
-        }
-
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
@@ -641,6 +641,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return true;
         }
 
+        var allowlistedUrlCount = 0;
         foreach (Match match in UrlRegex.Matches(script))
         {
             if (!Uri.TryCreate(match.Value, UriKind.Absolute, out var uri))
@@ -654,6 +655,14 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 reason = $"Blocked download host '{host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
                 return false;
             }
+
+            allowlistedUrlCount++;
+        }
+
+        if (allowlistedUrlCount == 0)
+        {
+            reason = "Blocked download command because no literal allowlisted URL was found.";
+            return false;
         }
 
         return true;
@@ -1159,14 +1168,44 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return (1, string.Empty, $"Failed to start {fileName}");
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        var processCompleted = 0;
+        using var cancellationRegistration = cancellationToken.Register(() =>
+        {
+            if (Interlocked.CompareExchange(ref processCompleted, 0, 0) != 0)
+            {
+                return;
+            }
 
-        return (
-            process.ExitCode,
-            await stdoutTask.ConfigureAwait(false),
-            await stderrTask.ConfigureAwait(false));
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        });
+
+        try
+        {
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            return (
+                process.ExitCode,
+                await stdoutTask.ConfigureAwait(false),
+                await stderrTask.ConfigureAwait(false));
+        }
+        finally
+        {
+            Interlocked.Exchange(ref processCompleted, 1);
+        }
     }
 
     private static string SanitizeFileName(string value)
