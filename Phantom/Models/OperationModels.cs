@@ -49,6 +49,9 @@ public sealed class OperationExecutionResult
     public bool Cancelled { get; set; }
     public bool RequiresReboot { get; set; }
     public bool CaptureFailed { get; set; }
+    public bool VerificationAttempted { get; set; }
+    public bool VerificationPassed { get; set; }
+    public string VerificationStatus { get; set; } = "Unknown";
     public string Message { get; set; } = string.Empty;
 }
 

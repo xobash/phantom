@@ -810,42 +810,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     private static bool IsAppliedStatus(string status)
     {
-        if (string.IsNullOrWhiteSpace(status))
-        {
-            return false;
-        }
-
-        var normalized = status.Trim();
-        if (normalized.Equals("Applied", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Detected", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Installed", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (normalized.Equals("Not Applied", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Not Installed", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Managed / Restricted", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (normalized.Contains("not applied", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("not installed", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("managed", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("restricted", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("installed", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
+        return OperationStatusParser.Parse(status) == OperationDetectState.Applied;
     }
 
     private string ResolveSectionKey(TweakDefinition tweak)
