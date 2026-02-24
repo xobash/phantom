@@ -230,11 +230,11 @@ public sealed class PowerShellQueryService
                 return;
             }
         }
-        catch (InvalidOperationException)
+        catch (ObjectDisposedException)
         {
             return;
         }
-        catch (ObjectDisposedException)
+        catch (InvalidOperationException)
         {
             return;
         }
@@ -247,10 +247,10 @@ public sealed class PowerShellQueryService
                 process.Kill(entireProcessTree: true);
             }
         }
-        catch (InvalidOperationException)
+        catch (ObjectDisposedException)
         {
         }
-        catch (ObjectDisposedException)
+        catch (InvalidOperationException)
         {
         }
     }

@@ -1078,11 +1078,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 return;
             }
         }
-        catch (InvalidOperationException)
+        catch (ObjectDisposedException)
         {
             return;
         }
-        catch (ObjectDisposedException)
+        catch (InvalidOperationException)
         {
             return;
         }
@@ -1096,13 +1096,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 process.Kill(entireProcessTree: true);
             }
         }
-        catch (InvalidOperationException)
-        {
-            // Process exited while attempting shutdown.
-        }
         catch (ObjectDisposedException)
         {
             // Process disposed concurrently.
+        }
+        catch (InvalidOperationException)
+        {
+            // Process exited while attempting shutdown.
         }
         catch (Exception ex)
         {
