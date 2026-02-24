@@ -694,13 +694,18 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var dynamicInvokerVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var assignment in ast.FindAll(static node => node is AssignmentStatementAst, searchNestedScriptBlocks: true).OfType<AssignmentStatementAst>())
         {
-            if (assignment.Left is not VariableExpressionAst variable ||
-                assignment.Right is not StringConstantExpressionAst stringConstant)
+            if (assignment.Left is not VariableExpressionAst variable)
             {
                 continue;
             }
 
-            if (DynamicInvokeAliases.Contains(stringConstant.Value.Trim()))
+            var assignedStringLiteral = TryExtractAssignedStringLiteral(assignment.Right);
+            if (string.IsNullOrWhiteSpace(assignedStringLiteral))
+            {
+                continue;
+            }
+
+            if (DynamicInvokeAliases.Contains(assignedStringLiteral.Trim()))
             {
                 dynamicInvokerVariables.Add(variable.VariablePath.UserPath);
             }
@@ -733,6 +738,24 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         return true;
+    }
+
+    private static string? TryExtractAssignedStringLiteral(StatementAst rightSideStatement)
+    {
+        var raw = rightSideStatement.Extent.Text.Trim();
+        if (raw.Length < 2)
+        {
+            return null;
+        }
+
+        var startsAndEndsWithSingleQuote = raw[0] == '\'' && raw[^1] == '\'';
+        var startsAndEndsWithDoubleQuote = raw[0] == '"' && raw[^1] == '"';
+        if (!startsAndEndsWithSingleQuote && !startsAndEndsWithDoubleQuote)
+        {
+            return null;
+        }
+
+        return raw[1..^1];
     }
 
     private bool ValidateOperationAllowlist(string operationId, out string reason)
@@ -1290,24 +1313,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
         finally
         {
-            if (!stopIssued)
+            if (stopIssued)
             {
-                return;
-            }
-
-            try
-            {
-                ps.Dispose();
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (Exception ex)
-            {
-                _console.Publish("Warning", $"{operationId}/{stepName}: runspace disposal warning: {ex.Message}");
+                try
+                {
+                    ps.Dispose();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    _console.Publish("Warning", $"{operationId}/{stepName}: runspace disposal warning: {ex.Message}");
+                }
             }
         }
     }
