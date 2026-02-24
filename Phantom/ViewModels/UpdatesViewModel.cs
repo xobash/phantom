@@ -72,7 +72,18 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     private async Task ApplyModeAsync(CancellationToken cancellationToken)
     {
-        OperationDefinition operation = SelectedMode switch
+        var mode = SelectedMode;
+        if (string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
+        {
+            var confirmed = await ConfirmDisableAllModeAsync(cancellationToken).ConfigureAwait(false);
+            if (!confirmed)
+            {
+                _console.Publish("Info", "Disable All mode cancelled.");
+                return;
+            }
+        }
+
+        OperationDefinition operation = mode switch
         {
             "Default" => BuildDefaultModeOperation(),
             "Security" => BuildSecurityModeOperation(),
@@ -80,7 +91,11 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
             _ => BuildSecurityModeOperation()
         };
 
-        await ExecuteUpdateOperationAsync(operation, cancellationToken).ConfigureAwait(false);
+        await ExecuteUpdateOperationAsync(
+                operation,
+                cancellationToken,
+                forceDangerous: string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
+            .ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
@@ -129,6 +144,24 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         };
 
         await ExecuteUpdateOperationAsync(operation, cancellationToken, forceDangerous: true).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ConfirmDisableAllModeAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var first = await _promptService
+            .ConfirmDangerousAsync("Disable ALL updates stops and disables Windows Update services. Enter Y to continue.")
+            .ConfigureAwait(false);
+
+        if (!first)
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _promptService
+            .ConfirmDangerousAsync("Final confirmation: this can leave the system unpatched. Enter Y again to apply Disable ALL mode.")
+            .ConfigureAwait(false);
     }
 
     private async Task ExecuteUpdateOperationAsync(OperationDefinition operation, CancellationToken externalToken, bool forceDangerous = false)
@@ -201,6 +234,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                     Script = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if (Test-Path $au) { Remove-Item -Path $au -Recurse -Force -ErrorAction Stop }; if (Test-Path $wu) { Remove-Item -Path $wu -Recurse -Force -ErrorAction Stop }; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop"
                 }
             ],
+            DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if(($noAuto -ne 1) -and $wu -ne 'Disabled' -and $bits -ne 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
             UndoScripts =
             [
                 new PowerShellStep
@@ -229,6 +263,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                     Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Force | Out-Null; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 0 -Type DWord"
                 }
             ],
+            DetectScript = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if((Test-Path $wu) -and (Test-Path $au)){ $p=Get-ItemProperty -Path $wu -ErrorAction Stop; $a=Get-ItemProperty -Path $au -ErrorAction Stop; if($p.DeferFeatureUpdatesPeriodInDays -eq 365 -and $p.DeferQualityUpdatesPeriodInDays -eq 4 -and $a.NoAutoUpdate -eq 0){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'} } else {'PHANTOM_STATUS=NotApplied'}",
             UndoScripts =
             [
                 new PowerShellStep
@@ -257,6 +292,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                     Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction Stop; Stop-Service bits -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled"
                 }
             ],
+            DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if($noAuto -eq 1 -and $wu -eq 'Disabled' -and $bits -eq 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
             UndoScripts =
             [
                 new PowerShellStep
