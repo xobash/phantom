@@ -25,6 +25,7 @@ public sealed class TweakDefinition
     public string ApplyScript { get; set; } = string.Empty;
     public string UndoScript { get; set; } = string.Empty;
     public string[] StateCaptureKeys { get; set; } = Array.Empty<string>();
+    public string[] Compatibility { get; set; } = Array.Empty<string>();
     public bool Destructive { get; set; }
     public bool Selected { get; set; }
     public string Status { get; set; } = "Unknown";
@@ -36,6 +37,7 @@ public sealed class FeatureDefinition
     public string Name { get; set; } = string.Empty;
     public string FeatureName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string[] Compatibility { get; set; } = Array.Empty<string>();
     public bool Selected { get; set; }
     public string Status { get; set; } = "Unknown";
 }
@@ -48,6 +50,7 @@ public sealed class FixDefinition
     public RiskTier RiskTier { get; set; } = RiskTier.Basic;
     public string ApplyScript { get; set; } = string.Empty;
     public string UndoScript { get; set; } = string.Empty;
+    public string[] Compatibility { get; set; } = Array.Empty<string>();
     public bool Reversible { get; set; }
     public bool Destructive { get; set; }
     public bool Selected { get; set; }

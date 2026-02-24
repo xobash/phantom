@@ -634,6 +634,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             RiskTier = tweak.RiskTier,
             Reversible = tweak.Reversible,
             Destructive = tweak.Destructive,
+            DetectScript = tweak.DetectScript,
+            Compatibility = tweak.Compatibility ?? Array.Empty<string>(),
             Tags = ["tweak", tweak.Scope],
             StateCaptureKeys = tweak.StateCaptureKeys,
             StateCaptureScripts = tweak.StateCaptureKeys.Select(key => new PowerShellStep

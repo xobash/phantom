@@ -249,11 +249,26 @@ internal static class RequestedTweaksCatalog
                 """),
 
             T("create-restore-point", "Create Restore Point", "Creates a system restore point.", RiskTier.Advanced, "System", false,
-                "'Not Applied'",
                 """
+                try {
+                  $existing = Get-ComputerRestorePoint -ErrorAction Stop | Where-Object { $_.Description -eq 'Phantom tweak restore point' } | Select-Object -First 1
+                  if ($null -ne $existing) { 'Applied' } else { 'Not Applied' }
+                } catch {
+                  'Not Applied'
+                }
+                """,
+                """
+                $existing = $null
+                try {
+                  $existing = Get-ComputerRestorePoint -ErrorAction Stop | Where-Object { $_.Description -eq 'Phantom tweak restore point' } | Select-Object -First 1
+                } catch {}
+                if ($null -ne $existing) {
+                  Write-Output 'Applied'
+                  return
+                }
                 Enable-ComputerRestore -Drive "$($env:SystemDrive)\" -ErrorAction Continue
-                Checkpoint-Computer -Description 'Phantom tweak restore point' -RestorePointType MODIFY_SETTINGS
-                Write-Output 'Restore point requested.'
+                Checkpoint-Computer -Description 'Phantom tweak restore point' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+                Write-Output 'Applied'
                 """,
                 "Write-Output 'No undo action for restore point creation.'"),
 

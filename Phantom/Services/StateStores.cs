@@ -41,7 +41,8 @@ public sealed class SettingsStore
             }
 
             const string personalizePath = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
-            using var key = Registry.CurrentUser.OpenSubKey(personalizePath, writable: false);
+            using var currentUser = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, WindowsSupportPolicy.PreferredRegistryView);
+            using var key = currentUser.OpenSubKey(personalizePath, writable: false);
             var raw = key?.GetValue("AppsUseLightTheme");
             if (raw is int intValue)
             {

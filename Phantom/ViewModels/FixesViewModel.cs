@@ -207,6 +207,7 @@ public sealed class FixesViewModel : ObservableObject, ISectionViewModel
             RiskTier = fix.RiskTier,
             Reversible = fix.Reversible,
             Destructive = fix.Destructive,
+            Compatibility = fix.Compatibility ?? Array.Empty<string>(),
             RunScripts =
             [
                 new PowerShellStep

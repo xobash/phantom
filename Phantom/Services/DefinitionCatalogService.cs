@@ -218,6 +218,7 @@ public sealed class DefinitionCatalogService
         ValidateString(item, "applyScript", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "undoScript", ctx, errors, required: true, allowEmpty: false);
         ValidateStringArray(item, "stateCaptureKeys", ctx, errors, required: false);
+        ValidateStringArray(item, "compatibility", ctx, errors, required: false);
         ValidateBoolean(item, "destructive", ctx, errors, required: true);
 
         if (!string.IsNullOrWhiteSpace(riskTier) && !Enum.TryParse<RiskTier>(riskTier, true, out _))
@@ -238,6 +239,7 @@ public sealed class DefinitionCatalogService
         ValidateString(item, "name", ctx, errors, required: true, allowEmpty: false);
         var featureName = ValidateString(item, "featureName", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "description", ctx, errors, required: true, allowEmpty: false);
+        ValidateStringArray(item, "compatibility", ctx, errors, required: false);
 
         if (!string.IsNullOrWhiteSpace(featureName))
         {
@@ -259,6 +261,7 @@ public sealed class DefinitionCatalogService
         var riskTier = ValidateString(item, "riskTier", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "applyScript", ctx, errors, required: true, allowEmpty: false);
         ValidateString(item, "undoScript", ctx, errors, required: true, allowEmpty: false);
+        ValidateStringArray(item, "compatibility", ctx, errors, required: false);
         ValidateBoolean(item, "reversible", ctx, errors, required: true);
         ValidateBoolean(item, "destructive", ctx, errors, required: true);
 
