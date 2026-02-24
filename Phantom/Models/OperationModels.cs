@@ -79,6 +79,13 @@ public sealed class PowerShellExecutionResult
     public string CombinedOutput { get; set; } = string.Empty;
 }
 
+public sealed class BackupCompensationResult
+{
+    public bool Attempted { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+}
+
 public sealed class OperationSelection
 {
     public string Id { get; set; } = string.Empty;

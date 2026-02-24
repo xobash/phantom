@@ -144,6 +144,7 @@ public sealed class PowerShellQueryService
                 FileName = host,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
@@ -161,6 +162,17 @@ public sealed class PowerShellQueryService
                 var process = Process.Start(psi);
                 if (process is not null)
                 {
+                    try
+                    {
+                        process.StandardInput.WriteLine();
+                        process.StandardInput.Flush();
+                        process.StandardInput.Close();
+                    }
+                    catch
+                    {
+                        // Best-effort stdin guard. Query execution still proceeds.
+                    }
+
                     var fullCommandLine = $"{host} {string.Join(" ", psi.ArgumentList.Select(QuoteArgument))}";
                     return (process, host, string.Empty, fullCommandLine);
                 }
