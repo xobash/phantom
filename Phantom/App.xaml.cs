@@ -65,12 +65,17 @@ public partial class App : Application
                 return;
             }
 
-            if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osSupportMessage))
+            if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osSupportMessage, out var osWarningOnly))
             {
                 WriteEmergencyStartupTrace($"OS support check failed: {osSupportMessage}");
                 MessageBox.Show(osSupportMessage, "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(11);
                 return;
+            }
+
+            if (osWarningOnly && !string.IsNullOrWhiteSpace(osSupportMessage))
+            {
+                WriteEmergencyStartupTrace($"OS support warning: {osSupportMessage}");
             }
 
             _bootstrap = new AppBootstrap();

@@ -58,10 +58,16 @@ public sealed class OperationEngine
             return PrecheckResult.Failure("Administrator privileges are required.");
         }
 
-        if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osMessage))
+        if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osMessage, out var osWarningOnly))
         {
             _console.Publish("Error", $"Batch precheck failed: {osMessage}");
             return PrecheckResult.Failure(osMessage);
+        }
+
+        if (osWarningOnly && !string.IsNullOrWhiteSpace(osMessage))
+        {
+            _console.Publish("Warning", osMessage);
+            await _log.WriteAsync("Warning", osMessage, cancellationToken).ConfigureAwait(false);
         }
 
         var currentOsVersion = WindowsSupportPolicy.GetCurrentOsVersion();
@@ -387,6 +393,21 @@ public sealed class OperationEngine
             else
             {
                 rollbackResult.Message = $"Rollback failed for step '{failedRollbackStep}'.";
+                var compensation = await _runner.TryCompensateFromSafetyBackupsAsync(operation.Id, cancellationToken).ConfigureAwait(false);
+                if (compensation.Attempted)
+                {
+                    rollbackResult.Message = $"{rollbackResult.Message} {compensation.Message}";
+                    if (compensation.Success)
+                    {
+                        rollbackResult.Success = true;
+                    }
+
+                    await _log.WriteAsync(
+                            compensation.Success ? "Warning" : "Error",
+                            $"{operation.Id}.rollback compensation: {compensation.Message}",
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
 
             result.Results.Add(rollbackResult);
