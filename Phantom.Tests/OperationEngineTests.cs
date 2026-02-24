@@ -108,5 +108,15 @@ public sealed class OperationEngineTests
             Requests.Add(request);
             return Task.FromResult(_handler(request));
         }
+
+        public Task<BackupCompensationResult> TryCompensateFromSafetyBackupsAsync(string operationId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new BackupCompensationResult
+            {
+                Attempted = false,
+                Success = false,
+                Message = "stub"
+            });
+        }
     }
 }

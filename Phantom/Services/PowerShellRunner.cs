@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Management.Automation;
+using System.Management.Automation.Language;
 using System.Management.Automation.Runspaces;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,6 +15,7 @@ namespace Phantom.Services;
 public interface IPowerShellRunner
 {
     Task<PowerShellExecutionResult> ExecuteAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken);
+    Task<BackupCompensationResult> TryCompensateFromSafetyBackupsAsync(string operationId, CancellationToken cancellationToken);
 }
 
 public sealed class PowerShellRunner : IPowerShellRunner
@@ -45,17 +47,21 @@ public sealed class PowerShellRunner : IPowerShellRunner
     };
     private static readonly Regex UrlRegex = new(@"https?://[^\s'""`]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DownloadCommandRegex = new(@"\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm|curl|wget|Start-BitsTransfer|DownloadString)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex DynamicExecutionRegex = new(@"\b(?:Invoke-Expression|IEX)\b|DownloadString\s*\(", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex EncodedCommandRegex = new(@"\B-(?:enc|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex UnsafeLanguageFeatureRegex = new(@"\b(?:Add-Type|Invoke-Command|Start-Job|Register-ScheduledJob)\b|FromBase64String\s*\(|System\.Reflection\.Assembly\s*::\s*Load", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex AlternateDataStreamRegex = new(@"[A-Za-z]:\\[^|;\r\n]*:[^\\/\r\n]+", RegexOptions.Compiled);
     private static readonly Regex StartProcessLiteralRegex = new(@"Start-Process(?:\s+-FilePath)?\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex RegistryPathRegex = new(@"(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC):?\\[A-Za-z0-9_\\\-\.\{\}\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RegistryPathRegex = new(@"(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC):?\\[^'"";\r\n\)\]\}]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ServiceNameRegex = new(@"(?:Set|Stop|Start|Restart)-Service\b[^;\r\n]*?\b-Name\s+['""]?([A-Za-z0-9_.\-]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCliRegex = new(@"schtasks(?:\.exe)?\b[^;\r\n]*?\b/TN\s+['""]?([^'""]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly HashSet<string> DynamicInvokeAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Invoke-Expression",
+        "IEX"
+    };
     private static readonly string[] AllowedOperationPrefixes =
     [
         "tweak.",
@@ -187,6 +193,99 @@ public sealed class PowerShellRunner : IPowerShellRunner
             _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
             return processResult;
         }
+    }
+
+    public async Task<BackupCompensationResult> TryCompensateFromSafetyBackupsAsync(string operationId, CancellationToken cancellationToken)
+    {
+        var backupRoot = Path.Combine(_paths.RuntimeDirectory, "safety-backups");
+        if (!Directory.Exists(backupRoot))
+        {
+            return new BackupCompensationResult
+            {
+                Attempted = false,
+                Success = false,
+                Message = $"No safety backups found for operation '{operationId}'."
+            };
+        }
+
+        var sanitizedOperationId = SanitizeFileName(operationId);
+        var matchingFolders = Directory
+            .EnumerateDirectories(backupRoot)
+            .Where(path => Path.GetFileName(path).Contains($"-{sanitizedOperationId}-", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (matchingFolders.Count == 0)
+        {
+            return new BackupCompensationResult
+            {
+                Attempted = false,
+                Success = false,
+                Message = $"No operation-specific safety backups found for '{operationId}'."
+            };
+        }
+
+        var attempted = false;
+        var restored = 0;
+        var failed = 0;
+
+        foreach (var folder in matchingFolders)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var registryBackups = Directory
+                .EnumerateFiles(folder, "registry-*.reg", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (registryBackups.Count == 0)
+            {
+                continue;
+            }
+
+            attempted = true;
+            foreach (var registryBackup in registryBackups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var import = await RunProcessAsync("reg.exe", $"import \"{registryBackup}\"", cancellationToken).ConfigureAwait(false);
+                if (import.ExitCode == 0)
+                {
+                    restored++;
+                }
+                else
+                {
+                    failed++;
+                    var stderr = string.IsNullOrWhiteSpace(import.Stderr) ? "unknown error" : import.Stderr.Trim();
+                    _console.Publish("Warning", $"Compensation import failed for {registryBackup}: {stderr}");
+                }
+            }
+
+            if (restored > 0)
+            {
+                return new BackupCompensationResult
+                {
+                    Attempted = true,
+                    Success = true,
+                    Message = $"Restored {restored} registry backup artifact(s) from safety backups for '{operationId}'."
+                };
+            }
+        }
+
+        if (!attempted)
+        {
+            return new BackupCompensationResult
+            {
+                Attempted = false,
+                Success = false,
+                Message = $"Safety backups exist for '{operationId}' but no restorable registry artifacts were found."
+            };
+        }
+
+        return new BackupCompensationResult
+        {
+            Attempted = true,
+            Success = false,
+            Message = $"Safety compensation attempted for '{operationId}' but restore did not succeed (restored={restored}, failed={failed})."
+        };
     }
 
     private async Task<PowerShellExecutionResult> ExecuteViaRunspaceAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
@@ -341,32 +440,47 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
             if (ps is not null)
             {
-                if (errorDataAdded is not null)
+                try
                 {
-                    ps.Streams.Error.DataAdded -= errorDataAdded;
-                }
+                    if (errorDataAdded is not null)
+                    {
+                        ps.Streams.Error.DataAdded -= errorDataAdded;
+                    }
 
-                if (warningDataAdded is not null)
+                    if (warningDataAdded is not null)
+                    {
+                        ps.Streams.Warning.DataAdded -= warningDataAdded;
+                    }
+
+                    if (verboseDataAdded is not null)
+                    {
+                        ps.Streams.Verbose.DataAdded -= verboseDataAdded;
+                    }
+
+                    if (debugDataAdded is not null)
+                    {
+                        ps.Streams.Debug.DataAdded -= debugDataAdded;
+                    }
+
+                    if (informationDataAdded is not null)
+                    {
+                        ps.Streams.Information.DataAdded -= informationDataAdded;
+                    }
+                }
+                catch (ObjectDisposedException)
                 {
-                    ps.Streams.Warning.DataAdded -= warningDataAdded;
+                    // Cancellation disposal can race stream unsubscription.
                 }
-
-                if (verboseDataAdded is not null)
+                finally
                 {
-                    ps.Streams.Verbose.DataAdded -= verboseDataAdded;
+                    try
+                    {
+                        ps.Dispose();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
                 }
-
-                if (debugDataAdded is not null)
-                {
-                    ps.Streams.Debug.DataAdded -= debugDataAdded;
-                }
-
-                if (informationDataAdded is not null)
-                {
-                    ps.Streams.Information.DataAdded -= informationDataAdded;
-                }
-
-                ps.Dispose();
             }
 
             runspace?.Dispose();
@@ -496,6 +610,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return false;
         }
 
+        if (!ValidateScriptAstSafety(script, out reason))
+        {
+            return false;
+        }
+
         foreach (Match match in StartProcessLiteralRegex.Matches(script))
         {
             var literalPath = match.Groups[1].Value.Trim();
@@ -517,12 +636,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
         }
 
-        if (DynamicExecutionRegex.IsMatch(script))
-        {
-            reason = "Blocked dynamic script execution pattern (Invoke-Expression/IEX/DownloadString).";
-            return false;
-        }
-
         if (!DownloadCommandRegex.IsMatch(script))
         {
             return true;
@@ -541,6 +654,73 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 reason = $"Blocked download host '{host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
                 return false;
             }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateScriptAstSafety(string script, out string reason)
+    {
+        reason = string.Empty;
+
+        ScriptBlockAst ast;
+        ParseError[] parseErrors;
+        try
+        {
+            ast = Parser.ParseInput(script, out _, out parseErrors);
+        }
+        catch (Exception ex)
+        {
+            reason = $"Blocked script because AST parsing failed: {ex.Message}";
+            return false;
+        }
+
+        if (parseErrors.Length > 0)
+        {
+            var parseMessage = parseErrors[0].Message;
+            reason = $"Blocked script because AST parsing reported errors: {parseMessage}";
+            return false;
+        }
+
+        var dynamicInvokerVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var assignment in ast.FindAll(static node => node is AssignmentStatementAst, searchNestedScriptBlocks: true).OfType<AssignmentStatementAst>())
+        {
+            if (assignment.Left is not VariableExpressionAst variable ||
+                assignment.Right is not StringConstantExpressionAst stringConstant)
+            {
+                continue;
+            }
+
+            if (DynamicInvokeAliases.Contains(stringConstant.Value.Trim()))
+            {
+                dynamicInvokerVariables.Add(variable.VariablePath.UserPath);
+            }
+        }
+
+        foreach (var command in ast.FindAll(static node => node is CommandAst, searchNestedScriptBlocks: true).OfType<CommandAst>())
+        {
+            var commandName = command.GetCommandName();
+            if (!string.IsNullOrWhiteSpace(commandName))
+            {
+                if (DynamicInvokeAliases.Contains(commandName))
+                {
+                    reason = $"Blocked dynamic script execution command '{commandName}'.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            var firstElement = command.CommandElements.FirstOrDefault();
+            if (firstElement is VariableExpressionAst variableExpression &&
+                dynamicInvokerVariables.Contains(variableExpression.VariablePath.UserPath))
+            {
+                reason = $"Blocked dynamic invocation through variable '${variableExpression.VariablePath.UserPath}'.";
+                return false;
+            }
+
+            reason = "Blocked dynamic invocation that uses a non-literal command target.";
+            return false;
         }
 
         return true;
@@ -1044,6 +1224,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
     private void TryStopRunspacePipeline(PowerShell ps, string operationId, string stepName)
     {
+        var stopIssued = false;
         try
         {
             var state = ps.InvocationStateInfo.State;
@@ -1053,6 +1234,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
 
             ps.Stop();
+            stopIssued = true;
             _console.Publish("Warning", $"{operationId}/{stepName}: cancellation requested. Runspace pipeline stop issued.");
         }
         catch (ObjectDisposedException)
@@ -1066,6 +1248,28 @@ public sealed class PowerShellRunner : IPowerShellRunner
         catch (Exception ex)
         {
             _console.Publish("Warning", $"{operationId}/{stepName}: runspace cancellation warning: {ex.Message}");
+        }
+        finally
+        {
+            if (!stopIssued)
+            {
+                return;
+            }
+
+            try
+            {
+                ps.Dispose();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _console.Publish("Warning", $"{operationId}/{stepName}: runspace disposal warning: {ex.Message}");
+            }
         }
     }
 
