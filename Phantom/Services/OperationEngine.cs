@@ -139,16 +139,24 @@ public sealed class OperationEngine
                 var scripts = request.Undo ? operation.UndoScripts : operation.RunScripts;
                 var desiredApplied = !request.Undo;
 
-                var alreadyInDesiredState = await IsOperationInDesiredStateAsync(operation, desiredApplied, cancellationToken).ConfigureAwait(false);
-                if (alreadyInDesiredState == true)
+                var currentState = await EvaluateOperationStateAsync(operation, cancellationToken).ConfigureAwait(false);
+                if (IsDesiredState(currentState.State, desiredApplied))
                 {
                     opResult.Success = true;
+                    opResult.VerificationAttempted = currentState.DetectAvailable;
+                    opResult.VerificationPassed = currentState.DetectSucceeded;
+                    opResult.VerificationStatus = currentState.StatusText;
                     opResult.Message = desiredApplied
                         ? "Skipped: operation is already applied."
                         : "Skipped: operation is already not applied.";
                     result.Results.Add(opResult);
                     _console.Publish("Info", $"{operation.Id}: {opResult.Message}");
                     continue;
+                }
+
+                if (currentState.DetectAvailable && !currentState.DetectSucceeded)
+                {
+                    _console.Publish("Warning", $"{operation.Id}: detect script failed, continuing with execution.");
                 }
 
                 if (!request.DryRun && !request.Undo && !restorePointAttempted &&
@@ -262,6 +270,22 @@ public sealed class OperationEngine
                     }
 
                     _console.Publish("Trace", $"Operation step completed: {operation.Id}/{step.Name}");
+                }
+
+                if (allSucceeded && !request.DryRun)
+                {
+                    var verification = await VerifyOperationStateAsync(operation, desiredApplied, cancellationToken).ConfigureAwait(false);
+                    opResult.VerificationAttempted = verification.Attempted;
+                    opResult.VerificationPassed = verification.Passed;
+                    opResult.VerificationStatus = verification.StatusText;
+
+                    if (verification.Attempted && !verification.Passed)
+                    {
+                        allSucceeded = false;
+                        opResult.Message = $"Verification failed: expected {(desiredApplied ? "Applied" : "Not Applied")} state but detect returned '{verification.StatusText}'.";
+                        _console.Publish("Error", $"{operation.Id}: {opResult.Message}");
+                        await _log.WriteAsync("Error", $"{operation.Id}: {opResult.Message}", cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
                 opResult.Success = allSucceeded;
@@ -413,14 +437,17 @@ public sealed class OperationEngine
         }
     }
 
-    private async Task<bool?> IsOperationInDesiredStateAsync(
+    private async Task<OperationStateEvaluation> EvaluateOperationStateAsync(
         OperationDefinition operation,
-        bool desiredApplied,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(operation.DetectScript))
         {
-            return null;
+            return new OperationStateEvaluation(
+                DetectAvailable: false,
+                DetectSucceeded: false,
+                State: OperationDetectState.Unknown,
+                StatusText: "Detect script unavailable");
         }
 
         var detect = await _runner.ExecuteAsync(new PowerShellExecutionRequest
@@ -434,44 +461,53 @@ public sealed class OperationEngine
 
         if (!detect.Success)
         {
-            _console.Publish("Warning", $"{operation.Id}: detect script failed, continuing with execution.");
-            return null;
+            return new OperationStateEvaluation(
+                DetectAvailable: true,
+                DetectSucceeded: false,
+                State: OperationDetectState.Unknown,
+                StatusText: "Detect script failed");
         }
 
         var status = string.IsNullOrWhiteSpace(detect.CombinedOutput)
             ? "Unknown"
             : detect.CombinedOutput.Trim();
-        var applied = IsAppliedStatus(status);
-        return applied == desiredApplied;
+
+        return new OperationStateEvaluation(
+            DetectAvailable: true,
+            DetectSucceeded: true,
+            State: OperationStatusParser.Parse(status),
+            StatusText: status);
     }
 
-    private static bool IsAppliedStatus(string status)
+    private async Task<(bool Attempted, bool Passed, string StatusText)> VerifyOperationStateAsync(
+        OperationDefinition operation,
+        bool desiredApplied,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(status))
+        var state = await EvaluateOperationStateAsync(operation, cancellationToken).ConfigureAwait(false);
+        if (!state.DetectAvailable)
         {
-            return false;
+            return (Attempted: false, Passed: false, StatusText: "Detect script unavailable");
         }
 
-        var normalized = status.Trim();
-        if (normalized.Equals("Applied", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Detected", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("Installed", StringComparison.OrdinalIgnoreCase))
+        if (!state.DetectSucceeded)
         {
-            return true;
+            return (Attempted: true, Passed: false, StatusText: state.StatusText);
         }
 
-        if (normalized.Contains("not applied", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("not installed", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("error", StringComparison.OrdinalIgnoreCase))
+        if (state.State == OperationDetectState.Unknown)
         {
-            return false;
+            return (Attempted: true, Passed: false, StatusText: state.StatusText);
         }
 
-        return normalized.Contains("applied", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("installed", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("enabled", StringComparison.OrdinalIgnoreCase);
+        return (Attempted: true, Passed: IsDesiredState(state.State, desiredApplied), StatusText: state.StatusText);
+    }
+
+    private static bool IsDesiredState(OperationDetectState state, bool desiredApplied)
+    {
+        return desiredApplied
+            ? state == OperationDetectState.Applied
+            : state == OperationDetectState.NotApplied;
     }
 
     private static bool IsOperationCompatible(OperationDefinition operation, Version currentOsVersion)
@@ -524,6 +560,12 @@ public sealed class OperationEngine
 
         return false;
     }
+
+    private sealed record OperationStateEvaluation(
+        bool DetectAvailable,
+        bool DetectSucceeded,
+        OperationDetectState State,
+        string StatusText);
 }
 
 public static class AdminGuard

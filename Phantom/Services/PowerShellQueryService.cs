@@ -221,7 +221,7 @@ public sealed class PowerShellQueryService
             .Where(line => !string.IsNullOrWhiteSpace(line));
     }
 
-    private static void TryCancelProcess(Process process)
+    private void TryCancelProcess(Process process)
     {
         try
         {
@@ -232,10 +232,12 @@ public sealed class PowerShellQueryService
         }
         catch (ObjectDisposedException)
         {
+            _console.Publish("Trace", "PowerShell query cancellation skipped: process already disposed.", persist: false);
             return;
         }
         catch (InvalidOperationException)
         {
+            _console.Publish("Trace", "PowerShell query cancellation skipped: process already exited.", persist: false);
             return;
         }
 
@@ -249,9 +251,16 @@ public sealed class PowerShellQueryService
         }
         catch (ObjectDisposedException)
         {
+            _console.Publish("Trace", "PowerShell query cancellation raced process disposal.", persist: false);
         }
         catch (InvalidOperationException)
         {
+            _console.Publish("Trace", "PowerShell query cancellation raced process exit.", persist: false);
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Warning", $"PowerShell query cancellation warning: {ex.Message}", persist: false);
+            _ = _log.WriteAsync("Warning", $"PowerShellQueryService.TryCancelProcess: {ex}", CancellationToken.None, echoToConsole: false);
         }
     }
 
