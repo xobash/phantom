@@ -111,31 +111,11 @@ $cpu = if ($cpuSample) { $cpuSample.CookedValue } else { 0 }
 $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
 $gpuCtr = 0
 try {
-  $gpuCounters = Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop
-  $preferred = @($gpuCounters.CounterSamples |
-    Where-Object {
-      $_.InstanceName -match 'engtype_3D|engtype_Compute|engtype_VideoDecode|engtype_VideoEncode|engtype_VideoProcessing'
-    } |
-    Where-Object { $_.CookedValue -ge 0 } |
-    Select-Object -ExpandProperty CookedValue)
-  $samples = if ($preferred.Count -gt 0) {
-    $preferred
-  } else {
-    @($gpuCounters.CounterSamples | Where-Object { $_.CookedValue -ge 0 } | Select-Object -ExpandProperty CookedValue)
-  }
-  if ($samples.Count -gt 0) {
-    $gpuCtr = ($samples | Measure-Object -Average).Average
-  }
+  $gpuSample = (Get-Counter '\GPU Engine(_Total)\Utilization Percentage' -ErrorAction Stop).CounterSamples | Select-Object -First 1
+  if ($gpuSample) { $gpuCtr = $gpuSample.CookedValue }
 }
 catch {
-  try {
-    $engineSamples = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop |
-      Where-Object { $_.Name -notlike '*_Total*' -and $_.UtilizationPercentage -ne $null } |
-      Select-Object -ExpandProperty UtilizationPercentage)
-    if ($engineSamples.Count -gt 0) {
-      $gpuCtr = ($engineSamples | Measure-Object -Average).Average
-    }
-  } catch {}
+  $gpuCtr = 0
 }
 [PSCustomObject]@{
   CpuUsage = [math]::Round($cpu, 2)

@@ -23,6 +23,8 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private bool _isFastMetricsRefreshing;
     private int _refreshQueued;
     private int _fastRefreshQueued;
+    private CancellationTokenSource? _refreshCts;
+    private CancellationTokenSource? _fastRefreshCts;
     private long? _uptimeSeconds;
     private long? _uptimeSeedSeconds;
     private DateTimeOffset? _uptimeSeededAt;
@@ -83,6 +85,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private void RequestRefresh(bool forceIfBusy)
     {
+        if (forceIfBusy && _isRefreshing)
+        {
+            _refreshCts?.Cancel();
+        }
+
         _ = RefreshAsync(CancellationToken.None, queueIfBusy: forceIfBusy);
     }
 
@@ -99,6 +106,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             string.Equals(normalized, "GPU %", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalized, "Network", StringComparison.OrdinalIgnoreCase))
         {
+            if (_isFastMetricsRefreshing)
+            {
+                _fastRefreshCts?.Cancel();
+            }
+
             _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
             return;
         }
@@ -114,7 +126,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        _ = RefreshAsync(CancellationToken.None, queueIfBusy: true);
+        RequestRefresh(forceIfBusy: true);
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken, bool queueIfBusy = true)
@@ -131,11 +143,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
         _isRefreshing = true;
         RunWinsatCommand.RaiseCanExecuteChanged();
+        _refreshCts?.Dispose();
+        _refreshCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var refreshToken = _refreshCts.Token;
 
         try
         {
-            var snapshot = await _homeData.GetSnapshotAsync(cancellationToken, includeDetails: false).ConfigureAwait(false);
-            var telemetry = await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await _homeData.GetSnapshotAsync(refreshToken, includeDetails: false).ConfigureAwait(false);
+            var telemetry = await _telemetryStore.LoadAsync(refreshToken).ConfigureAwait(false);
             var snapshotUptime = TryParseUptimeSeconds(snapshot.Uptime);
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
@@ -183,12 +198,18 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 }
             });
         }
+        catch (OperationCanceledException) when (refreshToken.IsCancellationRequested)
+        {
+            // Forced refresh superseded the current in-flight request.
+        }
         catch (Exception ex)
         {
             _console.Publish("Error", $"Home refresh failed: {ex.Message}");
         }
         finally
         {
+            _refreshCts?.Dispose();
+            _refreshCts = null;
             _isRefreshing = false;
             RunWinsatCommand.RaiseCanExecuteChanged();
 
@@ -228,9 +249,12 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
 
         _isFastMetricsRefreshing = true;
+        _fastRefreshCts?.Dispose();
+        _fastRefreshCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var fastRefreshToken = _fastRefreshCts.Token;
         try
         {
-            var (cpu, memory, gpu, network) = await _homeData.GetLiveMetricsAsync(cancellationToken).ConfigureAwait(false);
+            var (cpu, memory, gpu, network) = await _homeData.GetLiveMetricsAsync(fastRefreshToken).ConfigureAwait(false);
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
@@ -247,12 +271,18 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 }
             });
         }
+        catch (OperationCanceledException) when (fastRefreshToken.IsCancellationRequested)
+        {
+            // New manual refresh superseded this in-flight metrics request.
+        }
         catch (Exception ex)
         {
             _console.Publish("Error", $"Live metrics refresh failed: {ex.Message}");
         }
         finally
         {
+            _fastRefreshCts?.Dispose();
+            _fastRefreshCts = null;
             _isFastMetricsRefreshing = false;
             if (Interlocked.Exchange(ref _fastRefreshQueued, 0) == 1)
             {
@@ -328,7 +358,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     {
         if (string.IsNullOrWhiteSpace(networkText))
         {
-            return ("↑ 0 B/s  ↓ 0 B/s", "0 B");
+            return ("↑ 0 B/s  ↓ 0 B/s  • 0 B", string.Empty);
         }
 
         var lines = networkText
@@ -338,13 +368,13 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
         if (lines.Count == 0)
         {
-            return ("↑ 0 B/s  ↓ 0 B/s", "0 B");
+            return ("↑ 0 B/s  ↓ 0 B/s  • 0 B", string.Empty);
         }
 
         if (lines[0].Contains('↑') || lines[0].Contains('↓'))
         {
             var total = lines.Count > 1 ? lines[1] : "0 B";
-            return (lines[0], total);
+            return ($"{lines[0]}  • {total}", string.Empty);
         }
 
         var upload = ExtractNetworkValue(lines, "Upload:");
@@ -355,7 +385,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             session = lines.Count > 2 ? lines[2] : "0 B";
         }
 
-        return ($"↑ {upload}  ↓ {download}", session);
+        return ($"↑ {upload}  ↓ {download}  • {session}", string.Empty);
     }
 
     private static string ExtractNetworkValue(IReadOnlyList<string> lines, string key)

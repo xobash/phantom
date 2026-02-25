@@ -108,11 +108,13 @@
                                                 <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Title}" Value="Network">
-                                                        <Setter Property="FontSize" Value="13"/>
+                                                        <Setter Property="FontSize" Value="12"/>
                                                         <Setter Property="LineHeight" Value="16"/>
                                                         <Setter Property="FontWeight" Value="SemiBold"/>
                                                         <Setter Property="TextAlignment" Value="Right"/>
                                                         <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                                        <Setter Property="TextWrapping" Value="NoWrap"/>
+                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -128,18 +130,12 @@
                                                Visibility="Collapsed"
                                                Foreground="{DynamicResource DarkTextBrush}">
                                         <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Setter Property="FontSize" Value="30"/>
-                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Title}" Value="Network">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                        <Setter Property="FontSize" Value="34"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Setter Property="FontSize" Value="30"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </Grid>
