@@ -358,7 +358,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     {
         if (string.IsNullOrWhiteSpace(networkText))
         {
-            return ("↑ 0 B/s  ↓ 0 B/s  • 0 B", string.Empty);
+            return ("↑0B/s ↓0B/s •0B", string.Empty);
         }
 
         var lines = networkText
@@ -368,13 +368,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
         if (lines.Count == 0)
         {
-            return ("↑ 0 B/s  ↓ 0 B/s  • 0 B", string.Empty);
+            return ("↑0B/s ↓0B/s •0B", string.Empty);
         }
 
         if (lines[0].Contains('↑') || lines[0].Contains('↓'))
         {
             var total = lines.Count > 1 ? lines[1] : "0 B";
-            return ($"{lines[0]}  • {total}", string.Empty);
+            var compactRates = CompactNetworkRates(lines[0]);
+            return ($"{compactRates} •{CompactNetworkValue(total)}", string.Empty);
         }
 
         var upload = ExtractNetworkValue(lines, "Upload:");
@@ -385,7 +386,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             session = lines.Count > 2 ? lines[2] : "0 B";
         }
 
-        return ($"↑ {upload}  ↓ {download}  • {session}", string.Empty);
+        return ($"↑{CompactNetworkValue(upload)} ↓{CompactNetworkValue(download)} •{CompactNetworkValue(session)}", string.Empty);
     }
 
     private static string ExtractNetworkValue(IReadOnlyList<string> lines, string key)
@@ -405,6 +406,33 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
 
         return key.Contains("Session", StringComparison.OrdinalIgnoreCase) ? "0 B" : "0 B/s";
+    }
+
+    private static string CompactNetworkRates(string ratesText)
+    {
+        var raw = ratesText.Replace("Upload:", "↑", StringComparison.OrdinalIgnoreCase)
+            .Replace("Download:", "↓", StringComparison.OrdinalIgnoreCase)
+            .Replace("Session:", "•", StringComparison.OrdinalIgnoreCase)
+            .Replace("  ", " ")
+            .Trim();
+
+        return CompactNetworkValue(raw)
+            .Replace("↑ ", "↑", StringComparison.Ordinal)
+            .Replace("↓ ", "↓", StringComparison.Ordinal)
+            .Replace(" /s", "/s", StringComparison.OrdinalIgnoreCase)
+            .Replace(" • ", " •", StringComparison.Ordinal);
+    }
+
+    private static string CompactNetworkValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "0B";
+        }
+
+        return value
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("Bytes", "B", StringComparison.OrdinalIgnoreCase);
     }
 
     private static long? TryParseUptimeSeconds(string uptime)

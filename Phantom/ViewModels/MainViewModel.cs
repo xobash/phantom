@@ -105,8 +105,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         CancelCurrentOperationCommand = new RelayCommand(() => _executionCoordinator.Cancel());
         CopyLogCommand = new RelayCommand(() =>
         {
-            var text = string.Join(Environment.NewLine, ConsoleMessages.Select(m => $"[{m.Timestamp:HH:mm:ss}] [{m.Stream}] {m.Text}"));
-            Clipboard.SetText(text);
+            try
+            {
+                var snapshot = ConsoleMessages.ToArray();
+                var text = string.Join(Environment.NewLine, snapshot.Select(m => $"[{m.Timestamp:HH:mm:ss}] [{m.Stream}] {m.Text}"));
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    text = "No console log entries.";
+                }
+
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher is null || dispatcher.CheckAccess())
+                {
+                    Clipboard.SetText(text);
+                }
+                else
+                {
+                    dispatcher.Invoke(() => Clipboard.SetText(text));
+                }
+            }
+            catch (Exception ex)
+            {
+                _console.Publish("Error", $"Copy log failed: {ex.Message}");
+            }
         });
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
         OpenSettingsCommand = new RelayCommand(() => SelectedNavigation = _settingsNavigationItem);

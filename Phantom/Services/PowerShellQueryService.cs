@@ -101,15 +101,16 @@ public sealed class PowerShellQueryService
 
             var stdout = await stdoutTask.ConfigureAwait(false);
             var stderr = await stderrTask.ConfigureAwait(false);
+            var sanitizedStderr = SuppressProgressCliXml(stderr);
 
             if (!string.IsNullOrWhiteSpace(stdout))
             {
                 await _log.WriteAsync("Output", stdout.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
             }
 
-            if (!string.IsNullOrWhiteSpace(stderr))
+            if (!string.IsNullOrWhiteSpace(sanitizedStderr))
             {
-                await _log.WriteAsync("Error", stderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                await _log.WriteAsync("Error", sanitizedStderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
             }
 
             if (echoToConsole)
@@ -120,7 +121,7 @@ public sealed class PowerShellQueryService
                     _console.Publish("Output", outputPreview, persist: false);
                 }
 
-                var stderrLines = SplitLines(stderr).ToList();
+                var stderrLines = SplitLines(sanitizedStderr).ToList();
                 foreach (var line in stderrLines.Take(8))
                 {
                     _console.Publish("Error", line, persist: false);
@@ -136,7 +137,7 @@ public sealed class PowerShellQueryService
             if (echoToConsole)
             {
                 var stdoutLineCount = CountLines(stdout);
-                var stderrLineCount = CountLines(stderr);
+                var stderrLineCount = CountLines(sanitizedStderr);
                 _console.Publish(
                     process.ExitCode == 0 ? "Trace" : "Error",
                     $"Query completed. exit={process.ExitCode}, duration={elapsedMilliseconds}ms, stdoutLines={stdoutLineCount}, stderrLines={stderrLineCount}",
@@ -145,19 +146,20 @@ public sealed class PowerShellQueryService
 
             await _log.WriteAsync(
                     process.ExitCode == 0 ? "Trace" : "Error",
-                    $"PowerShellQueryService.InvokeAsync exit={process.ExitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={stderr.Length}",
+                    $"PowerShellQueryService.InvokeAsync exit={process.ExitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={sanitizedStderr.Length}",
                     cancellationToken,
                     echoToConsole: false)
                 .ConfigureAwait(false);
 
-            return (process.ExitCode, stdout, stderr);
+            return (process.ExitCode, stdout, sanitizedStderr);
         }
     }
 
     private static (Process? Process, string Host, string Error, string CommandLine) StartPowerShellProcess(string script)
     {
         Exception? lastError = null;
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script ?? string.Empty));
+        var wrappedScript = $"$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$VerbosePreference='SilentlyContinue';$InformationPreference='Continue';& {{ {script} }}";
+        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrappedScript));
 
         foreach (var host in new[] { "pwsh.exe", "powershell.exe" })
         {
@@ -335,5 +337,24 @@ public sealed class PowerShellQueryService
             var key = match.Groups[1].Value;
             return $"{key}=<redacted>";
         });
+    }
+
+    private static string SuppressProgressCliXml(string stderr)
+    {
+        if (string.IsNullOrWhiteSpace(stderr))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = stderr.Trim();
+        if (!trimmed.StartsWith("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+        {
+            return stderr;
+        }
+
+        var containsProgressObjects = trimmed.Contains("<Obj S=\"progress\"", StringComparison.OrdinalIgnoreCase);
+        var containsErrorObjects = trimmed.Contains(" S=\"error\"", StringComparison.OrdinalIgnoreCase) ||
+                                   trimmed.Contains("<S S=\"Error\">", StringComparison.OrdinalIgnoreCase);
+        return containsProgressObjects && !containsErrorObjects ? string.Empty : stderr;
     }
 }

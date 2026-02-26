@@ -98,7 +98,7 @@ $uptime = (Get-Date) - $os.LastBootUpTime
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return (0, 0, 0, "↑ 0 B/s  ↓ 0 B/s\n0 B");
+            return (0, 0, 0, "↑ 0 B/s  ↓ 0 B/s  • 0 B");
         }
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -189,7 +189,7 @@ catch {
 
     private async Task<string> RunPowerShellForJsonAsync(string script, CancellationToken cancellationToken)
     {
-        var wrapped = $"$ProgressPreference='Continue';$ErrorActionPreference='Stop';& {{ {script} }}";
+        var wrapped = $"$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';& {{ {script} }}";
         var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
         var psi = new ProcessStartInfo
         {
@@ -250,12 +250,27 @@ catch {
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 
-        if (!string.IsNullOrWhiteSpace(stderr))
+        if (!string.IsNullOrWhiteSpace(stderr) &&
+            !IsProgressCliXml(stderr))
         {
             _console.Publish("Error", stderr.Trim());
         }
 
         return process.ExitCode == 0 ? stdout.Trim() : string.Empty;
+    }
+
+    private static bool IsProgressCliXml(string stderr)
+    {
+        var trimmed = stderr.Trim();
+        if (!trimmed.StartsWith("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var containsProgressObjects = trimmed.Contains("<Obj S=\"progress\"", StringComparison.OrdinalIgnoreCase);
+        var containsErrorObjects = trimmed.Contains(" S=\"error\"", StringComparison.OrdinalIgnoreCase) ||
+                                   trimmed.Contains("<S S=\"Error\">", StringComparison.OrdinalIgnoreCase);
+        return containsProgressObjects && !containsErrorObjects;
     }
 
     private static string ComputeNetworkUsage(TelemetryState telemetry)
@@ -314,7 +329,7 @@ catch {
         var uploadText = FormatBytes((long)uploadRate, decimals: 0);
         var downloadText = FormatBytes((long)downloadRate, decimals: 0);
         var sessionText = FormatBytes(deltaSent + deltaRecv, decimals: 1);
-        return $"↑ {uploadText}/s  ↓ {downloadText}/s\n{sessionText}";
+        return $"↑ {uploadText}/s  ↓ {downloadText}/s  • {sessionText}";
     }
 
     private static string FormatBytes(long bytes, int decimals = 2)
