@@ -216,35 +216,50 @@ internal static class RequestedTweaksCatalog
             T("add-ultimate-performance-profile", "Add and Activate Ultimate Performance Profile", "Adds and sets Ultimate Performance plan.", RiskTier.Advanced, "System", true,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if((powercfg /GetActiveScheme) -match $guid){'Applied'} else {'Not Applied'}
+                $active = (powercfg /GetActiveScheme 2>$null | Out-String)
+                if($active -match $guid){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if(-not ((powercfg /L) -match $guid)){
-                  powercfg -duplicatescheme $guid | Out-Null
+                $plans = (powercfg /L 2>$null | Out-String)
+                if($plans -notmatch $guid){
+                  $dupOut = (powercfg -duplicatescheme $guid 2>&1 | Out-String)
+                  $plans = (powercfg /L 2>$null | Out-String)
+                  if($plans -notmatch $guid){
+                    throw ("Ultimate Performance plan is unavailable on this system. " + $dupOut.Trim())
+                  }
                 }
-                powercfg /setactive $guid
+                $setOut = (powercfg /setactive $guid 2>&1 | Out-String)
+                $activeNow = (powercfg /GetActiveScheme 2>$null | Out-String)
+                if($activeNow -match $guid){
+                  Write-Output 'Applied'
+                  return
+                }
+                throw ("Failed to activate Ultimate Performance plan. " + $setOut.Trim())
                 """,
                 """
-                powercfg /setactive SCHEME_BALANCED
+                powercfg /setactive SCHEME_BALANCED 2>$null | Out-Null
                 """),
 
             T("remove-ultimate-performance-profile", "Remove Ultimate Performance Profile", "Removes Ultimate Performance plan.", RiskTier.Advanced, "System", true,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if(-not ((powercfg /L) -match $guid)){'Applied'} else {'Not Applied'}
+                $plans = (powercfg /L 2>$null | Out-String)
+                if($plans -notmatch $guid){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                powercfg /setactive SCHEME_BALANCED
-                if((powercfg /L) -match $guid){
-                  powercfg /delete $guid
+                powercfg /setactive SCHEME_BALANCED 2>$null | Out-Null
+                $plans = (powercfg /L 2>$null | Out-String)
+                if($plans -match $guid){
+                  powercfg /delete $guid 2>$null | Out-Null
                 }
                 """,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if(-not ((powercfg /L) -match $guid)){
-                  powercfg -duplicatescheme $guid | Out-Null
+                $plans = (powercfg /L 2>$null | Out-String)
+                if($plans -notmatch $guid){
+                  powercfg -duplicatescheme $guid 2>$null | Out-Null
                 }
                 """),
 
@@ -700,17 +715,29 @@ internal static class RequestedTweaksCatalog
             T("ultimate-performance-power-plan", "Ultimate performance power plan", "Enables and activates the Ultimate Performance plan.", RiskTier.Advanced, "System", true,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if((powercfg /GetActiveScheme) -match $guid){'Applied'} else {'Not Applied'}
+                $active = (powercfg /GetActiveScheme 2>$null | Out-String)
+                if($active -match $guid){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
-                if(-not ((powercfg /L) -match $guid)){
-                  powercfg -duplicatescheme $guid | Out-Null
+                $plans = (powercfg /L 2>$null | Out-String)
+                if($plans -notmatch $guid){
+                  $dupOut = (powercfg -duplicatescheme $guid 2>&1 | Out-String)
+                  $plans = (powercfg /L 2>$null | Out-String)
+                  if($plans -notmatch $guid){
+                    throw ("Ultimate Performance plan is unavailable on this system. " + $dupOut.Trim())
+                  }
                 }
-                powercfg /setactive $guid
+                $setOut = (powercfg /setactive $guid 2>&1 | Out-String)
+                $activeNow = (powercfg /GetActiveScheme 2>$null | Out-String)
+                if($activeNow -match $guid){
+                  Write-Output 'Applied'
+                  return
+                }
+                throw ("Failed to activate Ultimate Performance plan. " + $setOut.Trim())
                 """,
                 """
-                powercfg /setactive SCHEME_BALANCED
+                powercfg /setactive SCHEME_BALANCED 2>$null | Out-Null
                 """),
 
             T("hags-hardware-accelerated-gpu-scheduling", "HAGS (hardware-accelerated GPU scheduling)", "Enables hardware accelerated GPU scheduling.", RiskTier.Advanced, "HKLM", true,
