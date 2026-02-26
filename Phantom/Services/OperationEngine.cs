@@ -117,6 +117,45 @@ public sealed class OperationEngine
         var restorePointAttempted = false;
         var restorePointReady = true;
         var successfullyApplied = new List<OperationDefinition>();
+        var firstDangerousOperation = request.Operations.FirstOrDefault(op => op.RiskTier == RiskTier.Dangerous || op.Destructive);
+
+        if (!request.DryRun &&
+            !request.Undo &&
+            _settingsAccessor().CreateRestorePointBeforeDangerousOperations &&
+            firstDangerousOperation is not null)
+        {
+            restorePointAttempted = true;
+            restorePointReady = await TryCreateRestorePointAsync(firstDangerousOperation, cancellationToken).ConfigureAwait(false);
+            if (!restorePointReady)
+            {
+                if (request.ForceDangerous)
+                {
+                    var proceedWithoutRestorePoint = !request.InteractiveDangerousPrompt ||
+                                                     await request.ConfirmDangerousAsync("System Restore is unavailable. Continue without a restore point? (Y/N)").ConfigureAwait(false);
+                    if (proceedWithoutRestorePoint)
+                    {
+                        restorePointReady = true;
+                        _console.Publish("Warning", "Proceeding without restore point because force-dangerous override was confirmed.");
+                        await _log.WriteAsync("Warning", "Proceeding without restore point due to force-dangerous override.", cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                if (!restorePointReady)
+                {
+                    var blockedResult = new OperationExecutionResult
+                    {
+                        OperationId = firstDangerousOperation.Id,
+                        RequiresReboot = firstDangerousOperation.RequiresReboot,
+                        Success = false,
+                        Message = "Safety gate blocked batch: restore point creation failed before execution."
+                    };
+                    result.Results.Add(blockedResult);
+                    _console.Publish("Error", blockedResult.Message);
+                    await _log.WriteAsync("Error", blockedResult.Message, cancellationToken).ConfigureAwait(false);
+                    return result;
+                }
+            }
+        }
 
         foreach (var operation in request.Operations)
         {
@@ -162,7 +201,28 @@ public sealed class OperationEngine
 
                 if (currentState.DetectAvailable && !currentState.DetectSucceeded)
                 {
-                    _console.Publish("Warning", $"{operation.Id}: detect script failed, continuing with execution.");
+                    if (!request.ForceDangerous)
+                    {
+                        opResult.Cancelled = true;
+                        opResult.Message = "Blocked: detect script failed. Re-run with --force-dangerous to override.";
+                        _console.Publish("Error", $"{operation.Id}: {opResult.Message}");
+                        await _log.WriteAsync("Error", $"{operation.Id}: detect script failed and operation was blocked.", cancellationToken).ConfigureAwait(false);
+                        result.Results.Add(opResult);
+                        continue;
+                    }
+
+                    var proceedWithoutVerification = !request.InteractiveDangerousPrompt ||
+                                                     await request.ConfirmDangerousAsync("Detect/verification failed. Proceed anyway? (Y/N)").ConfigureAwait(false);
+                    if (!proceedWithoutVerification)
+                    {
+                        opResult.Cancelled = true;
+                        opResult.Message = "Cancelled: user declined to proceed without verification.";
+                        result.Results.Add(opResult);
+                        continue;
+                    }
+
+                    _console.Publish("Warning", $"{operation.Id}: detect script failed; proceeding because force-dangerous override was confirmed.");
+                    await _log.WriteAsync("Warning", $"{operation.Id}: detect script failed; proceeding under force-dangerous override.", cancellationToken).ConfigureAwait(false);
                 }
 
                 if (!request.DryRun && !request.Undo && !restorePointAttempted &&

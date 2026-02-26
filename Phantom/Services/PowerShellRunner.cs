@@ -23,7 +23,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private const string BootstrapScript = "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;";
     private static readonly HashSet<string> TrustedDownloadHosts =
     [
-        "aka.ms",
         "community.chocolatey.org",
         "github.com",
         "raw.githubusercontent.com",
@@ -45,7 +44,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "wf.msc",
         "onedrivesetup.exe"
     };
-    private static readonly Regex UrlRegex = new(@"https?://[^\s'""`]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DownloadCommandRegex = new(@"\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm|curl|wget|Start-BitsTransfer|DownloadString)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex EncodedCommandRegex = new(@"\B-(?:enc|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex UnsafeLanguageFeatureRegex = new(@"\b(?:Add-Type|Invoke-Command|Start-Job|Register-ScheduledJob)\b|FromBase64String\s*\(|System\.Reflection\.Assembly\s*::\s*Load", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -61,6 +59,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         "Invoke-Expression",
         "IEX"
+    };
+    private static readonly HashSet<string> DownloadCommandNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Invoke-WebRequest",
+        "iwr",
+        "Invoke-RestMethod",
+        "irm",
+        "curl",
+        "wget",
+        "Start-BitsTransfer"
+    };
+    private static readonly HashSet<string> DownloadMemberNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DownloadString",
+        "DownloadFile",
+        "OpenRead"
     };
     private static readonly string[] AllowedOperationPrefixes =
     [
@@ -504,19 +518,26 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         var outputBuilder = new StringBuilder();
         var wrapped = $"$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& {{ {request.Script} }} *>&1";
+        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
         _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -ExecutionPolicy RemoteSigned -Command \"{wrapped.Replace("\"", "\\\"")}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
 
-        var externalCommandLine = $"{psi.FileName} {psi.Arguments}";
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-ExecutionPolicy");
+        psi.ArgumentList.Add("RemoteSigned");
+        psi.ArgumentList.Add("-EncodedCommand");
+        psi.ArgumentList.Add(encodedCommand);
+
+        var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <sha256:{ComputeScriptHash(wrapped)}>";
         _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
         await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken).ConfigureAwait(false);
 
@@ -636,36 +657,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
         }
 
-        if (!DownloadCommandRegex.IsMatch(script))
-        {
-            return true;
-        }
-
-        var allowlistedUrlCount = 0;
-        foreach (Match match in UrlRegex.Matches(script))
-        {
-            if (!Uri.TryCreate(match.Value, UriKind.Absolute, out var uri))
-            {
-                continue;
-            }
-
-            var host = uri.Host.ToLowerInvariant();
-            if (!TrustedDownloadHosts.Contains(host))
-            {
-                reason = $"Blocked download host '{host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
-                return false;
-            }
-
-            allowlistedUrlCount++;
-        }
-
-        if (allowlistedUrlCount == 0)
-        {
-            reason = "Blocked download command because no literal allowlisted URL was found.";
-            return false;
-        }
-
-        return true;
+        return ValidateDownloadSafety(script, out reason);
     }
 
     private static bool ValidateScriptAstSafety(string script, out string reason)
@@ -738,6 +730,228 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         return true;
+    }
+
+    private bool ValidateDownloadSafety(string script, out string reason)
+    {
+        reason = string.Empty;
+        if (!DownloadCommandRegex.IsMatch(script))
+        {
+            return true;
+        }
+
+        ScriptBlockAst ast;
+        ParseError[] parseErrors;
+        try
+        {
+            ast = Parser.ParseInput(script, out _, out parseErrors);
+        }
+        catch (Exception ex)
+        {
+            reason = $"Blocked script because download safety AST parsing failed: {ex.Message}";
+            return false;
+        }
+
+        if (parseErrors.Length > 0)
+        {
+            reason = $"Blocked script because download safety parsing reported errors: {parseErrors[0].Message}";
+            return false;
+        }
+
+        var literalUris = ExtractLiteralHttpUris(ast).DistinctBy(uri => uri.AbsoluteUri).ToList();
+        if (literalUris.Count == 0)
+        {
+            reason = "Blocked download command because no literal allowlisted URL was found.";
+            return false;
+        }
+
+        foreach (var uri in literalUris)
+        {
+            if (!IsTrustedDownloadHost(uri.Host))
+            {
+                reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                return false;
+            }
+        }
+
+        foreach (var command in ast.FindAll(static node => node is CommandAst, searchNestedScriptBlocks: true).OfType<CommandAst>())
+        {
+            var commandName = command.GetCommandName();
+            if (string.IsNullOrWhiteSpace(commandName) || !DownloadCommandNames.Contains(commandName))
+            {
+                continue;
+            }
+
+            if (!ValidateDownloadCommandAst(command, out reason))
+            {
+                return false;
+            }
+        }
+
+        if (!ValidateDownloadMemberInvocations(ast, out reason))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidateDownloadCommandAst(CommandAst command, out string reason)
+    {
+        reason = string.Empty;
+        var commandName = command.GetCommandName() ?? "<dynamic>";
+        var sawLiteralUri = false;
+
+        for (var i = 1; i < command.CommandElements.Count; i++)
+        {
+            var element = command.CommandElements[i];
+            if (element is CommandParameterAst parameter && IsDownloadUriParameter(parameter.ParameterName))
+            {
+                Ast? argument = parameter.Argument;
+                if (argument is null)
+                {
+                    if (i + 1 >= command.CommandElements.Count)
+                    {
+                        reason = $"Blocked download command '{commandName}' because parameter '-{parameter.ParameterName}' has no value.";
+                        return false;
+                    }
+
+                    argument = command.CommandElements[++i];
+                }
+
+                if (!TryExtractLiteralHttpUri(argument, out var uri))
+                {
+                    reason = $"Blocked download command '{commandName}' because parameter '-{parameter.ParameterName}' is not a literal URL.";
+                    return false;
+                }
+
+                if (!IsTrustedDownloadHost(uri.Host))
+                {
+                    reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                    return false;
+                }
+
+                sawLiteralUri = true;
+                continue;
+            }
+
+            if (!TryExtractLiteralHttpUri(element, out var positionalUri))
+            {
+                continue;
+            }
+
+            if (!IsTrustedDownloadHost(positionalUri.Host))
+            {
+                reason = $"Blocked download host '{positionalUri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                return false;
+            }
+
+            sawLiteralUri = true;
+        }
+
+        if (!sawLiteralUri)
+        {
+            reason = $"Blocked download command '{commandName}' because URL is not a literal allowlisted value.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsDownloadUriParameter(string? parameterName)
+    {
+        return !string.IsNullOrWhiteSpace(parameterName) &&
+               (parameterName.Equals("Uri", StringComparison.OrdinalIgnoreCase) ||
+                parameterName.Equals("Source", StringComparison.OrdinalIgnoreCase) ||
+                parameterName.Equals("Url", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool ValidateDownloadMemberInvocations(ScriptBlockAst ast, out string reason)
+    {
+        reason = string.Empty;
+        foreach (var invokeMember in ast.FindAll(static n => n is InvokeMemberExpressionAst, searchNestedScriptBlocks: true).OfType<InvokeMemberExpressionAst>())
+        {
+            var memberName = TryGetMemberName(invokeMember.Member);
+            if (string.IsNullOrWhiteSpace(memberName) || !DownloadMemberNames.Contains(memberName))
+            {
+                continue;
+            }
+
+            if (invokeMember.Arguments.Count == 0)
+            {
+                reason = $"Blocked dynamic download invocation '.{memberName}(...)' because URL argument is missing.";
+                return false;
+            }
+
+            if (!TryExtractLiteralHttpUri(invokeMember.Arguments[0], out var uri))
+            {
+                reason = $"Blocked dynamic download invocation '.{memberName}(...)' because URL argument is not a literal URL.";
+                return false;
+            }
+
+            if (!IsTrustedDownloadHost(uri.Host))
+            {
+                reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string TryGetMemberName(Ast member)
+    {
+        if (member is StringConstantExpressionAst constant)
+        {
+            return constant.Value;
+        }
+
+        var raw = member.Extent.Text.Trim();
+        return raw.Trim('\'', '"');
+    }
+
+    private static bool TryExtractLiteralHttpUri(Ast ast, out Uri uri)
+    {
+        uri = default!;
+        string? literal = null;
+        switch (ast)
+        {
+            case StringConstantExpressionAst constant:
+                literal = constant.Value;
+                break;
+            case ExpandableStringExpressionAst expandable when expandable.NestedExpressions.Count == 0:
+                literal = expandable.Value;
+                break;
+        }
+
+        if (string.IsNullOrWhiteSpace(literal))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(literal.Trim(), UriKind.Absolute, out uri))
+        {
+            return false;
+        }
+
+        return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+               uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<Uri> ExtractLiteralHttpUris(ScriptBlockAst ast)
+    {
+        foreach (var node in ast.FindAll(static n => n is StringConstantExpressionAst || n is ExpandableStringExpressionAst, searchNestedScriptBlocks: true))
+        {
+            if (TryExtractLiteralHttpUri(node, out var uri))
+            {
+                yield return uri;
+            }
+        }
+    }
+
+    private static bool IsTrustedDownloadHost(string host)
+    {
+        return TrustedDownloadHosts.Contains(host.ToLowerInvariant());
     }
 
     private static string? TryExtractAssignedStringLiteral(StatementAst rightSideStatement)
