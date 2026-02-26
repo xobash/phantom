@@ -1,11 +1,19 @@
 using Phantom.Models;
+using System.Threading;
 
 namespace Phantom.Services;
 
 public sealed class ConsoleStreamService
 {
+    private const int MaxEvents = 10_000;
+    private const int TrimEvents = 1_000;
+    private const int MaxRetainedCharacters = 2_000_000;
+    private const int MaxMessageCharacters = 8_192;
+
     private readonly object _gate = new();
     private readonly List<PowerShellOutputEvent> _events = new();
+    private readonly SynchronizationContext? _dispatchContext = SynchronizationContext.Current;
+    private int _retainedCharacterCount;
     private Func<PowerShellOutputEvent, CancellationToken, Task>? _persistentSink;
 
     public event EventHandler<PowerShellOutputEvent>? MessageReceived;
@@ -31,10 +39,11 @@ public sealed class ConsoleStreamService
 
     public void Publish(string stream, string text, bool persist = true)
     {
+        var safeText = NormalizeMessageText(text);
         var evt = new PowerShellOutputEvent
         {
             Stream = stream,
-            Text = text,
+            Text = safeText,
             Timestamp = DateTimeOffset.Now
         };
 
@@ -42,15 +51,22 @@ public sealed class ConsoleStreamService
         lock (_gate)
         {
             _events.Add(evt);
-            if (_events.Count > 10000)
+            _retainedCharacterCount += evt.Text.Length;
+
+            if (_events.Count > MaxEvents)
             {
-                _events.RemoveRange(0, 1000);
+                TrimOldestEvents(TrimEvents);
+            }
+
+            while (_events.Count > 0 && _retainedCharacterCount > MaxRetainedCharacters)
+            {
+                TrimOldestEvents(1);
             }
 
             sink = _persistentSink;
         }
 
-        MessageReceived?.Invoke(this, evt);
+        PublishEvent(evt);
         if (persist && sink is not null)
         {
             _ = PersistAsync(sink, evt);
@@ -74,5 +90,57 @@ public sealed class ConsoleStreamService
         catch
         {
         }
+    }
+
+    private static string NormalizeMessageText(string? text)
+    {
+        var value = text ?? string.Empty;
+        if (value.Length <= MaxMessageCharacters)
+        {
+            return value;
+        }
+
+        return value[..MaxMessageCharacters] + " ...[truncated]";
+    }
+
+    private void TrimOldestEvents(int count)
+    {
+        if (count <= 0 || _events.Count == 0)
+        {
+            return;
+        }
+
+        var trimCount = Math.Min(count, _events.Count);
+        for (var i = 0; i < trimCount; i++)
+        {
+            _retainedCharacterCount -= _events[i].Text.Length;
+        }
+
+        _events.RemoveRange(0, trimCount);
+        if (_retainedCharacterCount < 0)
+        {
+            _retainedCharacterCount = 0;
+        }
+    }
+
+    private void PublishEvent(PowerShellOutputEvent evt)
+    {
+        var handler = MessageReceived;
+        if (handler is null)
+        {
+            return;
+        }
+
+        if (_dispatchContext is not null && _dispatchContext != SynchronizationContext.Current)
+        {
+            _dispatchContext.Post(static state =>
+            {
+                var tuple = ((ConsoleStreamService Service, PowerShellOutputEvent Event))state!;
+                tuple.Service.MessageReceived?.Invoke(tuple.Service, tuple.Event);
+            }, (this, evt));
+            return;
+        }
+
+        handler.Invoke(this, evt);
     }
 }

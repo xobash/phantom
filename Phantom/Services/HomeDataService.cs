@@ -190,15 +190,21 @@ catch {
     private async Task<string> RunPowerShellForJsonAsync(string script, CancellationToken cancellationToken)
     {
         var wrapped = $"$ProgressPreference='Continue';$ErrorActionPreference='Stop';& {{ {script} }}";
+        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
         var psi = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -ExecutionPolicy RemoteSigned -Command \"{wrapped.Replace("\"", "\\\"")}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-ExecutionPolicy");
+        psi.ArgumentList.Add("RemoteSigned");
+        psi.ArgumentList.Add("-EncodedCommand");
+        psi.ArgumentList.Add(encodedCommand);
 
         using var process = Process.Start(psi);
         if (process is null)

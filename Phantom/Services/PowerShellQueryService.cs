@@ -1,11 +1,17 @@
 using System.Diagnostics;
 using System.Text;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 namespace Phantom.Services;
 
 public sealed class PowerShellQueryService
 {
+    private const string DiagnosticScriptLoggingEnvironmentVariable = "PHANTOM_DIAGNOSTIC_SCRIPT_LOGGING";
+    private static readonly Regex SecretAssignmentRegex = new(
+        @"(?im)\b(api[_-]?key|token|password|secret)\b\s*[:=]\s*(['""]?)(?<value>[^'""]+)\2",
+        RegexOptions.Compiled);
+
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
 
@@ -19,12 +25,20 @@ public sealed class PowerShellQueryService
     {
         var startedAt = Stopwatch.GetTimestamp();
         var scriptHash = ComputeScriptHash(script);
+        var diagnosticsEnabled = IsDiagnosticScriptLoggingEnabled();
         if (echoToConsole)
         {
             _console.Publish("Query", BuildQueryPreview(script), persist: false);
         }
         await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        await _log.WriteAsync("Query", script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        if (diagnosticsEnabled)
+        {
+            await _log.WriteAsync("Query", RedactSensitive(script), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        }
+        else
+        {
+            await _log.WriteAsync("Trace", $"PowerShellQuery body omitted. hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        }
 
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
@@ -52,7 +66,14 @@ public sealed class PowerShellQueryService
         }
 
         await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        await _log.WriteAsync("Security", $"PowerShellQuery invocation: {commandLine}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        if (diagnosticsEnabled)
+        {
+            await _log.WriteAsync("Security", $"PowerShellQuery invocation: {RedactSensitive(commandLine)}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        }
+        else
+        {
+            await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        }
 
         using (process)
         {
@@ -136,6 +157,7 @@ public sealed class PowerShellQueryService
     private static (Process? Process, string Host, string Error, string CommandLine) StartPowerShellProcess(string script)
     {
         Exception? lastError = null;
+        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script ?? string.Empty));
 
         foreach (var host in new[] { "pwsh.exe", "powershell.exe" })
         {
@@ -154,8 +176,8 @@ public sealed class PowerShellQueryService
             psi.ArgumentList.Add("-NonInteractive");
             psi.ArgumentList.Add("-ExecutionPolicy");
             psi.ArgumentList.Add("RemoteSigned");
-            psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add("-EncodedCommand");
+            psi.ArgumentList.Add(encodedScript);
 
             try
             {
@@ -173,7 +195,7 @@ public sealed class PowerShellQueryService
                         // Best-effort stdin guard. Query execution still proceeds.
                     }
 
-                    var fullCommandLine = $"{host} {string.Join(" ", psi.ArgumentList.Select(QuoteArgument))}";
+                    var fullCommandLine = $"{host} -NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <redacted>";
                     return (process, host, string.Empty, fullCommandLine);
                 }
             }
@@ -276,25 +298,42 @@ public sealed class PowerShellQueryService
         }
     }
 
-    private static string QuoteArgument(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "\"\"";
-        }
-
-        if (!value.Contains(' ') && !value.Contains('"'))
-        {
-            return value;
-        }
-
-        return "\"" + value.Replace("\"", "\\\"") + "\"";
-    }
-
     private static string ComputeScriptHash(string script)
     {
         var bytes = Encoding.UTF8.GetBytes(script ?? string.Empty);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
+    }
+
+    private static bool IsDiagnosticScriptLoggingEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable(DiagnosticScriptLoggingEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Trim() switch
+        {
+            "1" => true,
+            var v when v.Equals("true", StringComparison.OrdinalIgnoreCase) => true,
+            var v when v.Equals("yes", StringComparison.OrdinalIgnoreCase) => true,
+            var v when v.Equals("on", StringComparison.OrdinalIgnoreCase) => true,
+            _ => false
+        };
+    }
+
+    private static string RedactSensitive(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        return SecretAssignmentRegex.Replace(text, static match =>
+        {
+            var key = match.Groups[1].Value;
+            return $"{key}=<redacted>";
+        });
     }
 }
