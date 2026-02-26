@@ -517,7 +517,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private async Task<PowerShellExecutionResult> ExecuteViaProcessAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
         var outputBuilder = new StringBuilder();
-        var wrapped = $"$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& {{ {request.Script} }} *>&1";
+        var wrapped = "$ProgressPreference='SilentlyContinue';$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& { " +
+                      request.Script +
+                      " } *>&1";
         var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
         _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 

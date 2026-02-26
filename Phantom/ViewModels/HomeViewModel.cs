@@ -25,6 +25,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private int _fastRefreshQueued;
     private CancellationTokenSource? _refreshCts;
     private CancellationTokenSource? _fastRefreshCts;
+    private Task _fastRefreshCompletion = Task.CompletedTask;
     private long? _uptimeSeconds;
     private long? _uptimeSeedSeconds;
     private DateTimeOffset? _uptimeSeededAt;
@@ -106,12 +107,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
             string.Equals(normalized, "GPU %", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalized, "Network", StringComparison.OrdinalIgnoreCase))
         {
-            if (_isFastMetricsRefreshing)
-            {
-                _fastRefreshCts?.Cancel();
-            }
-
-            _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
+            _ = ForceFastMetricsRefreshAsync();
             return;
         }
 
@@ -242,9 +238,13 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshCpuMemoryTilesAsync(CancellationToken cancellationToken)
     {
+        var completionSource = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fastRefreshCompletion = completionSource.Task;
+
         if (_isFastMetricsRefreshing)
         {
             Interlocked.Exchange(ref _fastRefreshQueued, 1);
+            completionSource.TrySetResult(null);
             return;
         }
 
@@ -281,6 +281,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         }
         finally
         {
+            completionSource.TrySetResult(null);
             _fastRefreshCts?.Dispose();
             _fastRefreshCts = null;
             _isFastMetricsRefreshing = false;
@@ -289,6 +290,21 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
                 _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
             }
         }
+    }
+
+    private async Task ForceFastMetricsRefreshAsync()
+    {
+        _fastRefreshCts?.Cancel();
+        try
+        {
+            await _fastRefreshCompletion.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Ignore completion errors from superseded refreshes.
+        }
+
+        await RefreshCpuMemoryTilesAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     private bool ContainsKpiTile(string title)

@@ -14,7 +14,7 @@ public partial class HomeView : UserControl
         InitializeComponent();
     }
 
-    private void Card_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void Card_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement element)
         {

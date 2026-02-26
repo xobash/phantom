@@ -54,6 +54,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync);
         InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync);
         UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync);
+        ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync);
+        ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync);
         InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync);
         UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync);
         UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync);
@@ -72,6 +74,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     public AsyncRelayCommand UninstallWingetCommand { get; }
     public AsyncRelayCommand InstallChocoCommand { get; }
     public AsyncRelayCommand UninstallChocoCommand { get; }
+    public AsyncRelayCommand ToggleWingetCommand { get; }
+    public AsyncRelayCommand ToggleChocoCommand { get; }
     public AsyncRelayCommand InstallSelectedCommand { get; }
     public AsyncRelayCommand UninstallSelectedCommand { get; }
     public AsyncRelayCommand UpgradeSelectedCommand { get; }
@@ -81,14 +85,33 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     public bool WingetInstalled
     {
         get => _wingetInstalled;
-        set => SetProperty(ref _wingetInstalled, value);
+        set
+        {
+            if (!SetProperty(ref _wingetInstalled, value))
+            {
+                return;
+            }
+
+            Notify(nameof(WingetToggleLabel));
+        }
     }
 
     public bool ChocoInstalled
     {
         get => _chocoInstalled;
-        set => SetProperty(ref _chocoInstalled, value);
+        set
+        {
+            if (!SetProperty(ref _chocoInstalled, value))
+            {
+                return;
+            }
+
+            Notify(nameof(ChocoToggleLabel));
+        }
     }
+
+    public string WingetToggleLabel => WingetInstalled ? "Uninstall winget" : "Install winget";
+    public string ChocoToggleLabel => ChocoInstalled ? "Uninstall choco" : "Install choco";
 
     public string Search
     {
@@ -170,6 +193,28 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private async Task UninstallChocoAsync(CancellationToken cancellationToken)
     {
         await ExecuteManagerOperationAsync(BuildUninstallChocoOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ToggleWingetAsync(CancellationToken cancellationToken)
+    {
+        if (WingetInstalled)
+        {
+            await UninstallWingetAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await InstallWingetAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ToggleChocoAsync(CancellationToken cancellationToken)
+    {
+        if (ChocoInstalled)
+        {
+            await UninstallChocoAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await InstallChocoAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
