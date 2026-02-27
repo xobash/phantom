@@ -76,14 +76,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _consoleMessageReceivedHandler = (_, evt) =>
         {
-            Application.Current.Dispatcher.Invoke(() =>
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.CheckAccess())
             {
-                ConsoleMessages.Add(evt);
-                if (ConsoleMessages.Count > 4000)
-                {
-                    ConsoleMessages.RemoveAt(0);
-                }
-            });
+                AppendConsoleMessage(evt);
+                return;
+            }
+
+            dispatcher.BeginInvoke(new Action(() => AppendConsoleMessage(evt)));
         };
         console.MessageReceived += _consoleMessageReceivedHandler;
 
@@ -249,6 +249,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         var text = string.Join(Environment.NewLine, snapshot.Select(m => $"[{m.Timestamp:HH:mm:ss}] [{m.Stream}] {m.Text}"));
         return string.IsNullOrWhiteSpace(text) ? "No console log entries." : text;
+    }
+
+    private void AppendConsoleMessage(PowerShellOutputEvent evt)
+    {
+        ConsoleMessages.Add(evt);
+        if (ConsoleMessages.Count > 4000)
+        {
+            ConsoleMessages.RemoveAt(0);
+        }
     }
 
     private static Task<bool> TrySetClipboardTextAsync(string text, CancellationToken cancellationToken)
