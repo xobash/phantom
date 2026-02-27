@@ -463,7 +463,8 @@ internal static class RequestedTweaksCatalog
             T("adobe-network-block", "Adobe Network Block", "Blocks common Adobe endpoints via hosts entries.", RiskTier.Dangerous, "System", true,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-                if((Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch '# PHANTOM_ADOBE_BLOCK').Count -gt 0){'Applied'} else {'Not Applied'}
+                if(-not (Test-Path $hosts)){ 'Not Applied'; return }
+                if(Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch '# PHANTOM_ADOBE_BLOCK' -Quiet){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
@@ -484,7 +485,8 @@ internal static class RequestedTweaksCatalog
             T("block-razer-software-installs", "Block Razer Software Installs", "Blocks common Razer download endpoints.", RiskTier.Dangerous, "System", true,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-                if((Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch '# PHANTOM_RAZER_BLOCK').Count -gt 0){'Applied'} else {'Not Applied'}
+                if(-not (Test-Path $hosts)){ 'Not Applied'; return }
+                if(Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch '# PHANTOM_RAZER_BLOCK' -Quiet){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
@@ -586,7 +588,9 @@ internal static class RequestedTweaksCatalog
             T("edge-debloat", "Edge Debloat", "Applies Edge policies to reduce background/promotional features.", RiskTier.Advanced, "HKLM", true,
                 """
                 $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
-                if((Get-ItemProperty -Path $p -Name HubsSidebarEnabled -ErrorAction Stop).HubsSidebarEnabled -eq 0){'Applied'} else {'Not Applied'}
+                $value=$null
+                try { $value = Get-ItemPropertyValue -Path $p -Name HubsSidebarEnabled -ErrorAction Stop } catch { $value = $null }
+                if($null -ne $value -and [int]$value -eq 0){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
