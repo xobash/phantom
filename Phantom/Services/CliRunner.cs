@@ -350,8 +350,9 @@ public sealed class CliRunner
             : $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y";
 
         var managerProbeScript =
-            "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; " +
-            "$hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; ";
+            "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); " +
+            "$hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); " +
+            "if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
 
         var script = !string.IsNullOrWhiteSpace(winget) && !string.IsNullOrWhiteSpace(choco)
             ? $"{managerProbeScript}if($hasWinget){{ {winget} }} elseif($hasChoco){{ {choco} }} else {{ throw 'No package manager available' }}"
