@@ -33,6 +33,9 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         _settingsAccessor = settingsAccessor;
 
         ApplyModeCommand = new AsyncRelayCommand(ApplyModeAsync);
+        ApplyDefaultModeCommand = new AsyncRelayCommand(ct => ApplyModeByNameAsync("Default", ct));
+        ApplySecurityModeCommand = new AsyncRelayCommand(ct => ApplyModeByNameAsync("Security", ct));
+        ApplyDisableAllModeCommand = new AsyncRelayCommand(ct => ApplyModeByNameAsync("Disable All", ct));
         RestoreDefaultCommand = new AsyncRelayCommand(RestoreDefaultAsync);
         RefreshStatusCommand = new AsyncRelayCommand(ct => RefreshStatusAsync(ct, echoQueryToConsole: true));
         ResetUpdateComponentsCommand = new AsyncRelayCommand(ResetUpdateComponentsAsync);
@@ -61,6 +64,9 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     }
 
     public AsyncRelayCommand ApplyModeCommand { get; }
+    public AsyncRelayCommand ApplyDefaultModeCommand { get; }
+    public AsyncRelayCommand ApplySecurityModeCommand { get; }
+    public AsyncRelayCommand ApplyDisableAllModeCommand { get; }
     public AsyncRelayCommand RestoreDefaultCommand { get; }
     public AsyncRelayCommand RefreshStatusCommand { get; }
     public AsyncRelayCommand ResetUpdateComponentsCommand { get; }
@@ -72,7 +78,14 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     private async Task ApplyModeAsync(CancellationToken cancellationToken)
     {
-        var mode = SelectedMode;
+        await ApplyModeByNameAsync(SelectedMode, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplyModeByNameAsync(string mode, CancellationToken cancellationToken)
+    {
+        mode = NormalizeMode(mode);
+        SelectedMode = mode;
+
         if (string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
         {
             var confirmed = await ConfirmDisableAllModeAsync(cancellationToken).ConfigureAwait(false);
@@ -97,6 +110,21 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 forceDangerous: string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
             .ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
+    }
+
+    private static string NormalizeMode(string? mode)
+    {
+        if (string.Equals(mode, "Default", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Default";
+        }
+
+        if (string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Disable All";
+        }
+
+        return "Security";
     }
 
     private async Task RestoreDefaultAsync(CancellationToken cancellationToken)
