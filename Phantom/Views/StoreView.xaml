@@ -101,10 +101,35 @@
                       IsReadOnly="True"
                       Style="{StaticResource DarkDataGridStyle}"
                       VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                       VirtualizingPanel.VirtualizationMode="Recycling"
                       ScrollViewer.CanContentScroll="True"
                       EnableRowVirtualization="True"
                       ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <DataGrid.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.ContainerStyle>
+                            <Style TargetType="{x:Type GroupItem}">
+                                <Setter Property="Margin" Value="0,0,0,16"/>
+                            </Style>
+                        </GroupStyle.ContainerStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,14,0,8"
+                                        Padding="10,6"
+                                        CornerRadius="8"
+                                        Background="{DynamicResource DarkCard2Brush}"
+                                        BorderBrush="{DynamicResource DarkBorderBrush}"
+                                        BorderThickness="1">
+                                    <TextBlock Text="{Binding Name}"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </Border>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </DataGrid.GroupStyle>
                 <DataGrid.Columns>
                     <DataGridCheckBoxColumn Header="Sel"
                                             Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

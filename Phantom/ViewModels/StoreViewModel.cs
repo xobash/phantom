@@ -51,6 +51,12 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         Catalog = new ObservableCollection<CatalogApp>();
         CatalogView = CollectionViewSource.GetDefaultView(Catalog);
         CatalogView.Filter = FilterCatalog;
+        using (CatalogView.DeferRefresh())
+        {
+            CatalogView.SortDescriptions.Add(new SortDescription(nameof(CatalogApp.Category), ListSortDirection.Ascending));
+            CatalogView.SortDescriptions.Add(new SortDescription(nameof(CatalogApp.DisplayName), ListSortDirection.Ascending));
+            CatalogView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(CatalogApp.Category)));
+        }
 
         RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true));
         InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync);
@@ -485,23 +491,24 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private OperationDefinition BuildInstallOperation(CatalogApp app)
     {
         var context = $"store app '{app.DisplayName}'";
+        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
         var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
         var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-        if (wingetId.Length == 0 && chocoId.Length == 0)
-        {
-            throw new ArgumentException($"{context}: at least one package identifier is required.");
-        }
 
         var silentArgs = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
         var silentArgsSegment = silentArgs.Length == 0 ? string.Empty : $" {silentArgs}";
 
-        var wingetScript = wingetId.Length > 0
-            ? $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}"
-            : string.Empty;
+        var wingetScript = wingetId.Length == 0
+            ? $"winget install --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}"
+            : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}";
 
         var chocoScript = chocoId.Length > 0
             ? $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y{silentArgsSegment}"
             : string.Empty;
+
+        var wingetUninstallScript = wingetId.Length == 0
+            ? $"winget uninstall --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --silent"
+            : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent";
 
         return new OperationDefinition
         {
@@ -526,7 +533,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                     Name = "uninstall",
                     RequiresNetwork = false,
                     Script = BuildManagerFallbackScript(
-                        wingetId.Length > 0 ? $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent" : string.Empty,
+                        wingetUninstallScript,
                         chocoId.Length > 0 ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y" : string.Empty)
                 }
             ]
@@ -547,16 +554,13 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private OperationDefinition BuildUpgradeOperation(CatalogApp app)
     {
         var context = $"store app '{app.DisplayName}'";
+        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
         var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
         var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-        if (wingetId.Length == 0 && chocoId.Length == 0)
-        {
-            throw new ArgumentException($"{context}: at least one package identifier is required.");
-        }
 
-        var wingetScript = wingetId.Length > 0
-            ? $"winget upgrade --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements"
-            : string.Empty;
+        var wingetScript = wingetId.Length == 0
+            ? $"winget upgrade --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements"
+            : $"winget upgrade --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements";
 
         var chocoScript = chocoId.Length > 0
             ? $"choco upgrade {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
@@ -610,6 +614,11 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             : PowerShellInputSanitizer.EnsurePackageId(raw, context);
     }
 
+    private static string NormalizePackageQuery(string? raw, string context)
+    {
+        return PowerShellInputSanitizer.EnsurePackageQuery(raw, context);
+    }
+
     private static string NormalizeSilentArgs(string? raw, string context)
     {
         return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
@@ -627,12 +636,9 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 throw new ArgumentException($"{context}: displayName is required.");
             }
 
-            var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
-            var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-            if (wingetId.Length == 0 && chocoId.Length == 0)
-            {
-                throw new ArgumentException($"{context}: at least one package identifier is required.");
-            }
+            _ = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
+            _ = NormalizePackageId(app.WingetId, $"{context} wingetId");
+            _ = NormalizePackageId(app.ChocoId, $"{context} chocoId");
 
             _ = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
         }

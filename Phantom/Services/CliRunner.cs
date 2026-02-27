@@ -334,6 +334,7 @@ public sealed class CliRunner
 
     private static OperationDefinition BuildStoreInstallOperation(CatalogApp app)
     {
+        var packageQuery = PowerShellInputSanitizer.EnsurePackageQuery(app.DisplayName, $"store app '{app.DisplayName}' displayName");
         var wingetId = string.IsNullOrWhiteSpace(app.WingetId)
             ? string.Empty
             : PowerShellInputSanitizer.EnsurePackageId(app.WingetId, $"store app '{app.DisplayName}' wingetId");
@@ -341,13 +342,8 @@ public sealed class CliRunner
             ? string.Empty
             : PowerShellInputSanitizer.EnsurePackageId(app.ChocoId, $"store app '{app.DisplayName}' chocoId");
 
-        if (wingetId.Length == 0 && chocoId.Length == 0)
-        {
-            throw new ArgumentException($"store app '{app.DisplayName}': at least one package id is required.");
-        }
-
         string winget = wingetId.Length == 0
-            ? string.Empty
+            ? $"winget install --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-source-agreements --accept-package-agreements --silent"
             : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-source-agreements --accept-package-agreements --silent";
         string choco = chocoId.Length == 0
             ? string.Empty
@@ -376,9 +372,11 @@ public sealed class CliRunner
                 new PowerShellStep
                 {
                     Name = "uninstall",
-                    Script = wingetId.Length == 0
+                    Script = wingetId.Length == 0 && chocoId.Length > 0
                         ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
-                        : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent"
+                        : wingetId.Length == 0
+                            ? $"winget uninstall --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --silent"
+                            : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent"
                 }
             ]
         };
