@@ -1640,7 +1640,50 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return true;
         }
 
+        // winget may emit mojibake block characters and text-only progress bars.
+        if (line.Contains("Ôû", StringComparison.Ordinal) && line.Contains('%'))
+        {
+            return true;
+        }
+
+        if (LooksLikeWingetProgressBar(line))
+        {
+            return true;
+        }
+
         return false;
+    }
+
+    private static bool LooksLikeWingetProgressBar(string line)
+    {
+        if (!line.Contains('%'))
+        {
+            return false;
+        }
+
+        var openBracket = line.IndexOf('[');
+        var closeBracket = line.IndexOf(']');
+        if (openBracket < 0 || closeBracket <= openBracket)
+        {
+            return false;
+        }
+
+        var width = closeBracket - openBracket - 1;
+        if (width < 8)
+        {
+            return false;
+        }
+
+        for (var i = openBracket + 1; i < closeBracket; i++)
+        {
+            var ch = line[i];
+            if (ch != '#' && ch != '-' && ch != ' ')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task PumpProcessStreamAsync(StreamReader reader, Action<string> onLine, CancellationToken cancellationToken)
