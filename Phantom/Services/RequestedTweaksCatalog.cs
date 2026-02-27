@@ -940,11 +940,27 @@ internal static class RequestedTweaksCatalog
             RiskTier = riskTier,
             Scope = scope,
             Reversible = reversible,
-            DetectScript = detectScript,
+            DetectScript = WrapDetectScript(detectScript),
             ApplyScript = applyScript,
             UndoScript = undoScript,
             Destructive = destructive,
             StateCaptureKeys = []
         };
+    }
+
+    private static string WrapDetectScript(string detectScript)
+    {
+        var body = (detectScript ?? string.Empty).Trim();
+        return "$___phantomDetect='Not Applied'\n" +
+               "try {\n" +
+               "  $___phantomDetect = (& {\n" +
+               body + "\n" +
+               "  } | Out-String).Trim()\n" +
+               "  if([string]::IsNullOrWhiteSpace($___phantomDetect)) { $___phantomDetect='Not Applied' }\n" +
+               "}\n" +
+               "catch {\n" +
+               "  $___phantomDetect='Not Applied'\n" +
+               "}\n" +
+               "$___phantomDetect";
     }
 }
