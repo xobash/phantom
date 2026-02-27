@@ -14,16 +14,90 @@
 
         <Border Grid.Row="0" Style="{StaticResource DarkCardStyle}">
             <StackPanel>
-                <TextBlock Text="Update Mode" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                <ComboBox Margin="0,10,0,0" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" Width="240" Style="{StaticResource DarkComboBoxStyle}"/>
-                <WrapPanel Margin="0,12,0,0">
-                    <Button Content="Apply mode" Command="{Binding ApplyModeCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Undo to default" Command="{Binding RestoreDefaultCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Reset update components" Command="{Binding ResetUpdateComponentsCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Command="{Binding RefreshStatusCommand}"
-                            Style="{StaticResource RefreshIconButtonStyle}"
-                            ToolTip="Refresh update service status"/>
-                </WrapPanel>
+                <TextBlock Text="Windows Update Presets" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                <TextBlock Margin="0,8,0,0"
+                           Text="Choose a preset below. Each button applies immediately with the same safety checks as before."
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+
+                <UniformGrid Columns="3" Margin="0,12,0,0">
+                    <Border Margin="0,0,8,0"
+                            Padding="12"
+                            CornerRadius="10"
+                            Background="{DynamicResource DarkCard2Brush}"
+                            BorderBrush="{DynamicResource DarkBorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <Button Content="Default Settings"
+                                    Command="{Binding ApplyDefaultModeCommand}"
+                                    Style="{StaticResource DarkButtonStyle}"/>
+                            <TextBlock Margin="0,10,0,0"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource DarkTextBrush}">
+                                <Run FontWeight="SemiBold" Text="Default Windows Update Configuration"/>
+                                <LineBreak/>
+                                <Run Text="- No modifications to Windows defaults"/>
+                                <LineBreak/>
+                                <Run Text="- Removes custom update settings"/>
+                                <LineBreak/>
+                                <LineBreak/>
+                                <Run FontStyle="Italic" Text="Resets update policy and returns services to default behavior."/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="4,0"
+                            Padding="12"
+                            CornerRadius="10"
+                            Background="{DynamicResource DarkCard2Brush}"
+                            BorderBrush="{DynamicResource DarkBorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <Button Content="Security Settings"
+                                    Command="{Binding ApplySecurityModeCommand}"
+                                    Style="{StaticResource DarkButtonStyle}"/>
+                            <TextBlock Margin="0,10,0,0"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource DarkTextBrush}">
+                                <Run FontWeight="SemiBold" Text="Balanced Security Configuration"/>
+                                <LineBreak/>
+                                <Run Text="- Feature updates delayed by 365 days"/>
+                                <LineBreak/>
+                                <Run Text="- Security updates delayed by 4 days"/>
+                                <LineBreak/>
+                                <LineBreak/>
+                                <Run FontStyle="Italic" Text="Recommended for stable systems that still need regular security patching."/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="8,0,0,0"
+                            Padding="12"
+                            CornerRadius="10"
+                            Background="{DynamicResource DarkCard2Brush}"
+                            BorderBrush="{DynamicResource DarkBorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <Button Content="Disable All Updates"
+                                    Command="{Binding ApplyDisableAllModeCommand}"
+                                    Style="{StaticResource DarkButtonStyle}"/>
+                            <TextBlock Margin="0,10,0,0"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource DarkTextBrush}">
+                                <Run FontWeight="SemiBold" Foreground="#E05656" Text="!! Not Recommended !!"/>
+                                <LineBreak/>
+                                <Run Text="- Disables all Windows updates"/>
+                                <LineBreak/>
+                                <Run Text="- Increases security risk"/>
+                                <LineBreak/>
+                                <Run Text="- Use only for isolated systems"/>
+                                <LineBreak/>
+                                <LineBreak/>
+                                <Run FontStyle="Italic" Text="Requires double confirmation before applying."/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
             </StackPanel>
         </Border>
 
@@ -31,6 +105,12 @@
             <StackPanel>
                 <TextBlock Text="Service status" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
                 <TextBlock Text="{Binding ServiceStatus}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}"/>
+                <WrapPanel Margin="0,10,0,0">
+                    <Button Content="Reset update components" Command="{Binding ResetUpdateComponentsCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Command="{Binding RefreshStatusCommand}"
+                            Style="{StaticResource RefreshIconButtonStyle}"
+                            ToolTip="Refresh update service status"/>
+                </WrapPanel>
             </StackPanel>
         </Border>
 
