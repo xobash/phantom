@@ -357,6 +357,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         EventHandler<DataAddedEventArgs>? informationDataAdded = null;
 
         var combined = new StringBuilder();
+        var combinedSync = new object();
         try
         {
             runspace = RunspaceFactory.CreateRunspace(sessionState);
@@ -382,7 +383,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Output", normalized);
             };
             output.DataAdded += outputDataAdded;
@@ -401,7 +405,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Error", normalized);
             };
             ps.Streams.Error.DataAdded += errorDataAdded;
@@ -419,7 +426,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Warning", normalized);
             };
             ps.Streams.Warning.DataAdded += warningDataAdded;
@@ -437,7 +447,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Verbose", normalized);
             };
             ps.Streams.Verbose.DataAdded += verboseDataAdded;
@@ -455,7 +468,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Debug", normalized);
             };
             ps.Streams.Debug.DataAdded += debugDataAdded;
@@ -473,7 +489,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return;
                 }
 
-                combined.AppendLine(normalized);
+                lock (combinedSync)
+                {
+                    combined.AppendLine(normalized);
+                }
                 _console.Publish("Information", normalized);
             };
             ps.Streams.Information.DataAdded += informationDataAdded;
@@ -506,23 +525,34 @@ public sealed class PowerShellRunner : IPowerShellRunner
             ps.EndInvoke(async);
             Interlocked.Exchange(ref invocationCompleted, 1);
 
-            var isDetectStep = string.Equals(request.StepName, "detect", StringComparison.OrdinalIgnoreCase);
-            var detectState = OperationStatusParser.Parse(combined.ToString());
-            var hasExplicitDetectState = detectState != OperationDetectState.Unknown;
-
-            var success = !ps.HadErrors || (isDetectStep && hasExplicitDetectState);
-            if (ps.HadErrors && isDetectStep && hasExplicitDetectState)
+            string combinedText;
+            lock (combinedSync)
             {
-                _console.Publish("Trace", "Detect step returned an explicit state despite runspace errors; treating detect as successful.");
+                combinedText = combined.ToString();
             }
 
-            _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
-            await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
+            var isDetectStep = string.Equals(request.StepName, "detect", StringComparison.OrdinalIgnoreCase);
+            var detectState = OperationStatusParser.Parse(combinedText);
+            var hasExplicitDetectState = detectState != OperationDetectState.Unknown;
+            var invocationState = ps.InvocationStateInfo.State;
+            var success = invocationState is PSInvocationState.Completed;
+            if (!success && isDetectStep && hasExplicitDetectState)
+            {
+                _console.Publish("Trace", "Detect step returned an explicit state despite runspace errors; treating detect as successful.");
+                success = true;
+            }
+            else if (success && ps.HadErrors)
+            {
+                _console.Publish("Trace", "Runspace reported non-terminating errors; treating step as successful because the script completed.");
+            }
+
+            _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combinedText.Length}");
+            await _log.WriteAsync(success ? "Info" : "Error", combinedText, cancellationToken).ConfigureAwait(false);
             return new PowerShellExecutionResult
             {
                 Success = success,
                 ExitCode = success ? 0 : 1,
-                CombinedOutput = combined.ToString()
+                CombinedOutput = combinedText
             };
         }
         finally
@@ -585,6 +615,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private async Task<PowerShellExecutionResult> ExecuteViaProcessAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
         var outputBuilder = new StringBuilder();
+        var outputSync = new object();
         var wrapped = "$ProgressPreference='SilentlyContinue';$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& { " +
                       request.Script +
                       " } *>&1";
@@ -623,7 +654,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 return;
             }
 
-            outputBuilder.AppendLine(normalized);
+            lock (outputSync)
+            {
+                outputBuilder.AppendLine(normalized);
+            }
             _console.Publish(IsProgressMessage(normalized) ? "Progress" : "Output", normalized);
         }, cancellationToken);
 
@@ -634,7 +668,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 return;
             }
 
-            outputBuilder.AppendLine(normalized);
+            lock (outputSync)
+            {
+                outputBuilder.AppendLine(normalized);
+            }
             _console.Publish("Error", normalized);
         }, cancellationToken);
 
@@ -653,15 +690,21 @@ public sealed class PowerShellRunner : IPowerShellRunner
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
             await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
             var success = process.ExitCode == 0;
-            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputBuilder.Length}");
+            string outputText;
+            lock (outputSync)
+            {
+                outputText = outputBuilder.ToString();
+            }
 
-            await _log.WriteAsync(success ? "Info" : "Error", outputBuilder.ToString(), cancellationToken).ConfigureAwait(false);
+            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputText.Length}");
+
+            await _log.WriteAsync(success ? "Info" : "Error", outputText, cancellationToken).ConfigureAwait(false);
 
             return new PowerShellExecutionResult
             {
                 Success = success,
                 ExitCode = process.ExitCode,
-                CombinedOutput = outputBuilder.ToString()
+                CombinedOutput = outputText
             };
         }
         catch (OperationCanceledException)
@@ -1009,10 +1052,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return false;
         }
 
-        if (!Uri.TryCreate(literal.Trim(), UriKind.Absolute, out uri))
+        if (!Uri.TryCreate(literal.Trim(), UriKind.Absolute, out var parsedUri))
         {
             return false;
         }
+        uri = parsedUri;
 
         return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
                uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
