@@ -953,10 +953,11 @@ internal static class RequestedTweaksCatalog
         var body = (detectScript ?? string.Empty).Trim();
         return "$___phantomDetect='Not Applied'\n" +
                "try {\n" +
-               "  $___phantomDetect = (& {\n" +
+               "  $___phantomRaw = @(\n" +
                body + "\n" +
-               "  } | Out-String).Trim()\n" +
-               "  if([string]::IsNullOrWhiteSpace($___phantomDetect)) { $___phantomDetect='Not Applied' }\n" +
+               "  ) | Out-String\n" +
+               "  $___phantomRaw = $___phantomRaw.Trim()\n" +
+               "  if(-not [string]::IsNullOrWhiteSpace($___phantomRaw)) { $___phantomDetect = $___phantomRaw }\n" +
                "}\n" +
                "catch {\n" +
                "  $___phantomDetect='Not Applied'\n" +
