@@ -19,7 +19,7 @@ public sealed class OperationBatchResult
 {
     public List<OperationExecutionResult> Results { get; } = new();
     public bool RequiresReboot => Results.Any(r => r.Success && r.RequiresReboot);
-    public bool Success => Results.All(r => r.Success || r.Cancelled);
+    public bool Success => Results.All(r => r.Success);
 }
 
 public sealed class OperationEngine
