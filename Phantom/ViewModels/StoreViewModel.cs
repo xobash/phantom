@@ -13,8 +13,8 @@ namespace Phantom.ViewModels;
 public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 {
     private const string WingetPresenceProbeScript = "$ok = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); if ($ok) { '1' }";
-    private const string ChocoPresenceProbeScript = "$ok = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $ok) { $chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; if (Test-Path $chocoExe) { $ok = $true } }; if ($ok) { '1' }";
-    private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
+    private const string ChocoPresenceProbeScript = "$ok = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $ok) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $ok = $true; break } } }; if ($ok) { '1' }";
+    private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $hasChoco = $true; break } } }; ";
 
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
@@ -503,9 +503,12 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                                  }
                                }
                              }
-                             if($chocoPresent -or $alreadyInstalled){
+                             if($chocoPresent){
                                Write-Output 'Chocolatey installed.'
                                return
+                             }
+                             if($alreadyInstalled){
+                               throw 'Chocolatey is marked installed by winget, but choco.exe was not found on disk. Repair or reinstall Chocolatey and retry.'
                              }
                              throw ('Chocolatey installation did not produce a detectable choco binary. ' + $wingetOut.Trim())
                              """
