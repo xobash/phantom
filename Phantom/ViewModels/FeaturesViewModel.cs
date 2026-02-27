@@ -29,6 +29,8 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private bool _cleanupExpanded;
     private bool _repairExpanded;
     private bool _optionalFeaturesExpanded;
+    private bool _repairInProgress;
+    private string _repairProgressMessage = string.Empty;
     private bool _loadingSystemState;
     private readonly SemaphoreSlim _toggleSemaphore = new(1, 1);
 
@@ -187,6 +189,18 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     {
         get => _optionalFeaturesExpanded;
         set => SetProperty(ref _optionalFeaturesExpanded, value);
+    }
+
+    public bool RepairInProgress
+    {
+        get => _repairInProgress;
+        set => SetProperty(ref _repairInProgress, value);
+    }
+
+    public string RepairProgressMessage
+    {
+        get => _repairProgressMessage;
+        set => SetProperty(ref _repairProgressMessage, value);
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -403,20 +417,35 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
 
     private async Task RepairDismAsync(CancellationToken cancellationToken)
     {
-        _console.Publish("Progress", "1 of 1: Repairing component store using DISM 0%");
-        await ExecuteScriptAsync("feature.repair.dism", "repair", "DISM /Online /Cleanup-Image /RestoreHealth", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+        await RunRepairAsync(
+            "feature.repair.dism",
+            "repair",
+            "DISM restore health is running...",
+            "1 of 1: Repairing component store using DISM 0%",
+            "DISM /Online /Cleanup-Image /RestoreHealth",
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RepairSfcAsync(CancellationToken cancellationToken)
     {
-        _console.Publish("Progress", "1 of 1: Checking system files using SFC 0%");
-        await ExecuteScriptAsync("feature.repair.sfc", "repair", "sfc /scannow", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+        await RunRepairAsync(
+            "feature.repair.sfc",
+            "repair",
+            "System file checker is running...",
+            "1 of 1: Checking system files using SFC 0%",
+            "sfc /scannow",
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RepairChkdskAsync(CancellationToken cancellationToken)
     {
-        _console.Publish("Progress", "1 of 1: Scanning volume using CHKDSK 0%");
-        await ExecuteScriptAsync("feature.repair.chkdsk", "repair", "chkdsk C: /scan", cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+        await RunRepairAsync(
+            "feature.repair.chkdsk",
+            "repair",
+            "CHKDSK scan is running...",
+            "1 of 1: Scanning volume using CHKDSK 0%",
+            "chkdsk C: /scan",
+            cancellationToken).ConfigureAwait(false);
     }
 
     private Task RunMemoryDiagnosticAsync(CancellationToken cancellationToken)
@@ -586,6 +615,45 @@ if ($null -eq $storageSense) { $storageSense = 0 }
             _executionCoordinator.Complete();
         }
     }
+
+    private async Task RunRepairAsync(
+        string operationId,
+        string stepName,
+        string progressMessage,
+        string consoleProgressMessage,
+        string script,
+        CancellationToken cancellationToken)
+    {
+        await SetRepairStateAsync(true, progressMessage).ConfigureAwait(false);
+        _console.Publish("Progress", consoleProgressMessage);
+        try
+        {
+            await ExecuteScriptAsync(operationId, stepName, script, cancellationToken, forceProcessMode: true).ConfigureAwait(false);
+        }
+        finally
+        {
+            await SetRepairStateAsync(false, string.Empty).ConfigureAwait(false);
+        }
+    }
+
+    private static Task SetOnUiThreadAsync(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return dispatcher.InvokeAsync(action).Task;
+    }
+
+    private Task SetRepairStateAsync(bool running, string message)
+        => SetOnUiThreadAsync(() =>
+        {
+            RepairInProgress = running;
+            RepairProgressMessage = message;
+        });
 
     private bool FilterFeature(object obj)
     {

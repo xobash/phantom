@@ -12,9 +12,9 @@ namespace Phantom.ViewModels;
 
 public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 {
-    private const string WingetPresenceProbeScript = "$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }";
-    private const string ChocoPresenceProbeScript = "$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if (-not $ok) { $chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; if (Test-Path $chocoExe) { $ok=$true } }; if ($ok) { '1' }";
-    private const string ManagerProbeScript = "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; $hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
+    private const string WingetPresenceProbeScript = "$ok = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); if ($ok) { '1' }";
+    private const string ChocoPresenceProbeScript = "$ok = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $ok) { $chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; if (Test-Path $chocoExe) { $ok = $true } }; if ($ok) { '1' }";
+    private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
 
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
@@ -461,7 +461,54 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "install-choco",
                     RequiresNetwork = true,
-                    Script = "$chocoCandidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $chocoCandidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $chocoCandidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; $chocoCandidates=$chocoCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique; $chocoPresent=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $chocoPresent=$true } catch { $chocoPresent=$false }; if (-not $chocoPresent) { foreach($candidate in $chocoCandidates){ if (Test-Path $candidate) { $chocoPresent=$true; break } } }; if ($chocoPresent) { Write-Output 'Chocolatey already installed.'; return }; $wingetPresent=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $wingetPresent=$true } catch { $wingetPresent=$false }; if (-not $wingetPresent) { throw 'winget is required to install Chocolatey in safe mode.' }; $wingetOut = (winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-String); $alreadyInstalled = ($wingetOut -match '(?im)already installed|No available upgrade found|No newer package versions are available'); $chocoPresent=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $chocoPresent=$true } catch { $chocoPresent=$false }; if (-not $chocoPresent) { foreach($candidate in $chocoCandidates){ if (Test-Path $candidate) { $chocoPresent=$true; break } } }; if ($chocoPresent -or $alreadyInstalled) { Write-Output 'Chocolatey installed.'; return }; throw ('Chocolatey installation did not produce a detectable choco binary. ' + $wingetOut.Trim())"
+                    Script = """
+                             $chocoCandidates=@(
+                               (Join-Path $env:ProgramData 'chocolatey\bin\choco.exe'),
+                               (Join-Path $env:ProgramData 'chocolatey\choco.exe')
+                             )
+                             if($env:ChocolateyInstall){
+                               $chocoCandidates += (Join-Path $env:ChocolateyInstall 'bin\choco.exe')
+                               $chocoCandidates += (Join-Path $env:ChocolateyInstall 'choco.exe')
+                             }
+                             $chocoCandidates = $chocoCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+                             $chocoPresent = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
+                             if(-not $chocoPresent){
+                               foreach($candidate in $chocoCandidates){
+                                 if(Test-Path $candidate){
+                                   $chocoPresent=$true
+                                   break
+                                 }
+                               }
+                             }
+                             if($chocoPresent){
+                               Write-Output 'Chocolatey already installed.'
+                               return
+                             }
+                             $wingetPresent = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+                             if(-not $wingetPresent){
+                               throw 'winget is required to install Chocolatey in safe mode.'
+                             }
+                             $wingetOut = (winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-String)
+                             $wingetExit = $LASTEXITCODE
+                             $alreadyInstalled = $wingetOut -match '(?im)already installed|No available upgrade found|No newer package versions are available'
+                             if($wingetExit -ne 0 -and -not $alreadyInstalled){
+                               throw ('Chocolatey installation failed. ' + $wingetOut.Trim())
+                             }
+                             $chocoPresent = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
+                             if(-not $chocoPresent){
+                               foreach($candidate in $chocoCandidates){
+                                 if(Test-Path $candidate){
+                                   $chocoPresent=$true
+                                   break
+                                 }
+                               }
+                             }
+                             if($chocoPresent -or $alreadyInstalled){
+                               Write-Output 'Chocolatey installed.'
+                               return
+                             }
+                             throw ('Chocolatey installation did not produce a detectable choco binary. ' + $wingetOut.Trim())
+                             """
                 }
             ]
         };
@@ -482,7 +529,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "uninstall-choco",
                     RequiresNetwork = false,
-                    Script = "$chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; $hasChocoCmd=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChocoCmd=$true } catch { $hasChocoCmd=$false }; if (-not $hasChocoCmd -and (Test-Path $chocoExe)) { $chocoDir = [System.IO.Path]::GetDirectoryName($chocoExe); if ($chocoDir) { $env:PATH = $chocoDir + ';' + $env:PATH }; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChocoCmd=$true } catch { $hasChocoCmd=$false } }; if ($hasChocoCmd) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
+                    Script = "$chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; $hasChocoCmd = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChocoCmd -and (Test-Path $chocoExe)) { $chocoDir = [System.IO.Path]::GetDirectoryName($chocoExe); if ($chocoDir) { $env:PATH = $chocoDir + ';' + $env:PATH }; $hasChocoCmd = $null -ne (Get-Command choco -ErrorAction SilentlyContinue) }; if ($hasChocoCmd) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
                 }
             ]
         };
