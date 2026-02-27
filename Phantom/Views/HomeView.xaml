@@ -33,7 +33,7 @@
                                     ToolTip="{Binding Tooltip}"
                                     Cursor="Hand"
                                     Tag="{Binding Title}"
-                                    MouseLeftButtonUp="Card_MouseLeftButtonUp">
+                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -87,7 +87,7 @@
                             <Border Style="{StaticResource DarkCardStyle}"
                                     Cursor="Hand"
                                     Tag="{Binding Title}"
-                                    MouseLeftButtonUp="Card_MouseLeftButtonUp">
+                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>

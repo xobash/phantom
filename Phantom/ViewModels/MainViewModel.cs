@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -117,11 +119,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 var dispatcher = Application.Current?.Dispatcher;
                 if (dispatcher is null || dispatcher.CheckAccess())
                 {
-                    Clipboard.SetText(text);
+                    if (!TrySetClipboardText(text))
+                    {
+                        _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
+                    }
                 }
                 else
                 {
-                    dispatcher.Invoke(() => Clipboard.SetText(text));
+                    dispatcher.Invoke(() =>
+                    {
+                        if (!TrySetClipboardText(text))
+                        {
+                            _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
+                        }
+                    });
                 }
             }
             catch (Exception ex)
@@ -246,6 +257,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             _console.Publish("Error", $"Failed to open logs folder: {ex.Message}");
         }
+    }
+
+    private static bool TrySetClipboardText(string text)
+    {
+        const int maxAttempts = 12;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            try
+            {
+                Clipboard.SetDataObject(text, true);
+                return true;
+            }
+            catch (COMException ex) when ((uint)ex.HResult == 0x800401D0)
+            {
+                Thread.Sleep(20 + (attempt * 10));
+            }
+            catch (ExternalException ex) when ((uint)ex.HResult == 0x800401D0)
+            {
+                Thread.Sleep(20 + (attempt * 10));
+            }
+        }
+
+        return false;
     }
 
     public void Dispose()

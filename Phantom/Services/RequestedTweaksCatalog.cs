@@ -217,21 +217,35 @@ internal static class RequestedTweaksCatalog
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
                 $active = (powercfg /GetActiveScheme 2>$null | Out-String)
-                if($active -match $guid){'Applied'} else {'Not Applied'}
+                if($active -match $guid -or $active -match 'Ultimate Performance'){'Applied'} else {'Not Applied'}
                 """,
                 """
-                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                $templateGuid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                $ultimateGuid = $null
                 $plans = (powercfg /L 2>$null | Out-String)
-                if($plans -notmatch $guid){
-                  $dupOut = (powercfg -duplicatescheme $guid 2>&1 | Out-String)
+                $ultimateLine = ($plans -split "`r?`n" | Where-Object { $_ -match 'Ultimate Performance' } | Select-Object -First 1)
+                if($ultimateLine -and $ultimateLine -match '([0-9a-fA-F\-]{36})'){
+                  $ultimateGuid = $matches[1]
+                }
+
+                if(-not $ultimateGuid){
+                  $dupOut = (powercfg -duplicatescheme $templateGuid 2>&1 | Out-String)
                   $plans = (powercfg /L 2>$null | Out-String)
-                  if($plans -notmatch $guid){
-                    throw ("Ultimate Performance plan is unavailable on this system. " + $dupOut.Trim())
+                  $ultimateLine = ($plans -split "`r?`n" | Where-Object { $_ -match 'Ultimate Performance' } | Select-Object -First 1)
+                  if($ultimateLine -and $ultimateLine -match '([0-9a-fA-F\-]{36})'){
+                    $ultimateGuid = $matches[1]
+                  } elseif($dupOut -match '([0-9a-fA-F\-]{36})') {
+                    $ultimateGuid = $matches[1]
                   }
                 }
-                $setOut = (powercfg /setactive $guid 2>&1 | Out-String)
+
+                if(-not $ultimateGuid){
+                  throw "Ultimate Performance plan is unavailable on this system."
+                }
+
+                $setOut = (powercfg /setactive $ultimateGuid 2>&1 | Out-String)
                 $activeNow = (powercfg /GetActiveScheme 2>$null | Out-String)
-                if($activeNow -match $guid){
+                if($activeNow -match $ultimateGuid -or $activeNow -match 'Ultimate Performance'){
                   Write-Output 'Applied'
                   return
                 }
@@ -243,22 +257,23 @@ internal static class RequestedTweaksCatalog
 
             T("remove-ultimate-performance-profile", "Remove Ultimate Performance Profile", "Removes Ultimate Performance plan.", RiskTier.Advanced, "System", true,
                 """
-                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
                 $plans = (powercfg /L 2>$null | Out-String)
-                if($plans -notmatch $guid){'Applied'} else {'Not Applied'}
+                if($plans -match 'Ultimate Performance'){'Not Applied'} else {'Applied'}
                 """,
                 """
-                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
                 powercfg /setactive SCHEME_BALANCED 2>$null | Out-Null
                 $plans = (powercfg /L 2>$null | Out-String)
-                if($plans -match $guid){
-                  powercfg /delete $guid 2>$null | Out-Null
+                $ultimateLines = ($plans -split "`r?`n" | Where-Object { $_ -match 'Ultimate Performance' })
+                foreach($line in $ultimateLines){
+                  if($line -match '([0-9a-fA-F\-]{36})'){
+                    powercfg /delete $matches[1] 2>$null | Out-Null
+                  }
                 }
                 """,
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
                 $plans = (powercfg /L 2>$null | Out-String)
-                if($plans -notmatch $guid){
+                if($plans -notmatch 'Ultimate Performance'){
                   powercfg -duplicatescheme $guid 2>$null | Out-Null
                 }
                 """),
@@ -716,21 +731,35 @@ internal static class RequestedTweaksCatalog
                 """
                 $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
                 $active = (powercfg /GetActiveScheme 2>$null | Out-String)
-                if($active -match $guid){'Applied'} else {'Not Applied'}
+                if($active -match $guid -or $active -match 'Ultimate Performance'){'Applied'} else {'Not Applied'}
                 """,
                 """
-                $guid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                $templateGuid='e9a42b02-d5df-448d-aa00-03f14749eb61'
+                $ultimateGuid = $null
                 $plans = (powercfg /L 2>$null | Out-String)
-                if($plans -notmatch $guid){
-                  $dupOut = (powercfg -duplicatescheme $guid 2>&1 | Out-String)
+                $ultimateLine = ($plans -split "`r?`n" | Where-Object { $_ -match 'Ultimate Performance' } | Select-Object -First 1)
+                if($ultimateLine -and $ultimateLine -match '([0-9a-fA-F\-]{36})'){
+                  $ultimateGuid = $matches[1]
+                }
+
+                if(-not $ultimateGuid){
+                  $dupOut = (powercfg -duplicatescheme $templateGuid 2>&1 | Out-String)
                   $plans = (powercfg /L 2>$null | Out-String)
-                  if($plans -notmatch $guid){
-                    throw ("Ultimate Performance plan is unavailable on this system. " + $dupOut.Trim())
+                  $ultimateLine = ($plans -split "`r?`n" | Where-Object { $_ -match 'Ultimate Performance' } | Select-Object -First 1)
+                  if($ultimateLine -and $ultimateLine -match '([0-9a-fA-F\-]{36})'){
+                    $ultimateGuid = $matches[1]
+                  } elseif($dupOut -match '([0-9a-fA-F\-]{36})') {
+                    $ultimateGuid = $matches[1]
                   }
                 }
-                $setOut = (powercfg /setactive $guid 2>&1 | Out-String)
+
+                if(-not $ultimateGuid){
+                  throw "Ultimate Performance plan is unavailable on this system."
+                }
+
+                $setOut = (powercfg /setactive $ultimateGuid 2>&1 | Out-String)
                 $activeNow = (powercfg /GetActiveScheme 2>$null | Out-String)
-                if($activeNow -match $guid){
+                if($activeNow -match $ultimateGuid -or $activeNow -match 'Ultimate Performance'){
                   Write-Output 'Applied'
                   return
                 }
