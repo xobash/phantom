@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -9,8 +11,10 @@ using Phantom.Services;
 
 namespace Phantom.ViewModels;
 
-public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
+public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
+    private static readonly Regex ProgressPercentRegex = new(@"(?<!\d)(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled);
+
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
@@ -19,6 +23,8 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private readonly PowerShellQueryService _queryService;
     private readonly IPowerShellRunner _runner;
     private readonly Func<AppSettings> _settingsAccessor;
+    private readonly EventHandler<PowerShellOutputEvent> _consoleMessageReceivedHandler;
+    private readonly object _repairOutputGate = new();
 
     private string _search = string.Empty;
     private bool _fastStartupEnabled;
@@ -30,8 +36,12 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
     private bool _repairExpanded;
     private bool _optionalFeaturesExpanded;
     private bool _repairInProgress;
+    private int _repairProgressPercent;
     private string _repairProgressMessage = string.Empty;
+    private string _repairTransientOutput = string.Empty;
     private bool _loadingSystemState;
+    private bool _disposed;
+    private CancellationTokenSource? _repairOutputResetCts;
     private readonly SemaphoreSlim _toggleSemaphore = new(1, 1);
 
     public FeaturesViewModel(
@@ -73,6 +83,9 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         RunMemoryDiagnosticCommand = new AsyncRelayCommand(RunMemoryDiagnosticAsync);
         RestartGraphicsDriverCommand = new AsyncRelayCommand(RestartGraphicsDriverAsync);
         RebuildIconCacheCommand = new AsyncRelayCommand(RebuildIconCacheAsync);
+
+        _consoleMessageReceivedHandler = (_, evt) => HandleConsoleMessage(evt);
+        _console.MessageReceived += _consoleMessageReceivedHandler;
 
         OptionalFeaturesExpanded = true;
     }
@@ -203,6 +216,28 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel
         set => SetProperty(ref _repairProgressMessage, value);
     }
 
+    public int RepairProgressPercent
+    {
+        get => _repairProgressPercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 100);
+            if (!SetProperty(ref _repairProgressPercent, clamped))
+            {
+                return;
+            }
+
+            Notify(nameof(RepairProgressPercentLabel));
+        }
+    }
+
+    public string RepairProgressPercentLabel => $"{RepairProgressPercent}%";
+
+    public string RepairTransientOutput
+    {
+        get => _repairTransientOutput;
+        set => SetProperty(ref _repairTransientOutput, value);
+    }
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var features = await _catalogService.LoadFeaturesAsync(cancellationToken).ConfigureAwait(false);
@@ -636,6 +671,88 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         }
     }
 
+    private void HandleConsoleMessage(PowerShellOutputEvent evt)
+    {
+        if (!RepairInProgress || !IsRepairStream(evt.Stream))
+        {
+            return;
+        }
+
+        var line = evt.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        if (TryExtractProgressPercent(line, out var percent))
+        {
+            _ = SetOnUiThreadAsync(() =>
+            {
+                RepairProgressPercent = percent;
+                RepairProgressMessage = line;
+            });
+            return;
+        }
+
+        _ = ShowRepairTransientOutputAsync(line);
+    }
+
+    private async Task ShowRepairTransientOutputAsync(string text)
+    {
+        CancellationToken clearToken;
+        lock (_repairOutputGate)
+        {
+            _repairOutputResetCts?.Cancel();
+            _repairOutputResetCts?.Dispose();
+            _repairOutputResetCts = new CancellationTokenSource();
+            clearToken = _repairOutputResetCts.Token;
+        }
+
+        await SetOnUiThreadAsync(() => RepairTransientOutput = text).ConfigureAwait(false);
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3), clearToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await SetOnUiThreadAsync(() =>
+        {
+            if (RepairInProgress)
+            {
+                RepairTransientOutput = string.Empty;
+            }
+        }).ConfigureAwait(false);
+    }
+
+    private static bool IsRepairStream(string stream)
+    {
+        return stream.Equals("Progress", StringComparison.OrdinalIgnoreCase) ||
+               stream.Equals("Output", StringComparison.OrdinalIgnoreCase) ||
+               stream.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
+               stream.Equals("Error", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryExtractProgressPercent(string text, out int percent)
+    {
+        percent = 0;
+        var match = ProgressPercentRegex.Match(text);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        if (!double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        percent = Math.Clamp((int)Math.Round(parsed, MidpointRounding.AwayFromZero), 0, 100);
+        return true;
+    }
     private static Task SetOnUiThreadAsync(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
@@ -653,8 +770,32 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         {
             RepairInProgress = running;
             RepairProgressMessage = message;
+            RepairProgressPercent = running ? 0 : 100;
+            if (!running)
+            {
+                RepairTransientOutput = string.Empty;
+            }
         });
 
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _console.MessageReceived -= _consoleMessageReceivedHandler;
+        lock (_repairOutputGate)
+        {
+            _repairOutputResetCts?.Cancel();
+            _repairOutputResetCts?.Dispose();
+            _repairOutputResetCts = null;
+        }
+
+        _toggleSemaphore.Dispose();
+        GC.SuppressFinalize(this);
+    }
     private bool FilterFeature(object obj)
     {
         if (obj is not FeatureDefinition feature)
