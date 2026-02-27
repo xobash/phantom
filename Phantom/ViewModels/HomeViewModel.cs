@@ -238,16 +238,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshCpuMemoryTilesAsync(CancellationToken cancellationToken)
     {
-        var completionSource = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _fastRefreshCompletion = completionSource.Task;
-
         if (_isFastMetricsRefreshing)
         {
             Interlocked.Exchange(ref _fastRefreshQueued, 1);
-            completionSource.TrySetResult(null);
             return;
         }
 
+        var completionSource = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fastRefreshCompletion = completionSource.Task;
         _isFastMetricsRefreshing = true;
         _fastRefreshCts?.Dispose();
         _fastRefreshCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -297,7 +295,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         _fastRefreshCts?.Cancel();
         try
         {
-            await _fastRefreshCompletion.ConfigureAwait(false);
+            await Task.WhenAny(_fastRefreshCompletion, Task.Delay(300)).ConfigureAwait(false);
         }
         catch
         {
@@ -448,7 +446,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
 
         return value
             .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .Replace("Bytes", "B", StringComparison.OrdinalIgnoreCase);
+            .Replace("Bytes", "B", StringComparison.OrdinalIgnoreCase)
+            .Replace("KB", "K", StringComparison.OrdinalIgnoreCase)
+            .Replace("MB", "M", StringComparison.OrdinalIgnoreCase)
+            .Replace("GB", "G", StringComparison.OrdinalIgnoreCase)
+            .Replace("TB", "T", StringComparison.OrdinalIgnoreCase);
     }
 
     private static long? TryParseUptimeSeconds(string uptime)

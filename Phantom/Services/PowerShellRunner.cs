@@ -54,6 +54,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCliRegex = new(@"schtasks(?:\.exe)?\b[^;\r\n]*?\b/TN\s+['""]?([^'""]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex SpinnerLineRegex = new(@"^[\s\\/\-|]+$", RegexOptions.Compiled);
     private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+(?:['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]|(?<path>[A-Za-z]:\\\S+\.ps1))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly HashSet<string> DynamicInvokeAliases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -349,8 +350,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var text = output[args.Index]?.ToString() ?? string.Empty;
-                combined.AppendLine(text);
-                _console.Publish("Output", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Output", normalized);
             };
             output.DataAdded += outputDataAdded;
 
@@ -363,8 +369,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
                 var record = ps.Streams.Error[args.Index];
                 var text = record.ToString();
-                combined.AppendLine(text);
-                _console.Publish("Error", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Error", normalized);
             };
             ps.Streams.Error.DataAdded += errorDataAdded;
 
@@ -376,8 +387,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var text = ps.Streams.Warning[args.Index].ToString();
-                combined.AppendLine(text);
-                _console.Publish("Warning", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Warning", normalized);
             };
             ps.Streams.Warning.DataAdded += warningDataAdded;
 
@@ -389,8 +405,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var text = ps.Streams.Verbose[args.Index].ToString();
-                combined.AppendLine(text);
-                _console.Publish("Verbose", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Verbose", normalized);
             };
             ps.Streams.Verbose.DataAdded += verboseDataAdded;
 
@@ -402,8 +423,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var text = ps.Streams.Debug[args.Index].ToString();
-                combined.AppendLine(text);
-                _console.Publish("Debug", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Debug", normalized);
             };
             ps.Streams.Debug.DataAdded += debugDataAdded;
 
@@ -415,8 +441,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var text = ps.Streams.Information[args.Index].ToString();
-                combined.AppendLine(text);
-                _console.Publish("Information", text);
+                if (!TryNormalizeConsoleLine(text, out var normalized))
+                {
+                    return;
+                }
+
+                combined.AppendLine(normalized);
+                _console.Publish("Information", normalized);
             };
             ps.Streams.Information.DataAdded += informationDataAdded;
 
@@ -550,14 +581,24 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         var stdoutTask = PumpProcessStreamAsync(process.StandardOutput, line =>
         {
-            outputBuilder.AppendLine(line);
-            _console.Publish(IsProgressMessage(line) ? "Progress" : "Output", line);
+            if (!TryNormalizeConsoleLine(line, out var normalized))
+            {
+                return;
+            }
+
+            outputBuilder.AppendLine(normalized);
+            _console.Publish(IsProgressMessage(normalized) ? "Progress" : "Output", normalized);
         }, cancellationToken);
 
         var stderrTask = PumpProcessStreamAsync(process.StandardError, line =>
         {
-            outputBuilder.AppendLine(line);
-            _console.Publish("Error", line);
+            if (!TryNormalizeConsoleLine(line, out var normalized))
+            {
+                return;
+            }
+
+            outputBuilder.AppendLine(normalized);
+            _console.Publish("Error", normalized);
         }, cancellationToken);
 
         using var cancellationRegistration = cancellationToken.Register(() =>
@@ -1462,6 +1503,59 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         return ProgressLineRegex.IsMatch(line);
+    }
+
+    private static bool TryNormalizeConsoleLine(string line, out string normalized)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0 || ShouldSuppressNoisyConsoleLine(trimmed))
+        {
+            return false;
+        }
+
+        normalized = trimmed;
+        return true;
+    }
+
+    private static bool ShouldSuppressNoisyConsoleLine(string line)
+    {
+        if (SpinnerLineRegex.IsMatch(line))
+        {
+            return true;
+        }
+
+        if (line.StartsWith("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (line.Contains("Preparing modules for first use.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (line.Contains("<Obj S=\"progress\"", StringComparison.OrdinalIgnoreCase) ||
+            line.StartsWith("<Objs Version=", StringComparison.OrdinalIgnoreCase) ||
+            line.Equals("</Objs>", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var containsWingetProgressSize = line.Contains("KB /", StringComparison.OrdinalIgnoreCase) ||
+                                         line.Contains("MB /", StringComparison.OrdinalIgnoreCase) ||
+                                         line.Contains("GB /", StringComparison.OrdinalIgnoreCase);
+        if (containsWingetProgressSize && (line.Contains('%') || line.Contains("Ôû", StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task PumpProcessStreamAsync(StreamReader reader, Action<string> onLine, CancellationToken cancellationToken)
