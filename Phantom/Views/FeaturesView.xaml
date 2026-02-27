@@ -280,12 +280,40 @@
                     <StackPanel Grid.Row="0"
                                 Margin="0,0,0,8"
                                 Visibility="{Binding RepairInProgress, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="{Binding RepairProgressMessage}" Style="{StaticResource FeatureDescriptionStyle}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding RepairProgressMessage}"
+                                       Style="{StaticResource FeatureDescriptionStyle}"/>
+                            <TextBlock Grid.Column="1"
+                                       Margin="10,0,0,0"
+                                       Text="{Binding RepairProgressPercentLabel}"
+                                       Style="{StaticResource FeatureDescriptionStyle}"/>
+                        </Grid>
                         <ProgressBar Height="6"
                                      Margin="0,6,0,0"
-                                     IsIndeterminate="True"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="{Binding RepairProgressPercent}"
                                      Background="{DynamicResource InputBackgroundBrush}"
                                      Foreground="{DynamicResource AccentBorderBrush}"/>
+                        <TextBlock Margin="0,6,0,0"
+                                   Text="{Binding RepairTransientOutput}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FeatureDescriptionStyle}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RepairTransientOutput}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
 
                     <Grid Grid.Row="1" Margin="0,2">

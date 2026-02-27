@@ -313,6 +313,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             disposableTweaks.Dispose();
         }
 
+        if (Features is IDisposable disposableFeatures)
+        {
+            disposableFeatures.Dispose();
+        }
+
         GC.SuppressFinalize(this);
     }
 }
