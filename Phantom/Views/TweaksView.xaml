@@ -34,6 +34,15 @@
             <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
         </Style>
 
+        <Style x:Key="FlatCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource DarkCardBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="6,4"/>
+        </Style>
+
         <Style x:Key="CompactButtonStyle" TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
             <Setter Property="Padding" Value="10,5"/>
             <Setter Property="FontSize" Value="14"/>
@@ -94,7 +103,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Style="{StaticResource DarkCardStyle}">
+        <Border Grid.Row="0" Style="{StaticResource FlatCardStyle}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -127,19 +136,16 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Style="{StaticResource DarkCardStyle}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="{DynamicResource AppBgBrush}">
+            <StackPanel Background="{DynamicResource AppBgBrush}" Margin="0,2,0,6">
                 <ItemsControl ItemsSource="{Binding Sections}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Style="{StaticResource FeatureRowBorderStyle}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <Grid Grid.Row="0">
+                            <StackPanel>
+                                <Border Style="{StaticResource FeatureRowBorderStyle}">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -160,77 +166,76 @@
                                                       IsChecked="{Binding IsExpanded, Mode=TwoWay}"
                                                       Style="{StaticResource ChevronToggleStyle}"/>
                                     </Grid>
+                                </Border>
 
-                                    <ItemsControl Grid.Row="1"
-                                                  Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                  ItemsSource="{Binding Tweaks}">
+                                <Border Style="{StaticResource FeatureRowBorderStyle}"
+                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <ItemsControl ItemsSource="{Binding Tweaks}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,1,0,0" Padding="8,10">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                                                            <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold"/>
-                                                            <TextBlock Text="{Binding Description}"
-                                                                       Margin="0,2,0,0"
-                                                                       Style="{StaticResource FeatureDescriptionStyle}"
-                                                                       TextWrapping="Wrap"/>
-                                                        </StackPanel>
+                                                <Grid Margin="0,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                                        <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding Description}"
+                                                                   Margin="0,2,0,0"
+                                                                   Style="{StaticResource FeatureDescriptionStyle}"
+                                                                   TextWrapping="Wrap"/>
+                                                    </StackPanel>
 
-                                                        <TextBlock Grid.Column="1"
-                                                                   VerticalAlignment="Center"
-                                                                   Margin="0,0,16,0"
-                                                                   Text="{Binding Status}"
-                                                                   Style="{StaticResource FeatureDescriptionStyle}"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0,0,16,0"
+                                                               Text="{Binding Status}"
+                                                               Style="{StaticResource FeatureDescriptionStyle}"/>
 
-                                                        <Grid Grid.Column="2"
-                                                              VerticalAlignment="Center">
-                                                            <CheckBox VerticalAlignment="Center"
-                                                                      IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                      Click="OnTweakToggleClick">
-                                                                <CheckBox.Style>
-                                                                    <Style TargetType="CheckBox" BasedOn="{StaticResource ToggleSwitchCheckBoxStyle}">
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding IsActionButton}" Value="True">
-                                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </CheckBox.Style>
-                                                            </CheckBox>
+                                                    <Grid Grid.Column="2"
+                                                          VerticalAlignment="Center">
+                                                        <CheckBox VerticalAlignment="Center"
+                                                                  IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Click="OnTweakToggleClick">
+                                                            <CheckBox.Style>
+                                                                <Style TargetType="CheckBox" BasedOn="{StaticResource ToggleSwitchCheckBoxStyle}">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsActionButton}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </CheckBox.Style>
+                                                        </CheckBox>
 
-                                                            <Button VerticalAlignment="Center"
-                                                                    MinWidth="84"
-                                                                    Content="{Binding ActionButtonText}"
-                                                                    Click="OnTweakActionClick">
-                                                                <Button.Style>
-                                                                    <Style TargetType="Button" BasedOn="{StaticResource CompactButtonStyle}">
-                                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding IsActionButton}" Value="True">
-                                                                                <Setter Property="Visibility" Value="Visible"/>
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </Button.Style>
-                                                            </Button>
-                                                        </Grid>
+                                                        <Button VerticalAlignment="Center"
+                                                                MinWidth="84"
+                                                                Content="{Binding ActionButtonText}"
+                                                                Click="OnTweakActionClick">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button" BasedOn="{StaticResource CompactButtonStyle}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsActionButton}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
                                                     </Grid>
-                                                </Border>
+                                                </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                </Grid>
-                            </Border>
+                                </Border>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </ScrollViewer>
-        </Border>
+            </StackPanel>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Margin="10,2,10,0">
             <TextBlock Foreground="{DynamicResource MutedTextBrush}"
