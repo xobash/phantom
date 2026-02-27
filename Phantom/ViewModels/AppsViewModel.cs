@@ -143,8 +143,17 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        var escaped = EscapeSingleQuotes(uninstallCommand);
-        await ExecuteScriptAsync("apps.uninstall", app.Name, $"$cmd='{escaped}'; Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -Wait", cancellationToken, refreshAfter: true).ConfigureAwait(false);
+        if (!TrySplitExecutableAndArguments(uninstallCommand, out var executablePath, out var arguments))
+        {
+            _console.Publish("Warning", $"Uninstall unavailable for {app.Name}: uninstall command could not be parsed.");
+            return;
+        }
+
+        var executableLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(executablePath);
+        var script = string.IsNullOrWhiteSpace(arguments)
+            ? $"Start-Process -FilePath {executableLiteral} -Wait"
+            : $"Start-Process -FilePath {executableLiteral} -ArgumentList {PowerShellInputSanitizer.ToSingleQuotedLiteral(arguments)} -Wait";
+        await ExecuteScriptAsync("apps.uninstall", app.Name, script, cancellationToken, refreshAfter: true).ConfigureAwait(false);
     }
 
     private async Task ExecuteScriptAsync(string operationId, string appName, string script, CancellationToken cancellationToken, bool refreshAfter)
@@ -269,6 +278,50 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
         }
 
         return text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+    }
+
+    private static bool TrySplitExecutableAndArguments(string commandLine, out string executablePath, out string arguments)
+    {
+        executablePath = string.Empty;
+        arguments = string.Empty;
+        if (string.IsNullOrWhiteSpace(commandLine))
+        {
+            return false;
+        }
+
+        var text = commandLine.Trim();
+        if (text.StartsWith('"'))
+        {
+            var closingQuote = text.IndexOf('"', 1);
+            if (closingQuote <= 1)
+            {
+                return false;
+            }
+
+            executablePath = text[1..closingQuote];
+            arguments = text[(closingQuote + 1)..].Trim();
+        }
+        else
+        {
+            var firstSpace = text.IndexOf(' ');
+            if (firstSpace < 0)
+            {
+                executablePath = text;
+            }
+            else
+            {
+                executablePath = text[..firstSpace];
+                arguments = text[(firstSpace + 1)..].Trim();
+            }
+        }
+
+        executablePath = Environment.ExpandEnvironmentVariables(executablePath.Trim().Trim('"'));
+        if (executablePath.Equals("msiexec", StringComparison.OrdinalIgnoreCase))
+        {
+            executablePath = "msiexec.exe";
+        }
+
+        return !string.IsNullOrWhiteSpace(executablePath);
     }
 
     private static string EscapeSingleQuotes(string text) => text.Replace("'", "''");
