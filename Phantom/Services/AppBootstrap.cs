@@ -34,7 +34,7 @@ public sealed class AppBootstrap : IDisposable
         ExecutionCoordinator.RunningChanged += (_, running) => Console.Publish("Trace", $"ExecutionCoordinator running={running}");
         HomeData = new HomeDataService(Console, TelemetryStore);
 
-        Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme);
+        Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme, Paths);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
         Apps = new AppsViewModel(HomeData, Console, Runner);
         Services = new ServicesViewModel(HomeData, Console, Runner);
@@ -43,10 +43,9 @@ public sealed class AppBootstrap : IDisposable
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
         Fixes = new FixesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Runner, () => SettingsProvider.Current);
         Updates = new UpdatesViewModel(Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
-        LogsAbout = new LogsAboutViewModel(Paths);
         Automation = new AutomationViewModel(Definitions, Store, Tweaks, Features, Fixes, Updates);
 
-        Main = new MainViewModel(Home, Apps, Services, Store, Tweaks, Features, Fixes, Updates, Automation, LogsAbout, Settings, Console, ExecutionCoordinator, Paths);
+        Main = new MainViewModel(Home, Apps, Services, Store, Tweaks, Features, Fixes, Updates, Automation, Settings, Console, ExecutionCoordinator, Paths);
         CliRunner = new CliRunner(Paths, Definitions, Operations, Console, Log, Network, Query, SettingsStore);
         Console.Publish("Trace", "Phantom services wired and ready.");
     }
@@ -78,7 +77,6 @@ public sealed class AppBootstrap : IDisposable
     public FeaturesViewModel Features { get; }
     public FixesViewModel Fixes { get; }
     public UpdatesViewModel Updates { get; }
-    public LogsAboutViewModel LogsAbout { get; }
     public AutomationViewModel Automation { get; }
 
     public MainViewModel Main { get; }

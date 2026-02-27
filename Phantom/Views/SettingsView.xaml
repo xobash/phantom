@@ -5,76 +5,183 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
-    <StackPanel Background="{DynamicResource AppBgBrush}">
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Background="{DynamicResource AppBgBrush}">
+        <StackPanel Background="{DynamicResource AppBgBrush}">
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Theme" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                            <TextBlock Text="Auto follows Windows. Light and Dark override it." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1"
+                                  Width="140"
+                                  Margin="12,0,0,0"
+                                  VerticalAlignment="Center"
+                                  ItemsSource="{Binding ThemeModes}"
+                                  SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{StaticResource DarkComboBoxStyle}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Enable destructive operations" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                            <TextBlock Text="When OFF, destructive removals stay hidden/disabled." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                        </StackPanel>
+                        <ToggleButton Grid.Column="1" IsChecked="{Binding EnableDestructiveOperations}" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <CheckBox Content="Create restore point before dangerous operations" IsChecked="{Binding CreateRestorePointBeforeDangerousOperations}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                    <TextBlock Text="Optional safety net before risky changes (Windows may limit restore point frequency)." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <CheckBox Content="Enforce script safety guards" IsChecked="{Binding EnforceScriptSafetyGuards}" Style="{StaticResource DarkCheckBoxStyle}"/>
+                    <TextBlock Text="Blocks dynamic script execution patterns and untrusted download hosts." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Home refresh interval (seconds)" Foreground="{DynamicResource DarkTextBrush}"/>
+                    <TextBox Margin="0,8,0,0" Width="120" Text="{Binding HomeRefreshSeconds}" Style="{StaticResource DarkTextBoxStyle}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource DarkCardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Log retention" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                    <TextBlock Text="Max log files" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                    <TextBox Width="120" Text="{Binding MaxLogFiles}" Style="{StaticResource DarkTextBoxStyle}"/>
+                    <TextBlock Text="Max total size (bytes)" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                    <TextBox Width="180" Text="{Binding MaxTotalLogSizeBytes}" Style="{StaticResource DarkTextBoxStyle}"/>
+                </StackPanel>
+            </Border>
+
+            <Button Content="Save settings"
+                    Width="170"
+                    Margin="8"
+                    Command="{Binding SaveCommand}"
+                    HorizontalAlignment="Left"
+                    Style="{StaticResource DarkButtonStyle}"/>
+
+            <Border Style="{StaticResource DarkCardStyle}">
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="Theme" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                        <TextBlock Text="Auto follows Windows. Light and Dark override it." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0">
+                        <TextBlock Text="Local logs"
+                                   FontWeight="SemiBold"
+                                   FontSize="18"
+                                   Foreground="{DynamicResource DarkTextBrush}"/>
+                        <TextBlock Text="Moved from Logs/About. View recent log files and preview contents."
+                                   Margin="0,6,0,0"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
                     </StackPanel>
-                    <ComboBox Grid.Column="1"
-                              Width="140"
-                              Margin="12,0,0,0"
-                              VerticalAlignment="Center"
-                              ItemsSource="{Binding ThemeModes}"
-                              SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                              Style="{StaticResource DarkComboBoxStyle}"/>
+
+                    <WrapPanel Grid.Row="0"
+                               Grid.Column="1"
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Top">
+                        <Button Command="{Binding RefreshLogsCommand}"
+                                Style="{StaticResource RefreshIconButtonStyle}"
+                                ToolTip="Refresh log file list"/>
+                        <Button Content="Open logs folder"
+                                Command="{Binding OpenLogCommand}"
+                                Style="{StaticResource DarkButtonStyle}"/>
+                    </WrapPanel>
+
+                    <Grid Grid.Row="1"
+                          Grid.ColumnSpan="2"
+                          Margin="0,12,0,0"
+                          Height="320">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="320"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource InputBackgroundBrush}"
+                                BorderBrush="{DynamicResource DarkBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Log files"
+                                           Margin="10,8,10,6"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource DarkTextBrush}"/>
+                                <ListBox Grid.Row="1"
+                                         Margin="8,0,8,8"
+                                         ItemsSource="{Binding LogFiles}"
+                                         SelectedItem="{Binding SelectedLog, Mode=TwoWay}"
+                                         Background="{DynamicResource InputBackgroundBrush}"
+                                         Foreground="{DynamicResource DarkTextBrush}"
+                                         BorderBrush="{DynamicResource DarkBorderBrush}"
+                                         BorderThickness="1"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                Background="{DynamicResource InputBackgroundBrush}"
+                                BorderBrush="{DynamicResource DarkBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Preview"
+                                           Margin="10,8,10,6"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource DarkTextBrush}"/>
+                                <TextBox Grid.Row="1"
+                                         Margin="8,0,8,8"
+                                         Text="{Binding SelectedLogContent}"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="NoWrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas"
+                                         Style="{StaticResource DarkTextBoxStyle}"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="Enable destructive operations" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                        <TextBlock Text="When OFF, destructive removals stay hidden/disabled." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
-                    </StackPanel>
-                    <ToggleButton Grid.Column="1" IsChecked="{Binding EnableDestructiveOperations}" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                </Grid>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <CheckBox Content="Create restore point before dangerous operations" IsChecked="{Binding CreateRestorePointBeforeDangerousOperations}" Style="{StaticResource DarkCheckBoxStyle}"/>
-                <TextBlock Text="Optional safety net before risky changes (Windows may limit restore point frequency)." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <CheckBox Content="Enforce script safety guards" IsChecked="{Binding EnforceScriptSafetyGuards}" Style="{StaticResource DarkCheckBoxStyle}"/>
-                <TextBlock Text="Blocks dynamic script execution patterns and untrusted download hosts." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <TextBlock Text="Home refresh interval (seconds)" Foreground="{DynamicResource DarkTextBrush}"/>
-                <TextBox Margin="0,8,0,0" Width="120" Text="{Binding HomeRefreshSeconds}" Style="{StaticResource DarkTextBoxStyle}"/>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource DarkCardStyle}">
-            <StackPanel>
-                <TextBlock Text="Log retention" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                <TextBlock Text="Max log files" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
-                <TextBox Width="120" Text="{Binding MaxLogFiles}" Style="{StaticResource DarkTextBoxStyle}"/>
-                <TextBlock Text="Max total size (bytes)" Margin="0,10,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
-                <TextBox Width="180" Text="{Binding MaxTotalLogSizeBytes}" Style="{StaticResource DarkTextBoxStyle}"/>
-            </StackPanel>
-        </Border>
-
-        <Button Content="Save settings" Width="170" Margin="8" Command="{Binding SaveCommand}" Style="{StaticResource DarkButtonStyle}"/>
-    </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
 </UserControl>

@@ -1,3 +1,6 @@
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Windows;
 using Phantom.Commands;
 using Phantom.Models;
 using Phantom.Services;
@@ -12,21 +15,32 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     private readonly LogService _logService;
     private readonly SettingsProvider _provider;
     private readonly ThemeService _theme;
+    private readonly AppPaths _paths;
 
     private AppSettings _settings = new();
+    private string _selectedLog = string.Empty;
+    private string _selectedLogContent = string.Empty;
 
-    public SettingsViewModel(SettingsStore store, LogService logService, SettingsProvider provider, ThemeService theme)
+    public SettingsViewModel(SettingsStore store, LogService logService, SettingsProvider provider, ThemeService theme, AppPaths paths)
     {
         _store = store;
         _logService = logService;
         _provider = provider;
         _theme = theme;
+        _paths = paths;
+        LogFiles = new ObservableCollection<string>();
         SaveCommand = new AsyncRelayCommand(SaveAsync);
+        RefreshLogsCommand = new AsyncRelayCommand(RefreshLogsAsync);
+        OpenLogCommand = new AsyncRelayCommand(OpenSelectedLogAsync);
     }
 
     public string Title => "Settings";
 
     public AsyncRelayCommand SaveCommand { get; }
+    public AsyncRelayCommand RefreshLogsCommand { get; }
+    public AsyncRelayCommand OpenLogCommand { get; }
+
+    public ObservableCollection<string> LogFiles { get; }
 
     public IReadOnlyList<string> ThemeModes => ThemeModeOptions;
 
@@ -143,6 +157,26 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         }
     }
 
+    public string SelectedLog
+    {
+        get => _selectedLog;
+        set
+        {
+            if (!SetProperty(ref _selectedLog, value))
+            {
+                return;
+            }
+
+            _ = LoadSelectedLogContentAsync(value);
+        }
+    }
+
+    public string SelectedLogContent
+    {
+        get => _selectedLogContent;
+        set => SetProperty(ref _selectedLogContent, value);
+    }
+
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         _settings = await _store.LoadAsync(cancellationToken);
@@ -161,6 +195,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         Notify(nameof(HomeRefreshSeconds));
         Notify(nameof(MaxLogFiles));
         Notify(nameof(MaxTotalLogSizeBytes));
+        await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public AppSettings Current => _settings;
@@ -171,6 +206,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         await _store.SaveAsync(_settings, cancellationToken);
         _provider.Update(_settings);
         await _logService.EnforceRetentionAsync(cancellationToken);
+        await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void ApplyThemeSelection()
@@ -178,5 +214,70 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         _settings.ThemeMode = AppThemeModes.Normalize(_settings.ThemeMode);
         _theme.ApplyThemeMode(_settings.ThemeMode);
         _settings.UseDarkMode = _theme.IsDarkMode;
+    }
+
+    private async Task RefreshLogsAsync(CancellationToken cancellationToken)
+    {
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            LogFiles.Clear();
+            if (Directory.Exists(_paths.LogsDirectory))
+            {
+                foreach (var file in Directory.EnumerateFiles(_paths.LogsDirectory, "*.log").OrderByDescending(x => x))
+                {
+                    LogFiles.Add(file);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(SelectedLog) || !File.Exists(SelectedLog))
+            {
+                SelectedLog = LogFiles.FirstOrDefault() ?? string.Empty;
+            }
+        }, System.Windows.Threading.DispatcherPriority.Normal, cancellationToken);
+    }
+
+    private async Task OpenSelectedLogAsync(CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+
+        try
+        {
+            var hasSelectedLog = !string.IsNullOrWhiteSpace(SelectedLog) && File.Exists(SelectedLog);
+            var argument = hasSelectedLog
+                ? $"/select,\"{SelectedLog}\""
+                : $"\"{_paths.LogsDirectory}\"";
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = argument,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                SelectedLogContent = $"Failed to open log location:{Environment.NewLine}{ex.Message}");
+        }
+    }
+
+    private async Task LoadSelectedLogContentAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            SelectedLogContent = string.Empty;
+            return;
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+            await Application.Current.Dispatcher.InvokeAsync(() => SelectedLogContent = content);
+        }
+        catch (Exception ex)
+        {
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                SelectedLogContent = $"Failed to load log file:{Environment.NewLine}{ex.Message}");
+        }
     }
 }
