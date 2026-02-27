@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -105,47 +104,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _executionCoordinator.RunningChanged += _runningChangedHandler;
 
         CancelCurrentOperationCommand = new RelayCommand(() => _executionCoordinator.Cancel());
-        CopyLogCommand = new RelayCommand(() =>
-        {
-            try
-            {
-                var snapshot = ConsoleMessages.ToArray();
-                var text = string.Join(Environment.NewLine, snapshot.Select(m => $"[{m.Timestamp:HH:mm:ss}] [{m.Stream}] {m.Text}"));
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    text = "No console log entries.";
-                }
-
-                var dispatcher = Application.Current?.Dispatcher;
-                if (dispatcher is null || dispatcher.CheckAccess())
-                {
-                    if (!TrySetClipboardText(text))
-                    {
-                        _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
-                    }
-                }
-                else
-                {
-                    dispatcher.Invoke(() =>
-                    {
-                        if (!TrySetClipboardText(text))
-                        {
-                            _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
-                        }
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                if (IsClipboardBusyException(ex))
-                {
-                    _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
-                    return;
-                }
-
-                _console.Publish("Error", $"Copy log failed: {ex.Message}");
-            }
-        });
+        CopyLogCommand = new AsyncRelayCommand(CopyLogAsync);
         OpenLogsFolderCommand = new RelayCommand(OpenLogsFolder);
         OpenSettingsCommand = new RelayCommand(() => SelectedNavigation = _settingsNavigationItem);
 
@@ -173,7 +132,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public SettingsViewModel Settings { get; }
 
     public RelayCommand CancelCurrentOperationCommand { get; }
-    public RelayCommand CopyLogCommand { get; }
+    public AsyncRelayCommand CopyLogCommand { get; }
     public RelayCommand OpenLogsFolderCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
 
@@ -265,11 +224,46 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static bool TrySetClipboardText(string text)
+    private async Task CopyLogAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = ConsoleMessages.ToArray();
+            var text = await Task.Run(() => BuildLogSnapshotText(snapshot), cancellationToken);
+            var copied = await TrySetClipboardTextAsync(text, cancellationToken);
+            if (!copied)
+            {
+                _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", "Copy log cancelled.");
+        }
+        catch (Exception ex)
+        {
+            if (IsClipboardBusyException(ex))
+            {
+                _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
+                return;
+            }
+
+            _console.Publish("Error", $"Copy log failed: {ex.Message}");
+        }
+    }
+
+    private static string BuildLogSnapshotText(IEnumerable<PowerShellOutputEvent> snapshot)
+    {
+        var text = string.Join(Environment.NewLine, snapshot.Select(m => $"[{m.Timestamp:HH:mm:ss}] [{m.Stream}] {m.Text}"));
+        return string.IsNullOrWhiteSpace(text) ? "No console log entries." : text;
+    }
+
+    private static async Task<bool> TrySetClipboardTextAsync(string text, CancellationToken cancellationToken)
     {
         const int maxAttempts = 12;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 Clipboard.SetDataObject(text, true);
@@ -277,11 +271,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
             catch (COMException ex) when ((uint)ex.HResult == 0x800401D0)
             {
-                Thread.Sleep(20 + (attempt * 10));
+                await Task.Delay(20 + (attempt * 10), cancellationToken);
             }
             catch (ExternalException ex) when ((uint)ex.HResult == 0x800401D0)
             {
-                Thread.Sleep(20 + (attempt * 10));
+                await Task.Delay(20 + (attempt * 10), cancellationToken);
             }
         }
 

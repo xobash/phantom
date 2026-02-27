@@ -274,21 +274,33 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="0,2">
+                    <StackPanel Grid.Row="0"
+                                Margin="0,0,0,8"
+                                Visibility="{Binding RepairInProgress, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="{Binding RepairProgressMessage}" Style="{StaticResource FeatureDescriptionStyle}"/>
+                        <ProgressBar Height="6"
+                                     Margin="0,6,0,0"
+                                     IsIndeterminate="True"
+                                     Background="{DynamicResource InputBackgroundBrush}"
+                                     Foreground="{DynamicResource AccentBorderBrush}"/>
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="0,2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="DISM restore health" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
                         <Button Grid.Column="1" Content="Run" Command="{Binding RepairDismCommand}" Style="{StaticResource CompactButtonStyle}"/>
                     </Grid>
 
-                    <Grid Grid.Row="1" Margin="0,2">
+                    <Grid Grid.Row="2" Margin="0,2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="System file checker (SFC)" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
                         <Button Grid.Column="1" Content="Run" Command="{Binding RepairSfcCommand}" Style="{StaticResource CompactButtonStyle}"/>
                     </Grid>
 
-                    <Grid Grid.Row="2" Margin="0,2">
+                    <Grid Grid.Row="3" Margin="0,2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="Check disk (CHKDSK scan)" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
                         <Button Grid.Column="1" Content="Run" Command="{Binding RepairChkdskCommand}" Style="{StaticResource CompactButtonStyle}"/>

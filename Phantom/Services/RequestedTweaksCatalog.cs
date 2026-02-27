@@ -307,8 +307,14 @@ internal static class RequestedTweaksCatalog
                 """
                 $targets=@($env:TEMP, "$env:SystemRoot\Temp")
                 foreach($t in $targets){
-                  if(Test-Path $t){
-                    Get-ChildItem -Path $t -Force -ErrorAction Continue | Remove-Item -Recurse -Force -ErrorAction Continue
+                  if(-not (Test-Path $t)){ continue }
+                  Get-ChildItem -Path $t -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                    try {
+                      Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    } catch [System.UnauthorizedAccessException] {
+                    } catch [System.IO.IOException] {
+                    } catch {
+                    }
                   }
                 }
                 Write-Output 'Temporary files cleanup attempted.'
