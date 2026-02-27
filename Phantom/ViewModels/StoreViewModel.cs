@@ -58,19 +58,21 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             CatalogView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(CatalogApp.Category)));
         }
 
-        RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true));
-        InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync);
-        InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync);
-        UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync);
-        InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync);
-        UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync);
-        ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync);
-        ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync);
-        InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync);
-        UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync);
-        UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync);
+        RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true), CanRunStoreOperation);
+        InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync, CanRunStoreOperation);
+        InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync, CanRunStoreOperation);
+        UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync, CanRunStoreOperation);
+        InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync, CanRunStoreOperation);
+        UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync, CanRunStoreOperation);
+        ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync, CanRunStoreOperation);
+        ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync, CanRunStoreOperation);
+        InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync, CanRunStoreOperation);
+        UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync, CanRunStoreOperation);
+        UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync, CanRunStoreOperation);
         ImportCatalogCommand = new AsyncRelayCommand(ImportCatalogAsync);
         ExportCatalogCommand = new AsyncRelayCommand(ExportCatalogAsync);
+
+        _executionCoordinator.RunningChanged += OnExecutionCoordinatorRunningChanged;
     }
 
     public string Title => "Store";
@@ -181,8 +183,10 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
-        await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        if (await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false))
+        {
+            await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task InstallWingetAsync(CancellationToken cancellationToken)
@@ -304,18 +308,18 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         _console.Publish("Info", $"Exported catalog to {dialog.FileName}");
     }
 
-    private async Task ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
+    private async Task<bool> ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
     {
         if (operations.Count == 0)
         {
             _console.Publish("Info", "No items selected.");
-            return;
+            return false;
         }
 
         if (!_networkGuard.IsOnline())
         {
             _console.Publish("Error", "Offline detected. Store action blocked before execution.");
-            return;
+            return false;
         }
 
         CancellationToken token;
@@ -326,7 +330,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         catch (InvalidOperationException ex)
         {
             _console.Publish("Warning", ex.Message);
-            return;
+            return false;
         }
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, externalToken);
@@ -336,7 +340,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             if (!precheck.IsSuccess)
             {
                 _console.Publish("Error", precheck.Message);
-                return;
+                return true;
             }
 
             var response = await _operationEngine.ExecuteBatchAsync(new OperationRequest
@@ -371,6 +375,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         {
             _executionCoordinator.Complete();
         }
+
+        return true;
     }
 
     private static string SanitizeId(string source)
@@ -380,8 +386,27 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private async Task ExecuteManagerOperationAsync(OperationDefinition operation, CancellationToken cancellationToken)
     {
-        await ExecuteStoreOperationsAsync([operation], dryRun: false, cancellationToken).ConfigureAwait(false);
-        await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        if (await ExecuteStoreOperationsAsync([operation], dryRun: false, cancellationToken).ConfigureAwait(false))
+        {
+            await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private bool CanRunStoreOperation() => !_executionCoordinator.IsRunning;
+
+    private void OnExecutionCoordinatorRunningChanged(object? sender, bool _)
+    {
+        RefreshManagersCommand.RaiseCanExecuteChanged();
+        InstallMissingManagersCommand.RaiseCanExecuteChanged();
+        InstallWingetCommand.RaiseCanExecuteChanged();
+        UninstallWingetCommand.RaiseCanExecuteChanged();
+        InstallChocoCommand.RaiseCanExecuteChanged();
+        UninstallChocoCommand.RaiseCanExecuteChanged();
+        ToggleWingetCommand.RaiseCanExecuteChanged();
+        ToggleChocoCommand.RaiseCanExecuteChanged();
+        InstallSelectedCommand.RaiseCanExecuteChanged();
+        UninstallSelectedCommand.RaiseCanExecuteChanged();
+        UpgradeSelectedCommand.RaiseCanExecuteChanged();
     }
 
     private IReadOnlyList<OperationDefinition> BuildOperationsForSelected(

@@ -93,7 +93,7 @@ public sealed class AsyncRelayCommand : ICommand
 
     public async void Execute(object? parameter)
     {
-        if (_isRunning)
+        if (!CanExecute(parameter))
         {
             return;
         }
@@ -175,7 +175,7 @@ public sealed class AsyncRelayCommand<T> : ICommand
 
     public async void Execute(object? parameter)
     {
-        if (_isRunning)
+        if (!CanExecute(parameter))
         {
             return;
         }
