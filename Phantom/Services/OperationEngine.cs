@@ -324,7 +324,8 @@ public sealed class OperationEngine
                         OperationId = operation.Id,
                         StepName = step.Name,
                         Script = step.Script,
-                        DryRun = request.DryRun
+                        DryRun = request.DryRun,
+                        PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name)
                     }, cancellationToken).ConfigureAwait(false);
 
                     if (!stepResult.Success)
@@ -434,7 +435,8 @@ public sealed class OperationEngine
                     OperationId = $"{operation.Id}.rollback",
                     StepName = step.Name,
                     Script = step.Script,
-                    DryRun = false
+                    DryRun = false,
+                    PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name)
                 }, cancellationToken).ConfigureAwait(false);
 
                 if (!rollbackStep.Success)
@@ -589,6 +591,17 @@ public sealed class OperationEngine
         return desiredApplied
             ? state == OperationDetectState.Applied
             : state == OperationDetectState.NotApplied;
+    }
+
+    private static bool ShouldPreferProcessMode(string operationId, string stepName)
+    {
+        if (stepName.StartsWith("detect", StringComparison.OrdinalIgnoreCase) ||
+            stepName.StartsWith("capture:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return operationId.StartsWith("store.manager.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsOperationCompatible(OperationDefinition operation, Version currentOsVersion)
