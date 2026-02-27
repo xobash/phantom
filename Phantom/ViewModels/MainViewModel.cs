@@ -137,6 +137,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
             catch (Exception ex)
             {
+                if (IsClipboardBusyException(ex))
+                {
+                    _console.Publish("Warning", "Copy log skipped: clipboard is currently busy.");
+                    return;
+                }
+
                 _console.Publish("Error", $"Copy log failed: {ex.Message}");
             }
         });
@@ -280,6 +286,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         return false;
+    }
+
+    private static bool IsClipboardBusyException(Exception ex)
+    {
+        if (ex is COMException comEx && (uint)comEx.HResult == 0x800401D0)
+        {
+            return true;
+        }
+
+        if (ex is ExternalException externalEx && (uint)externalEx.HResult == 0x800401D0)
+        {
+            return true;
+        }
+
+        return ex.InnerException is not null && IsClipboardBusyException(ex.InnerException);
     }
 
     public void Dispose()

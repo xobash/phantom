@@ -12,6 +12,10 @@ namespace Phantom.ViewModels;
 
 public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 {
+    private const string WingetPresenceProbeScript = "$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }";
+    private const string ChocoPresenceProbeScript = "$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if (-not $ok) { $chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; if (Test-Path $chocoExe) { $ok=$true } }; if ($ok) { '1' }";
+    private const string ManagerProbeScript = "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; $hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
+
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
@@ -142,8 +146,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshManagersAsync(CancellationToken cancellationToken, bool echoToConsole = true)
     {
-        var winget = await _queryService.InvokeAsync("$ok=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
-        var choco = await _queryService.InvokeAsync("$ok=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $ok=$true } catch { $ok=$false }; if ($ok) { '1' }", cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
+        var winget = await _queryService.InvokeAsync(WingetPresenceProbeScript, cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
+        var choco = await _queryService.InvokeAsync(ChocoPresenceProbeScript, cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
 
         WingetInstalled = winget.Stdout.Trim() == "1";
         ChocoInstalled = choco.Stdout.Trim() == "1";
@@ -451,7 +455,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "install-choco",
                     RequiresNetwork = true,
-                    Script = "$wingetPresent=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $wingetPresent=$true } catch { $wingetPresent=$false }; if ($wingetPresent) { winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent } else { throw 'winget is required to install Chocolatey in safe mode.' }"
+                    Script = "$chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; $chocoPresent=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $chocoPresent=$true } catch { $chocoPresent=$false }; if (-not $chocoPresent) { $chocoPresent = Test-Path $chocoExe }; if ($chocoPresent) { Write-Output 'Chocolatey already installed.'; return }; $wingetPresent=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $wingetPresent=$true } catch { $wingetPresent=$false }; if (-not $wingetPresent) { throw 'winget is required to install Chocolatey in safe mode.' }; $wingetOut = (winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-String); $chocoPresent = Test-Path $chocoExe; if (-not $chocoPresent) { try { Get-Command choco -ErrorAction Stop | Out-Null; $chocoPresent=$true } catch { $chocoPresent=$false } }; if ($chocoPresent) { Write-Output 'Chocolatey installed.'; return }; throw ('Chocolatey installation did not produce a detectable choco binary. ' + $wingetOut.Trim())"
                 }
             ]
         };
@@ -472,7 +476,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
                 {
                     Name = "uninstall-choco",
                     RequiresNetwork = false,
-                    Script = "$hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; if ($hasChoco) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
+                    Script = "$hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; if ($hasChoco) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
                 }
             ]
         };
@@ -581,21 +585,19 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     {
         var hasWinget = !string.IsNullOrWhiteSpace(wingetScript);
         var hasChoco = !string.IsNullOrWhiteSpace(chocoScript);
-        const string managerProbeScript = "$hasWinget=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $hasWinget=$true } catch { $hasWinget=$false }; $hasChoco=$false; try { Get-Command choco -ErrorAction Stop | Out-Null; $hasChoco=$true } catch { $hasChoco=$false }; ";
-
         if (hasWinget && hasChoco)
         {
-            return $"{managerProbeScript}if ($hasWinget) {{ {wingetScript} }} elseif ($hasChoco) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
+            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} elseif ($hasChoco) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
         }
 
         if (hasWinget)
         {
-            return $"{managerProbeScript}if ($hasWinget) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
+            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
         }
 
         if (hasChoco)
         {
-            return $"{managerProbeScript}if ($hasChoco) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
+            return $"{ManagerProbeScript}if ($hasChoco) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
         }
 
         return "throw 'No installer metadata defined for this app.'";
