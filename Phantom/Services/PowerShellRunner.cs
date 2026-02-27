@@ -478,7 +478,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
             ps.EndInvoke(async);
             Interlocked.Exchange(ref invocationCompleted, 1);
-            var success = !ps.HadErrors;
+
+            var isDetectStep = string.Equals(request.StepName, "detect", StringComparison.OrdinalIgnoreCase);
+            var detectState = OperationStatusParser.Parse(combined.ToString());
+            var hasExplicitDetectState = detectState != OperationDetectState.Unknown;
+
+            var success = !ps.HadErrors || (isDetectStep && hasExplicitDetectState);
+            if (ps.HadErrors && isDetectStep && hasExplicitDetectState)
+            {
+                _console.Publish("Trace", "Detect step returned an explicit state despite runspace errors; treating detect as successful.");
+            }
+
             _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combined.Length}");
             await _log.WriteAsync(success ? "Info" : "Error", combined.ToString(), cancellationToken).ConfigureAwait(false);
             return new PowerShellExecutionResult
