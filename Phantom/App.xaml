@@ -720,9 +720,6 @@
         <DataTemplate DataType="{x:Type vm:AutomationViewModel}">
             <views:AutomationView/>
         </DataTemplate>
-        <DataTemplate DataType="{x:Type vm:LogsAboutViewModel}">
-            <views:LogsAboutView/>
-        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <views:SettingsView/>
         </DataTemplate>

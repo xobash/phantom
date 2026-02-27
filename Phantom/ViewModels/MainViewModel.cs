@@ -34,7 +34,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         FixesViewModel fixes,
         UpdatesViewModel updates,
         AutomationViewModel automation,
-        LogsAboutViewModel logsAbout,
         SettingsViewModel settings,
         ConsoleStreamService console,
         ExecutionCoordinator executionCoordinator,
@@ -49,7 +48,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Fixes = fixes;
         Updates = updates;
         Automation = automation;
-        LogsAbout = logsAbout;
         Settings = settings;
 
         _executionCoordinator = executionCoordinator;
@@ -65,8 +63,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             new() { Section = AppSection.Tweaks, Label = "Tweaks", Icon = "\uE713" },
             new() { Section = AppSection.Features, Label = "Features", Icon = "\uE115" },
             new() { Section = AppSection.Fixes, Label = "Fixes", Icon = "\uE90F" },
-            new() { Section = AppSection.Updates, Label = "Updates", Icon = "\uE895" },
-            new() { Section = AppSection.LogsAbout, Label = "Logs/About", Icon = "\uE9D2" }
+            new() { Section = AppSection.Updates, Label = "Updates", Icon = "\uE895" }
         };
         _settingsNavigationItem = new NavigationItem { Section = AppSection.Settings, Label = "Settings", Icon = "\uE713" };
 
@@ -128,7 +125,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public FixesViewModel Fixes { get; }
     public UpdatesViewModel Updates { get; }
     public AutomationViewModel Automation { get; }
-    public LogsAboutViewModel LogsAbout { get; }
     public SettingsViewModel Settings { get; }
 
     public RelayCommand CancelCurrentOperationCommand { get; }
@@ -155,7 +151,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     AppSection.Features => Features,
                     AppSection.Fixes => Fixes,
                     AppSection.Updates => Updates,
-                    AppSection.LogsAbout => LogsAbout,
                     AppSection.Settings => Settings,
                     _ => Home
                 };
@@ -198,8 +193,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await Fixes.InitializeAsync(cancellationToken).ConfigureAwait(false);
         _console.Publish("Trace", "Initializing Updates view model.");
         await Updates.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Logs/About view model.");
-        await LogsAbout.InitializeAsync(cancellationToken).ConfigureAwait(false);
         _console.Publish("Trace", "Main initialization completed.");
     }
 

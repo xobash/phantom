@@ -11,7 +11,6 @@ public enum AppSection
     Fixes,
     Updates,
     Automation,
-    LogsAbout,
     Settings
 }
 
