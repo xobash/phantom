@@ -29,6 +29,8 @@ public sealed class TweakDefinition
     public bool Destructive { get; set; }
     public bool Selected { get; set; }
     public string Status { get; set; } = "Unknown";
+    public bool IsActionButton { get; set; }
+    public string ActionButtonText { get; set; } = "Run";
 }
 
 public sealed class FeatureDefinition

@@ -38,4 +38,30 @@ public partial class TweaksView : UserControl
             MessageBox.Show(ex.ToString(), "Phantom Command Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
+
+    private async void OnTweakActionClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TweaksViewModel viewModel)
+        {
+            return;
+        }
+
+        if (sender is not Button button || button.DataContext is not TweakDefinition tweak)
+        {
+            return;
+        }
+
+        try
+        {
+            using var uiCancellation = new CancellationTokenSource();
+            await viewModel.ApplyActionFromUiAsync(tweak, uiCancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.ToString(), "Phantom Command Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
 }

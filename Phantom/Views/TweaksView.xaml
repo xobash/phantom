@@ -106,7 +106,7 @@
                     <TextBlock Text="Tweaks" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
                     <TextBlock Margin="0,4,0,0"
                                Foreground="{DynamicResource MutedTextBrush}"
-                               Text="Use grouped sections. Toggling a switch applies or undoes the tweak immediately."/>
+                               Text="Use grouped sections. Persistent tweaks use switches; one-shot tweaks use action buttons."/>
                 </StackPanel>
 
                 <TextBox Grid.Column="1"
@@ -120,8 +120,8 @@
                             Style="{StaticResource RefreshIconButtonStyle}"
                             ToolTip="Refresh tweak status"/>
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <CheckBox IsChecked="{Binding DryRun}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
-                        <TextBlock Text="Dry-run" Margin="8,2,0,0"/>
+                        <CheckBox IsChecked="{Binding ExpandAllSections}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
+                        <TextBlock Text="Expand all" Margin="8,2,0,0"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -187,11 +187,38 @@
                                                                    Text="{Binding Status}"
                                                                    Style="{StaticResource FeatureDescriptionStyle}"/>
 
-                                                        <CheckBox Grid.Column="2"
-                                                                  VerticalAlignment="Center"
-                                                                  IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                  Click="OnTweakToggleClick"
-                                                                  Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
+                                                        <Grid Grid.Column="2"
+                                                              VerticalAlignment="Center">
+                                                            <CheckBox VerticalAlignment="Center"
+                                                                      IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Click="OnTweakToggleClick">
+                                                                <CheckBox.Style>
+                                                                    <Style TargetType="CheckBox" BasedOn="{StaticResource ToggleSwitchCheckBoxStyle}">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsActionButton}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </CheckBox.Style>
+                                                            </CheckBox>
+
+                                                            <Button VerticalAlignment="Center"
+                                                                    MinWidth="84"
+                                                                    Content="{Binding ActionButtonText}"
+                                                                    Click="OnTweakActionClick">
+                                                                <Button.Style>
+                                                                    <Style TargetType="Button" BasedOn="{StaticResource CompactButtonStyle}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsActionButton}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Button.Style>
+                                                            </Button>
+                                                        </Grid>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>

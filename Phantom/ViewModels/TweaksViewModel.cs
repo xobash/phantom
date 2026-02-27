@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Data;
 using Microsoft.Win32;
@@ -139,6 +140,33 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["AdGuard_Ads_Trackers_Malware_Adult"] = ["94.140.14.15", "94.140.15.16"]
         };
 
+    private static readonly HashSet<string> PurposeNoiseTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "enable",
+        "enabled",
+        "disable",
+        "disabled",
+        "add",
+        "remove",
+        "create",
+        "delete",
+        "run",
+        "activate",
+        "deactivate",
+        "turn",
+        "on",
+        "off"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> DuplicateAliasById =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ultimate-performance-power-plan"] = "add-ultimate-performance-profile",
+            ["background-apps"] = "disable-background-apps",
+            ["activity-history"] = "disable-activity-history",
+            ["delivery-optimization"] = "disable-delivery-optimization"
+        };
+
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
@@ -149,6 +177,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private readonly SemaphoreSlim _toggleApplyLock = new(1, 1);
     private readonly Dictionary<string, bool> _sectionExpansionState = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
+    private bool _expandAllSections;
+    private bool _suppressExpandAllApply;
 
     private string _search = string.Empty;
     private bool _dryRun;
@@ -236,6 +266,20 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         set => SetProperty(ref _dryRun, value);
     }
 
+    public bool ExpandAllSections
+    {
+        get => _expandAllSections;
+        set
+        {
+            if (!SetProperty(ref _expandAllSections, value) || _suppressExpandAllApply)
+            {
+                return;
+            }
+
+            ApplyExpandCollapseToSections(value);
+        }
+    }
+
     public string SelectedDnsProfile
     {
         get => _selectedDnsProfile;
@@ -246,6 +290,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     {
         var tweaks = await _catalogService.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
         MergeRequestedTweaks(tweaks);
+        DeduplicateTweaksByPurpose(tweaks);
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             Tweaks.Clear();
@@ -257,6 +302,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
                 }
 
                 tweak.Scope = string.IsNullOrWhiteSpace(tweak.Scope) ? "System" : tweak.Scope;
+                tweak.IsActionButton = ShouldUseActionButton(tweak);
+                tweak.ActionButtonText = BuildActionButtonText(tweak);
                 Tweaks.Add(tweak);
             }
         });
@@ -278,6 +325,103 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             tweaks.Add(requested);
             lookup[requested.Id] = requested;
         }
+    }
+
+    private static void DeduplicateTweaksByPurpose(List<TweakDefinition> tweaks)
+    {
+        var deduped = new List<TweakDefinition>(tweaks.Count);
+        var canonicalById = new Dictionary<string, TweakDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tweak in tweaks)
+        {
+            canonicalById[tweak.Id] = tweak;
+        }
+
+        var seenPurpose = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tweak in tweaks)
+        {
+            if (DuplicateAliasById.TryGetValue(tweak.Id, out var canonicalId) &&
+                canonicalById.ContainsKey(canonicalId))
+            {
+                continue;
+            }
+
+            var purposeKey = BuildPurposeKey(tweak);
+            if (purposeKey.Length == 0)
+            {
+                deduped.Add(tweak);
+                continue;
+            }
+
+            if (seenPurpose.ContainsKey(purposeKey))
+            {
+                continue;
+            }
+
+            seenPurpose[purposeKey] = tweak.Id;
+            deduped.Add(tweak);
+        }
+
+        tweaks.Clear();
+        tweaks.AddRange(deduped);
+    }
+
+    private static string BuildPurposeKey(TweakDefinition tweak)
+    {
+        var source = string.IsNullOrWhiteSpace(tweak.Name) ? tweak.Id : tweak.Name;
+        var tokens = Regex.Split(source.ToLowerInvariant(), @"[^a-z0-9]+")
+            .Where(x => !string.IsNullOrWhiteSpace(x) && !PurposeNoiseTokens.Contains(x))
+            .ToArray();
+        return tokens.Length == 0 ? string.Empty : string.Join("-", tokens);
+    }
+
+    private static bool ShouldUseActionButton(TweakDefinition tweak)
+    {
+        if (!tweak.Reversible)
+        {
+            return true;
+        }
+
+        var id = tweak.Id ?? string.Empty;
+        if (id.StartsWith("add-", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("remove-", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("create-", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("delete-", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("run-", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var name = tweak.Name ?? string.Empty;
+        return name.StartsWith("Add ", StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith("Remove ", StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith("Create ", StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith("Delete ", StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith("Run ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildActionButtonText(TweakDefinition tweak)
+    {
+        if (tweak.Name.StartsWith("Remove ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Remove";
+        }
+
+        if (tweak.Name.StartsWith("Create ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Create";
+        }
+
+        if (tweak.Name.StartsWith("Delete ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Delete";
+        }
+
+        if (tweak.Name.StartsWith("Run ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Run";
+        }
+
+        return "Apply";
     }
 
     public async Task ApplyToggleFromUiAsync(TweakDefinition? tweak, bool enabled, CancellationToken cancellationToken)
@@ -304,6 +448,38 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
             var operation = BuildApplyOperation(tweak);
             await RunOperationsAsync([operation], undo: !enabled, cancellationToken).ConfigureAwait(false);
+            await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _toggleApplyLock.Release();
+        }
+    }
+
+    public async Task ApplyActionFromUiAsync(TweakDefinition? tweak, CancellationToken cancellationToken)
+    {
+        if (tweak is null)
+        {
+            return;
+        }
+
+        await _toggleApplyLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (await IsTweakInDesiredStateAsync(tweak, desiredApplied: true, cancellationToken).ConfigureAwait(false))
+            {
+                tweak.Status = "Applied";
+                tweak.Selected = true;
+                RefreshTweaksView();
+                _console.Publish("Info", $"{tweak.Name}: already applied, skipping.");
+                return;
+            }
+
+            tweak.Status = "Applying...";
+            RefreshTweaksView();
+
+            var operation = BuildApplyOperation(tweak);
+            await RunOperationsAsync([operation], undo: false, cancellationToken).ConfigureAwait(false);
             await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -830,10 +1006,39 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             : "system";
     }
 
+    private void ApplyExpandCollapseToSections(bool expand)
+    {
+        foreach (var section in Sections)
+        {
+            section.IsExpanded = expand;
+            _sectionExpansionState[section.Key] = expand;
+        }
+    }
+
+    private void OnSectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TweakSection.IsExpanded) || sender is not TweakSection section)
+        {
+            return;
+        }
+
+        _sectionExpansionState[section.Key] = section.IsExpanded;
+        UpdateExpandAllStateFromSections();
+    }
+
+    private void UpdateExpandAllStateFromSections()
+    {
+        var allExpanded = Sections.Count > 0 && Sections.All(section => section.IsExpanded);
+        _suppressExpandAllApply = true;
+        SetProperty(ref _expandAllSections, allExpanded, nameof(ExpandAllSections));
+        _suppressExpandAllApply = false;
+    }
+
     private void RebuildSections()
     {
         foreach (var section in Sections)
         {
+            section.PropertyChanged -= OnSectionPropertyChanged;
             _sectionExpansionState[section.Key] = section.IsExpanded;
         }
 
@@ -841,6 +1046,9 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         var filtered = Tweaks.Where(t => FilterTweaks(t)).ToList();
         if (filtered.Count == 0)
         {
+            _suppressExpandAllApply = true;
+            SetProperty(ref _expandAllSections, false, nameof(ExpandAllSections));
+            _suppressExpandAllApply = false;
             Notify(nameof(Sections));
             return;
         }
@@ -864,7 +1072,9 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
                 ? savedExpanded
                 : Sections.Count == 0;
 
-            Sections.Add(new TweakSection(key, meta.Title, meta.Description, tweaksForSection, expanded));
+            var section = new TweakSection(key, meta.Title, meta.Description, tweaksForSection, expanded);
+            section.PropertyChanged += OnSectionPropertyChanged;
+            Sections.Add(section);
             addedKeys.Add(key);
         }
 
@@ -874,9 +1084,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
                 ? value
                 : (Title: pair.Key, Description: "Tweaks");
             var expanded = _sectionExpansionState.TryGetValue(pair.Key, out var savedExpanded) && savedExpanded;
-            Sections.Add(new TweakSection(pair.Key, meta.Title, meta.Description, pair.Value, expanded));
+            var section = new TweakSection(pair.Key, meta.Title, meta.Description, pair.Value, expanded);
+            section.PropertyChanged += OnSectionPropertyChanged;
+            Sections.Add(section);
         }
 
+        UpdateExpandAllStateFromSections();
         Notify(nameof(Sections));
     }
 
@@ -914,6 +1127,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         }
 
         _disposed = true;
+        foreach (var section in Sections)
+        {
+            section.PropertyChanged -= OnSectionPropertyChanged;
+        }
+
         _toggleApplyLock.Dispose();
         GC.SuppressFinalize(this);
     }
