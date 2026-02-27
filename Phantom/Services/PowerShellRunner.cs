@@ -34,6 +34,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "explorer.exe",
         "wsreset.exe",
         "winsat.exe",
+        "dfrgui.exe",
+        "cleanmgr.exe",
+        "mdsched.exe",
         "appwiz.cpl",
         "ncpa.cpl",
         "services.msc",
@@ -214,12 +217,36 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
         catch (RuntimeException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
-            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
-            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
-            return processResult;
+            if (ShouldFallbackOnRuntimeException(request.StepName, ex))
+            {
+                _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
+                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
+                var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                return processResult;
+            }
+
+            var failure = $"Runspace execution failed for mutating step '{request.StepName}'. External fallback was blocked to avoid re-running a partially executed script. {ex.Message}";
+            _console.Publish("Error", failure);
+            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {ex}", cancellationToken).ConfigureAwait(false);
+            return new PowerShellExecutionResult
+            {
+                Success = false,
+                ExitCode = 1,
+                CombinedOutput = failure
+            };
         }
+    }
+
+    private static bool ShouldFallbackOnRuntimeException(string stepName, RuntimeException exception)
+    {
+        if (stepName.StartsWith("detect", StringComparison.OrdinalIgnoreCase) ||
+            stepName.StartsWith("capture:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return exception is CommandNotFoundException;
     }
 
     public async Task<BackupCompensationResult> TryCompensateFromSafetyBackupsAsync(string operationId, CancellationToken cancellationToken)
@@ -273,7 +300,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             foreach (var registryBackup in registryBackups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var import = await RunProcessAsync("reg.exe", $"import \"{registryBackup}\"", cancellationToken).ConfigureAwait(false);
+                var import = await RunProcessAsync("reg.exe", ["import", registryBackup], cancellationToken).ConfigureAwait(false);
                 if (import.ExitCode == 0)
                 {
                     restored++;
@@ -1247,7 +1274,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
 
                 var filePath = Path.Combine(backupRoot, $"registry-{index++:D2}-{SanitizeFileName(key)}.reg");
-                var export = await RunProcessAsync("reg.exe", $"export \"{key}\" \"{filePath}\" /y", cancellationToken).ConfigureAwait(false);
+                var export = await RunProcessAsync("reg.exe", ["export", key, filePath, "/y"], cancellationToken).ConfigureAwait(false);
                 if (export.ExitCode == 0 && File.Exists(filePath))
                 {
                     backupFiles.Add(filePath);
@@ -1261,8 +1288,8 @@ public sealed class PowerShellRunner : IPowerShellRunner
             foreach (var service in serviceNames)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var qc = await RunProcessAsync("sc.exe", $"qc \"{service}\"", cancellationToken).ConfigureAwait(false);
-                var query = await RunProcessAsync("sc.exe", $"query \"{service}\"", cancellationToken).ConfigureAwait(false);
+                var qc = await RunProcessAsync("sc.exe", ["qc", service], cancellationToken).ConfigureAwait(false);
+                var query = await RunProcessAsync("sc.exe", ["query", service], cancellationToken).ConfigureAwait(false);
 
                 var servicePath = Path.Combine(backupRoot, $"service-{index++:D2}-{SanitizeFileName(service)}.txt");
                 var content = new StringBuilder();
@@ -1279,7 +1306,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var normalizedTask = NormalizeScheduledTaskName(task);
-                var export = await RunProcessAsync("schtasks.exe", $"/Query /TN \"{normalizedTask}\" /XML", cancellationToken).ConfigureAwait(false);
+                var export = await RunProcessAsync("schtasks.exe", ["/Query", "/TN", normalizedTask, "/XML"], cancellationToken).ConfigureAwait(false);
                 if (export.ExitCode != 0 || string.IsNullOrWhiteSpace(export.Stdout))
                 {
                     _console.Publish("Warning", $"Scheduled task backup skipped for {normalizedTask}: {export.Stderr.Trim()}");
@@ -1440,17 +1467,21 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string fileName, string arguments, CancellationToken cancellationToken)
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
-            Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        foreach (var argument in arguments)
+        {
+            psi.ArgumentList.Add(argument);
+        }
 
         using var process = Process.Start(psi);
         if (process is null)
