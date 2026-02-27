@@ -174,14 +174,14 @@ public sealed class DefinitionCatalogService
         ValidateString(item, "homepage", ctx, errors, required: false, allowEmpty: true);
         ValidateStringArray(item, "tags", ctx, errors, required: false);
 
-        if (string.IsNullOrWhiteSpace(wingetId) && string.IsNullOrWhiteSpace(chocoId))
-        {
-            errors.Add($"{ctx}.wingetId/chocoId: at least one package manager identifier is required.");
-        }
-
         if (!string.IsNullOrWhiteSpace(displayName) && displayName.Length > 128)
         {
             errors.Add($"{ctx}.displayName: exceeds max length 128.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsurePackageQuery(displayName, $"{ctx}.displayName"), errors);
         }
 
         if (!string.IsNullOrWhiteSpace(wingetId))

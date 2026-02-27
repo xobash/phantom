@@ -1,52 +1,4050 @@
 [
-  { "category": "Utilities", "displayName": "7-Zip", "wingetId": "7zip.7zip", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["archive"] },
-  { "category": "Media", "displayName": "AIMP", "wingetId": "AIMP.AIMP", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["audio"] },
-  { "category": "Graphics", "displayName": "Affinity Photo", "wingetId": "Affinity.AffinityPhoto", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["photo"] },
-  { "category": "Media", "displayName": "Audacity", "wingetId": "Audacity.Audacity", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["audio"] },
-  { "category": "Utilities", "displayName": "balenaEtcher", "wingetId": "BalenaEtcher.balenaEtcher", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["usb"] },
-  { "category": "Security", "displayName": "Bitwarden", "wingetId": "Bitwarden.Bitwarden", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["password"] },
-  { "category": "Graphics", "displayName": "Blender", "wingetId": "Blender.Blender", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["3d"] },
-  { "category": "Browsers", "displayName": "Brave", "wingetId": "Brave.Brave", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["browser"] },
-  { "category": "Utilities", "displayName": "CCleaner", "wingetId": "CCleaner.CCleaner", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["cleanup"] },
-  { "category": "Browsers", "displayName": "Chromium", "wingetId": "Chromium.Chromium", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["browser"] },
-  { "category": "Developer", "displayName": "Docker Desktop", "wingetId": "Docker.DockerDesktop", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["containers"] },
-  { "category": "Communication", "displayName": "Discord", "wingetId": "Discord.Discord", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["chat"] },
-  { "category": "Productivity", "displayName": "Dropbox", "wingetId": "Dropbox.Dropbox", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["cloud"] },
-  { "category": "Gaming", "displayName": "Epic Games Launcher", "wingetId": "EpicGames.EpicGamesLauncher", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["gaming"] },
-  { "category": "Browsers", "displayName": "Firefox", "wingetId": "Firefox.Firefox", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["browser"] },
-  { "category": "Media", "displayName": "FL Studio", "wingetId": "FLStudio.ImageLineFLStudio", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["audio"] },
-  { "category": "Graphics", "displayName": "GIMP", "wingetId": "GIMP.GIMP", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["image"] },
-  { "category": "Developer", "displayName": "Git", "wingetId": "Git.Git", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["scm"] },
-  { "category": "Developer", "displayName": "GitHub Desktop", "wingetId": "GitHub.GitHubDesktop", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["scm"] },
-  { "category": "Browsers", "displayName": "Google Chrome", "wingetId": "Google.Chrome", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["browser"] },
-  { "category": "Utilities", "displayName": "Greenshot", "wingetId": "Greenshot.Greenshot", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["screenshot"] },
-  { "category": "Media", "displayName": "HandBrake", "wingetId": "HandBrake.HandBrake", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["video"] },
-  { "category": "Graphics", "displayName": "IrfanView", "wingetId": "IrfanView.IrfanView", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["image"] },
-  { "category": "Security", "displayName": "KeePassXC", "wingetId": "KeePass.KeePassXC", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["password"] },
-  { "category": "Productivity", "displayName": "LibreOffice", "wingetId": "LibreOffice.LibreOffice", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["office"] },
-  { "category": "Utilities", "displayName": "Lightshot", "wingetId": "Lightshot.Lightshot", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["screenshot"] },
-  { "category": "Utilities", "displayName": "PowerToys", "wingetId": "Microsoft.PowerToys", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["microsoft"] },
-  { "category": "Developer", "displayName": "Visual Studio Code", "wingetId": "Microsoft.VisualStudioCode", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["editor"] },
-  { "category": "Developer", "displayName": "MongoDB Compass", "wingetId": "MongoDB.MongoDBCompass", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["database"] },
-  { "category": "Communication", "displayName": "Thunderbird", "wingetId": "Mozilla.Thunderbird", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["email"] },
-  { "category": "Utilities", "displayName": "Notepad++", "wingetId": "Notepadplusplus.Notepadplusplus", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["editor"] },
-  { "category": "Media", "displayName": "OBS Studio", "wingetId": "OBSProject.OBSStudio", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["streaming"] },
-  { "category": "Productivity", "displayName": "OpenOffice", "wingetId": "OpenOffice.OpenOffice", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["office"] },
-  { "category": "Browsers", "displayName": "Opera", "wingetId": "Opera.Opera", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["browser"] },
-  { "category": "Graphics", "displayName": "Paint.NET", "wingetId": "Paint.NET.PaintDotNet", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["image"] },
-  { "category": "Developer", "displayName": "PSReadLine", "wingetId": "PowerShell.PSReadLine", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["powershell"] },
-  { "category": "Utilities", "displayName": "PuTTY", "wingetId": "PuTTY.PuTTY", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["ssh"] },
-  { "category": "Developer", "displayName": "Python 3", "wingetId": "Python.Python3", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["runtime"] },
-  { "category": "Utilities", "displayName": "qBittorrent", "wingetId": "qBittorrent.qBittorrent", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["torrent"] },
-  { "category": "Gaming", "displayName": "League of Legends", "wingetId": "Riot.Games.LeagueOfLegends", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["gaming"] },
-  { "category": "Communication", "displayName": "Skype", "wingetId": "Skype.Skype", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["chat"] },
-  { "category": "Communication", "displayName": "Slack", "wingetId": "Slack.Slack", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["chat"] },
-  { "category": "Gaming", "displayName": "Steam", "wingetId": "Steam.Steam", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["gaming"] },
-  { "category": "Productivity", "displayName": "SumatraPDF", "wingetId": "SumatraPDF.SumatraPDF", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["pdf"] },
-  { "category": "Communication", "displayName": "Telegram", "wingetId": "Telegram.Telegram", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["chat"] },
-  { "category": "Security", "displayName": "Tor Browser", "wingetId": "TorBrowser.TorBrowser", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["privacy"] },
-  { "category": "Media", "displayName": "VLC", "wingetId": "VLC.VLC", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["media"] },
-  { "category": "Developer", "displayName": "VSCodium", "wingetId": "VSCodium.VSCodium", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["editor"] },
-  { "category": "Utilities", "displayName": "WinRAR", "wingetId": "WinRAR.WinRAR", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["archive"] },
-  { "category": "Communication", "displayName": "Zoom", "wingetId": "Zoom.Zoom", "chocoId": "", "silentArgs": "", "homepage": "", "tags": ["meeting"] }
+  {
+    "category": "Browsers",
+    "displayName": "Brave",
+    "wingetId": "Brave.Brave",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Floorp",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Vivaldi",
+    "wingetId": "Vivaldi.Vivaldi",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Chrome",
+    "wingetId": "Google.Chrome",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "LibreWolf",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Waterfox",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Chromium",
+    "wingetId": "Chromium.Chromium",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Mullvad Browser",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Zen Browser",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Edge",
+    "wingetId": "Microsoft.Edge",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "PaleMoon",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Falkon",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Thorium Browser AVX2",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Firefox",
+    "wingetId": "Firefox.Firefox",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Tor Browser",
+    "wingetId": "TorBrowser.TorBrowser",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Firefox ESR",
+    "wingetId": "Mozilla.Firefox.ESR",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Browsers",
+    "displayName": "Ungoogled",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "browsers"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Beeper",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Linphone",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Teams",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Zulip",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Betterbird",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Element",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Telegram",
+    "wingetId": "Telegram.Telegram",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Chatterino",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Qtox",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Thunderbird",
+    "wingetId": "Mozilla.Thunderbird",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Discord",
+    "wingetId": "Discord.Discord",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Revolt",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Unigram",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Ferdium",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Session",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Vesktop",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Hexchat",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Signal",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Viber",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Jami",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Slack",
+    "wingetId": "Slack.Slack",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Communications",
+    "displayName": "Zoom",
+    "wingetId": "Zoom.Zoom",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "communications"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Aegisub",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Fcitx",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "GitKraken Client",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Amazon Corretto 8 (LTS)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Amazon Corretto 11 (LTS)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Amazon Corretto 17 (LTS)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Amazon Corretto 21 (LTS)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Amazon Corretto 25 (LTS)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Neovim",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Pulsar",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Swift toolchain",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "VS Code",
+    "wingetId": "Microsoft.VisualStudioCode",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Anaconda",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Git",
+    "wingetId": "Git.Git",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Godot Engine",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "NodeJS",
+    "wingetId": "OpenJS.NodeJS.LTS",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Python Version Manager (pyenv)",
+    "wingetId": "pyenv-win.pyenv-win",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "System Informer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "VS Codium",
+    "wingetId": "VSCodium.VSCodium",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Clink",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Git Butler",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Go",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Python3",
+    "wingetId": "Python.Python3",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Eclipse Temurin",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Wezterm",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "CMake",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Git Extensions",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Helix",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Jetbrains Toolbox",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Node Version Manager",
+    "wingetId": "CoreyButler.NVMforWindows",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Rust",
+    "wingetId": "Rustlang.Rustup",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Thonny Python IDE",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Yarn",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "DaxStudio",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "GitHub CLI",
+    "wingetId": "GitHub.cli",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "ImHex (Hex Editor)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Lazygit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Pixi",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Starship (Shell Prompt)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Unity Game Engine",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Zed",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Docker Desktop",
+    "wingetId": "Docker.DockerDesktop",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "GitHub Desktop",
+    "wingetId": "GitHub.GitHubDesktop",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Miniconda",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Oh My Posh (Prompt)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Sublime Merge",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Vagrant",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Fast Node Manager",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Gitty",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Code With Me",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Postman",
+    "wingetId": "Postman.Postman",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Sublime Text",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Development",
+    "displayName": "Visual Studio 2022",
+    "wingetId": "Microsoft.VisualStudio.2022.Community",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "development"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Adobe Acrobat Reader",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "LibreOffice",
+    "wingetId": "LibreOffice.LibreOffice",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "ONLYOffice Desktop",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Xournal++",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "AFFiNE",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Logseq",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "PDF24 creator",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Zim Desktop Wiki",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Anki",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "massCode (Snippet Manager)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "PDFgear",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Znote",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Calibre",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "NAPS2 (Document Scanner)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "PDFsam Basic",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Zotero",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Foxit PDF Editor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Notepad++",
+    "wingetId": "Notepadplusplus.Notepadplusplus",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "simplenote",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Foxit PDF Reader",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Obsidian",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Sumatra PDF",
+    "wingetId": "SumatraPDF.SumatraPDF",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Joplin (FOSS Notes)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "Okular",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Document",
+    "displayName": "WinMerge",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "document"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Cemu",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Heroic Games Launcher",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Steam",
+    "wingetId": "Steam.Steam",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Clone Hero",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Itch.io",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Sunshine/GameStream Server",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "EA App",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Moonlight/GameStream Client",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "TNC Account Switcher",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Emulation Station",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Playnite",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Ubisoft Connect",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Epic Games Launcher",
+    "wingetId": "EpicGames.EpicGamesLauncher",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Prism Launcher",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "Virtual Desktop Streamer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "GeForce NOW",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "PS Remote Play",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "XEMU",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "GOG Galaxy",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Games",
+    "displayName": "SideQuestVR",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "games"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Autoruns",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 3.1",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 5",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 6",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 7",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 8",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": ".NET Desktop Runtime 9",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "PowerShell",
+    "wingetId": "Microsoft.PowerShell",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Windows Terminal",
+    "wingetId": "Microsoft.WindowsTerminal",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Microsoft Azure Data Studio",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "PowerToys",
+    "wingetId": "Microsoft.PowerToys",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Visual C++ 2015-2022 32-bit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Visual C++ 2015-2022 64-bit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "DISMTools",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "NTLite",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Process Explorer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "NuGet",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Sysinternals Process Monitor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "OneDrive",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "RDCMan",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Power Automate",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Microsoft SQL Server Management",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Power BI",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Microsoft Tools",
+    "displayName": "Sysinternals TCPView",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "microsoft-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "AIMP (Music Player)",
+    "wingetId": "AIMP.AIMP",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Equalizer APO",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "GIMP (Image Editor)",
+    "wingetId": "GIMP.GIMP",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Inkscape",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Krita (Image Editor)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "K-Lite Codec Pack",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "MusicBee (Music Player)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "OBS Studio",
+    "wingetId": "OBSProject.OBSStudio",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Paint.NET",
+    "wingetId": "Paint.NET.PaintDotNet",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Plex Desktop",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Strawberry (Music Player)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Voicemeeter (Audio)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Audacity",
+    "wingetId": "Audacity.Audacity",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "FFmpeg (full)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Greenshot (Screenshots)",
+    "wingetId": "Greenshot.Greenshot",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Jellyfin Media Player",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Lightshot (Screenshots)",
+    "wingetId": "Lightshot.Lightshot",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "nglide (3dfx compatibility)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Policy Plus",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Stremio",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Voicemeeter Potato",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Blender (3D Graphics)",
+    "wingetId": "Blender.Blender",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Fire Alpaca",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "HandBrake",
+    "wingetId": "HandBrake.HandBrake",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Jellyfin Server",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Modern Flyouts",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Nomacs (Image viewer)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "PotPlayer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Subtitle Edit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "YT-dlp",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Clementine",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Flameshot (Screenshots)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Harmonoid",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Kdenlive (Video Editor)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Mp3tag (Metadata Audio Editor)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "QGIS",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "TagScanner (Tag Scanner)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "darktable",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "foobar2000 (Music Player)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "ImageGlass (Image Viewer)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Kicad",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Media Player Classic - Home Cinema",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "OpenSCAD",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "ShareX (Screenshots)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Tidal",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "digiKam",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "FreeCAD",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "ImgBurn",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "MuseScore",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Shotcut",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Videomass",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "EarTrumpet (Audio)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "ExSound",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Kodi Media Center",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "Plex Media Server",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "SMPlayer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Multimedia Tools",
+    "displayName": "VLC (Video Player)",
+    "wingetId": "VLC.VLC",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "multimedia-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Advanced IP Scanner",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Nmap",
+    "wingetId": "Insecure.Nmap",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "WinSCP",
+    "wingetId": "WinSCP.WinSCP",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Angry IP Scanner",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "OpenVPN Connect",
+    "wingetId": "OpenVPNTechnologies.OpenVPNConnect",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "WireGuard",
+    "wingetId": "WireGuard.WireGuard",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "EFI Boot Editor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Portmaster",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Wireshark",
+    "wingetId": "WiresharkFoundation.Wireshark",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "HeidiSQL",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "PuTTY",
+    "wingetId": "PuTTY.PuTTY",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "XPipe",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "mRemoteNG",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "RustDesk",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Mullvad VPN",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Simplewall",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "NetBird",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Pro Tools",
+    "displayName": "Ventoy",
+    "wingetId": "Ventoy.Ventoy",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "pro-tools"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "1Password",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "AutoHotkey",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Bulk Rename Utility",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Crystal Disk Info",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Dropbox",
+    "wingetId": "Dropbox.Dropbox",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Fastfetch",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Fzf",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "HWMonitor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Lenovo Legion Toolkit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Meld",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Nextcloud Desktop",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "OpenRGB",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Raspberry Pi Imager",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Revo Uninstaller",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "SpaceDrive File Manager",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "TeamViewer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "TranslucentTB",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Windows Firewall Control",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WizFile",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Zoxide",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "7-Zip",
+    "wingetId": "7zip.7zip",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Barrier",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "CapFrameX",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Crystal Disk Mark",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Duplicati",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "FFmpeg Batch AV Converter",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Glary Utilities",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Intel-PresentMon",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Link Shell extension",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Monitorian",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Nilesoft Shell",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Open Shell (Start Menu)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Process Lasso",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Rufus",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Teracopy",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Twinkle Tray",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Windows PC Health Check",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WizTree",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Advanced Renamer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Bat (Cat)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Carnac",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Display Driver Uninstaller",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Ente Auth",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "File Converter",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "GlazeWM",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "JDownloader",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Lively Wallpaper",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Motrix Download Manager",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Nushell",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "OrcaSlicer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Proton Authenticator",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Rufus Image",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "SuperF4",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "TightVNC",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "UltraVNC",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "UniGetUI",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Xtreme Download Manager",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Alacritty Terminal",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Bitwarden",
+    "wingetId": "Bitwarden.Bitwarden",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Compact GUI",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Deluge",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Everything Search",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Files",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Google Drive",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "JoyToKey",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "LocalSend",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "MSI Afterburner",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "NVCleanstall",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Oracle VirtualBox",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "PrusaSlicer",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "SageThumbs",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Syncthing",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Tixati",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "VistaSwitcher",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WinPaletter",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "HxD Hex Editor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Ambie White Noise",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "BleachBit",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "CopyQ (Clipboard Manager)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "DevToys",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Espanso",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Flow Launcher",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "GPU-Z",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "JPEG View",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "LockHunter",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "OFGB (Oh Frick Go Back)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "ownCloud Desktop",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "qBittorrent",
+    "wingetId": "qBittorrent.qBittorrent",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Sandboxie Plus",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "SyncTrayzor",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Total Commander",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Wazuh",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WinRAR",
+    "wingetId": "WinRAR.WinRAR",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "XnView Classic",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "AnyDesk",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Borderless Gaming",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "CPU-Z",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Ditto",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "ExifCleaner",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Flux",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Gsudo",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "KDE Connect",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Magic Wormhole",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "NanaZip",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "OPAutoClicker",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Parsec",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "QuickLook",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Snappy Driver Installer Origin",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Tabby.sh",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Transmission",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Windhawk",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Wise Program Uninstaller (WiseCare)",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "ZeroTier One",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Windows Auto Dark Mode",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Bulk Crap Uninstaller",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "croc",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Dual Monitor Tools",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "FanControl",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "ForceAutoHDR",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "HWiNFO",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "KeePassXC",
+    "wingetId": "KeePass.KeePassXC",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Malwarebytes",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Neofetch",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "OpenHashTab",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "PeaZip",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Rainmeter",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "SignalRGB",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "Tailscale",
+    "wingetId": "tailscale.tailscale",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "TreeSize Free",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WindowGrid",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "WiseToys",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  },
+  {
+    "category": "Utilities",
+    "displayName": "ZoomIt",
+    "wingetId": "",
+    "chocoId": "",
+    "silentArgs": "",
+    "homepage": "",
+    "tags": [
+      "utilities"
+    ]
+  }
 ]
