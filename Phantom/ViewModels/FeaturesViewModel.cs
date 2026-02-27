@@ -238,7 +238,6 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel, IDi
         get => _repairTransientOutput;
         set => SetProperty(ref _repairTransientOutput, value);
     }
-
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var features = await _catalogService.LoadFeaturesAsync(cancellationToken).ConfigureAwait(false);
@@ -754,7 +753,6 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         percent = Math.Clamp((int)Math.Round(parsed, MidpointRounding.AwayFromZero), 0, 100);
         return true;
     }
-
     private static Task SetOnUiThreadAsync(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
@@ -798,7 +796,6 @@ if ($null -eq $storageSense) { $storageSense = 0 }
         _toggleSemaphore.Dispose();
         GC.SuppressFinalize(this);
     }
-
     private bool FilterFeature(object obj)
     {
         if (obj is not FeatureDefinition feature)

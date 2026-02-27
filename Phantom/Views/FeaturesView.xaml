@@ -311,7 +311,7 @@
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
-                                </Style>
+                                    </Style>
                             </TextBlock.Style>
                         </TextBlock>
                     </StackPanel>
