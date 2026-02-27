@@ -1,0 +1,11 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Local .NET CLI state
+.dotnet-home/
+
+# IDE/editor cruft
+.DS_Store
+*.user
+*.suo
