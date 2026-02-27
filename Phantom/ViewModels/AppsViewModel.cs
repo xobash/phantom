@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Data;
@@ -126,7 +127,7 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
 
         var query = Uri.EscapeDataString($"{app.Name} {app.Publisher} download");
         var url = $"https://www.bing.com/search?q={query}";
-        await ExecuteScriptAsync("apps.search", app.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(url)}'", cancellationToken, refreshAfter: false).ConfigureAwait(false);
+        await OpenExternalResourceAsync("apps.search", app.Name, url, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UninstallAsync(InstalledAppInfo? app, CancellationToken cancellationToken)
@@ -149,11 +150,48 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
             return;
         }
 
-        var executableLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(executablePath);
-        var script = string.IsNullOrWhiteSpace(arguments)
-            ? $"Start-Process -FilePath {executableLiteral} -Wait"
-            : $"Start-Process -FilePath {executableLiteral} -ArgumentList {PowerShellInputSanitizer.ToSingleQuotedLiteral(arguments)} -Wait";
-        await ExecuteScriptAsync("apps.uninstall", app.Name, script, cancellationToken, refreshAfter: true).ConfigureAwait(false);
+        var uninstallLine = string.IsNullOrWhiteSpace(arguments)
+            ? executablePath
+            : $"{executablePath} {arguments}";
+        _console.Publish("Command", $"[apps.uninstall/{app.Name}] {uninstallLine}");
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = executablePath,
+                UseShellExecute = true
+            };
+
+            if (!string.IsNullOrWhiteSpace(arguments))
+            {
+                psi.Arguments = arguments;
+            }
+
+            var process = Process.Start(psi);
+            if (process is null)
+            {
+                _console.Publish("Error", $"apps.uninstall failed for {app.Name}: process could not be started.");
+                return;
+            }
+
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            if (process.ExitCode != 0)
+            {
+                _console.Publish("Warning", $"apps.uninstall finished for {app.Name} with exit code {process.ExitCode}.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", $"apps.uninstall cancelled for {app.Name}.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"apps.uninstall failed for {app.Name}: {ex.Message}");
+        }
+
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ExecuteScriptAsync(string operationId, string appName, string script, CancellationToken cancellationToken, bool refreshAfter)
@@ -174,6 +212,26 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
         if (refreshAfter)
         {
             await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private Task OpenExternalResourceAsync(string operationId, string appName, string target, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _console.Publish("Command", $"[{operationId}/{appName}] open {target}");
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = target,
+                UseShellExecute = true
+            });
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"{operationId} failed for {appName}: {ex.Message}");
+            return Task.CompletedTask;
         }
     }
 
@@ -303,15 +361,25 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
         }
         else
         {
-            var firstSpace = text.IndexOf(' ');
-            if (firstSpace < 0)
+            var exeIndex = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exeIndex > 0)
             {
-                executablePath = text;
+                var cut = exeIndex + 4;
+                executablePath = text[..cut];
+                arguments = text.Length > cut ? text[cut..].Trim() : string.Empty;
             }
             else
             {
-                executablePath = text[..firstSpace];
-                arguments = text[(firstSpace + 1)..].Trim();
+                var firstSpace = text.IndexOf(' ');
+                if (firstSpace < 0)
+                {
+                    executablePath = text;
+                }
+                else
+                {
+                    executablePath = text[..firstSpace];
+                    arguments = text[(firstSpace + 1)..].Trim();
+                }
             }
         }
 
