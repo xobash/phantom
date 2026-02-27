@@ -258,28 +258,47 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return string.IsNullOrWhiteSpace(text) ? "No console log entries." : text;
     }
 
-    private static async Task<bool> TrySetClipboardTextAsync(string text, CancellationToken cancellationToken)
+    private static Task<bool> TrySetClipboardTextAsync(string text, CancellationToken cancellationToken)
     {
-        const int maxAttempts = 12;
-        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+
+        var thread = new Thread(() =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                Clipboard.SetDataObject(text, true);
-                return true;
+                cancellationToken.ThrowIfCancellationRequested();
+                Clipboard.SetDataObject(text, true, retryTimes: 12, retryDelay: 40);
+                tcs.TrySetResult(true);
             }
             catch (COMException ex) when ((uint)ex.HResult == 0x800401D0)
             {
-                await Task.Delay(20 + (attempt * 10), cancellationToken);
+                tcs.TrySetResult(false);
             }
             catch (ExternalException ex) when ((uint)ex.HResult == 0x800401D0)
             {
-                await Task.Delay(20 + (attempt * 10), cancellationToken);
+                tcs.TrySetResult(false);
             }
-        }
+            catch (OperationCanceledException)
+            {
+                tcs.TrySetCanceled(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+            finally
+            {
+                registration.Dispose();
+            }
+        })
+        {
+            IsBackground = true
+        };
 
-        return false;
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return tcs.Task;
     }
 
     private static bool IsClipboardBusyException(Exception ex)
