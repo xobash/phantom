@@ -261,8 +261,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                Clipboard.SetDataObject(text, true, retryTimes: 12, retryDelay: 40);
-                tcs.TrySetResult(true);
+                const int maxAttempts = 12;
+                for (var attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        Clipboard.SetDataObject(text, true);
+                        tcs.TrySetResult(true);
+                        return;
+                    }
+                    catch (COMException ex) when ((uint)ex.HResult == 0x800401D0)
+                    {
+                        Thread.Sleep(20 + (attempt * 10));
+                    }
+                    catch (ExternalException ex) when ((uint)ex.HResult == 0x800401D0)
+                    {
+                        Thread.Sleep(20 + (attempt * 10));
+                    }
+                }
+
+                tcs.TrySetResult(false);
             }
             catch (COMException ex) when ((uint)ex.HResult == 0x800401D0)
             {
