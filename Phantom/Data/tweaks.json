@@ -19,10 +19,10 @@
     "riskTier": "Basic",
     "scope": "HKCU",
     "reversible": true,
-    "detectScript": "$p='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search'; if((Get-ItemProperty -Path $p -Name BingSearchEnabled -ErrorAction Stop).BingSearchEnabled -eq 0){'Applied'} else {'Not Applied'}",
-    "applyScript": "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Name BingSearchEnabled -Type DWord -Value 0",
-    "undoScript": "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Name BingSearchEnabled -ErrorAction Stop",
-    "stateCaptureKeys": ["HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search"],
+    "detectScript": "$search='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search'; $policy='HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer'; $bing=1; $suggest=0; try { $bing=(Get-ItemProperty -Path $search -Name BingSearchEnabled -ErrorAction Stop).BingSearchEnabled } catch { $bing=1 }; try { $suggest=(Get-ItemProperty -Path $policy -Name DisableSearchBoxSuggestions -ErrorAction Stop).DisableSearchBoxSuggestions } catch { $suggest=0 }; if($bing -eq 0 -or $suggest -eq 1){'Applied'} else {'Not Applied'}",
+    "applyScript": "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Name BingSearchEnabled -Type DWord -Value 0; New-Item -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer' -Name DisableSearchBoxSuggestions -Type DWord -Value 1",
+    "undoScript": "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search' -Name BingSearchEnabled -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer' -Name DisableSearchBoxSuggestions -ErrorAction SilentlyContinue",
+    "stateCaptureKeys": ["HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer"],
     "destructive": false
   },
   {
