@@ -145,7 +145,7 @@
   {
     "category": "Browsers",
     "displayName": "Firefox",
-    "wingetId": "Firefox.Firefox",
+    "wingetId": "Mozilla.Firefox",
     "chocoId": "",
     "silentArgs": "",
     "homepage": "",

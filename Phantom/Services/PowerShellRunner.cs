@@ -94,6 +94,12 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "system.",
         "home."
     ];
+    private static readonly string[] WingetFailureMarkers =
+    [
+        "No package found matching input criteria.",
+        "No package found among installed packages.",
+        "No installed package found matching input criteria."
+    ];
 
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
@@ -543,7 +549,15 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
             else if (success && ps.HadErrors)
             {
-                _console.Publish("Trace", "Runspace reported non-terminating errors; treating step as successful because the script completed.");
+                if (ContainsWingetFailureMarker(request.Script, combinedText))
+                {
+                    success = false;
+                    _console.Publish("Error", "Runspace completed but winget reported a package resolution failure.");
+                }
+                else
+                {
+                    _console.Publish("Trace", "Runspace reported non-terminating errors; treating step as successful because the script completed.");
+                }
             }
 
             _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combinedText.Length}");
@@ -689,21 +703,28 @@ public sealed class PowerShellRunner : IPowerShellRunner
         {
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
             await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
-            var success = process.ExitCode == 0;
             string outputText;
             lock (outputSync)
             {
                 outputText = outputBuilder.ToString();
             }
 
-            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={process.ExitCode}, success={success}, outputChars={outputText.Length}");
+            var success = process.ExitCode == 0;
+            if (success && ContainsWingetFailureMarker(request.Script, outputText))
+            {
+                success = false;
+                _console.Publish("Error", "External PowerShell completed but winget reported a package resolution failure.");
+            }
+
+            var effectiveExitCode = success ? process.ExitCode : (process.ExitCode == 0 ? 1 : process.ExitCode);
+            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={effectiveExitCode}, success={success}, outputChars={outputText.Length}");
 
             await _log.WriteAsync(success ? "Info" : "Error", outputText, cancellationToken).ConfigureAwait(false);
 
             return new PowerShellExecutionResult
             {
                 Success = success,
-                ExitCode = process.ExitCode,
+                ExitCode = effectiveExitCode,
                 CombinedOutput = outputText
             };
         }
@@ -1599,6 +1620,26 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         return ProgressLineRegex.IsMatch(line);
+    }
+
+    private static bool ContainsWingetFailureMarker(string script, string output)
+    {
+        if (string.IsNullOrWhiteSpace(script) ||
+            script.IndexOf("winget", StringComparison.OrdinalIgnoreCase) < 0 ||
+            string.IsNullOrWhiteSpace(output))
+        {
+            return false;
+        }
+
+        foreach (var marker in WingetFailureMarkers)
+        {
+            if (output.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryNormalizeConsoleLine(string line, out string normalized)
