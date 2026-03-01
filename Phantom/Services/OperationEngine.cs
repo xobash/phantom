@@ -211,10 +211,9 @@ public sealed class OperationEngine
                         continue;
                     }
 
-                    var proceedWithoutVerification = !request.InteractiveDangerousPrompt ||
-                                                     await request.ConfirmDangerousAsync(
-                                                             BuildForceDangerousVerificationPrompt(operation, currentState.StatusText))
-                                                         .ConfigureAwait(false);
+                    var proceedWithoutVerification = await request.ConfirmDangerousAsync(
+                            BuildForceDangerousVerificationPrompt(operation, currentState.StatusText))
+                        .ConfigureAwait(false);
                     if (!proceedWithoutVerification)
                     {
                         opResult.Cancelled = true;
