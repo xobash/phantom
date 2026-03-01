@@ -1332,12 +1332,23 @@ public sealed class PowerShellRunner : IPowerShellRunner
             foreach (var service in serviceNames)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var qc = await RunProcessAsync("sc.exe", ["qc", service], cancellationToken).ConfigureAwait(false);
-                var query = await RunProcessAsync("sc.exe", ["query", service], cancellationToken).ConfigureAwait(false);
+                string safeServiceName;
+                try
+                {
+                    safeServiceName = PowerShellInputSanitizer.EnsureServiceName(service, "Safety backup");
+                }
+                catch (ArgumentException ex)
+                {
+                    _console.Publish("Warning", $"Service backup skipped: {ex.Message}");
+                    continue;
+                }
 
-                var servicePath = Path.Combine(backupRoot, $"service-{index++:D2}-{SanitizeFileName(service)}.txt");
+                var qc = await RunProcessAsync("sc.exe", ["qc", safeServiceName], cancellationToken).ConfigureAwait(false);
+                var query = await RunProcessAsync("sc.exe", ["query", safeServiceName], cancellationToken).ConfigureAwait(false);
+
+                var servicePath = Path.Combine(backupRoot, $"service-{index++:D2}-{SanitizeFileName(safeServiceName)}.txt");
                 var content = new StringBuilder();
-                content.AppendLine($"Service: {service}");
+                content.AppendLine($"Service: {safeServiceName}");
                 content.AppendLine("--- sc qc ---");
                 content.AppendLine(string.IsNullOrWhiteSpace(qc.Stdout) ? qc.Stderr.Trim() : qc.Stdout.Trim());
                 content.AppendLine("--- sc query ---");
