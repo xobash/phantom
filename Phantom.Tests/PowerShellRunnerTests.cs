@@ -104,4 +104,58 @@ public sealed class PowerShellRunnerTests
         Assert.False(result.Success);
         Assert.Contains("trusted catalog allowlist", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_FailsRunspaceStep_WhenWingetReportsNoPackageFound()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "store.app.firefox",
+            StepName = "install",
+            Script = "$ErrorActionPreference='Continue'; Write-Error 'No package found matching input criteria.'; $null = 'winget install --id Mozilla.Firefox';",
+            DryRun = false,
+            SkipSafetyBackup = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("No package found matching input criteria.", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AllowsNonTerminatingRunspaceError_WhenNoWingetFailureMarkerPresent()
+    {
+        var settings = new AppSettings
+        {
+            EnforceScriptSafetyGuards = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "store.app.firefox",
+            StepName = "install",
+            Script = "$ErrorActionPreference='Continue'; Write-Error 'simulated non-terminating warning'; $null = 'winget install --id Mozilla.Firefox';",
+            DryRun = false,
+            SkipSafetyBackup = true
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("simulated non-terminating warning", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
 }
