@@ -40,6 +40,17 @@ public sealed class PowerShellQueryService
             await _log.WriteAsync("Trace", $"PowerShellQuery body omitted. hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
         }
 
+        if (!PowerShellRunner.ValidateScriptSafetyGuards(script, out var blockedReason))
+        {
+            var blocked = $"Blocked PowerShell query script: {blockedReason}";
+            if (echoToConsole)
+            {
+                _console.Publish("Error", blocked, persist: false);
+            }
+            await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            return (1, string.Empty, blocked);
+        }
+
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
             const string notWindows = "Not running on Windows.";

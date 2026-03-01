@@ -1,5 +1,6 @@
 using Phantom.Models;
 using System.Threading;
+using System.Diagnostics;
 
 namespace Phantom.Services;
 
@@ -81,14 +82,16 @@ public sealed class ConsoleStreamService
         }
     }
 
-    private static async Task PersistAsync(Func<PowerShellOutputEvent, CancellationToken, Task> sink, PowerShellOutputEvent evt)
+    private async Task PersistAsync(Func<PowerShellOutputEvent, CancellationToken, Task> sink, PowerShellOutputEvent evt)
     {
         try
         {
             await sink(evt, CancellationToken.None).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning($"ConsoleStreamService persistent sink failed: {ex}");
+            Publish("Warning", $"Console persistence warning: {ex.Message}", persist: false);
         }
     }
 

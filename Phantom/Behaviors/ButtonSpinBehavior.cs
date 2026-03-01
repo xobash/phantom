@@ -58,6 +58,7 @@ public static class ButtonSpinBehavior
     {
         button.Click -= OnButtonClick;
         button.Unloaded -= OnButtonUnloaded;
+        ClearSpinState(button);
     }
 
     private static void OnButtonUnloaded(object sender, RoutedEventArgs e)
@@ -129,6 +130,33 @@ public static class ButtonSpinBehavior
         var state = new SpinState(rotate);
         SetSpinState(button, state);
         return state;
+    }
+
+    private static void ClearSpinState(Button button)
+    {
+        var state = GetSpinState(button);
+        if (state is null)
+        {
+            return;
+        }
+
+        state.Rotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        state.Rotate.Angle = 0;
+
+        if (button.RenderTransform is TransformGroup group)
+        {
+            group.Children.Remove(state.Rotate);
+            if (group.Children.Count == 1)
+            {
+                button.RenderTransform = group.Children[0];
+            }
+            else if (group.Children.Count == 0)
+            {
+                button.RenderTransform = Transform.Identity;
+            }
+        }
+
+        SetSpinState(button, null);
     }
 
     private sealed class SpinState

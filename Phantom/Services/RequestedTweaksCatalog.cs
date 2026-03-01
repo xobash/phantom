@@ -947,8 +947,8 @@ internal static class RequestedTweaksCatalog
             Scope = scope,
             Reversible = reversible,
             DetectScript = WrapDetectScript(detectScript),
-            ApplyScript = applyScript,
-            UndoScript = undoScript,
+            ApplyScript = WrapMutationScript(applyScript),
+            UndoScript = WrapMutationScript(undoScript),
             Destructive = destructive,
             StateCaptureKeys = []
         };
@@ -969,5 +969,13 @@ internal static class RequestedTweaksCatalog
                "  $___phantomDetect='Not Applied'\n" +
                "}\n" +
                "$___phantomDetect";
+    }
+
+    private static string WrapMutationScript(string script)
+    {
+        var body = (script ?? string.Empty).Trim();
+        return "$ErrorActionPreference='Stop'\n" +
+               "Set-StrictMode -Version Latest\n" +
+               body;
     }
 }

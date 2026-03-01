@@ -8,7 +8,7 @@ using Phantom.Services;
 
 namespace Phantom.ViewModels;
 
-public sealed class HomeViewModel : ObservableObject, ISectionViewModel
+public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
     private const string PerformanceTooltipText = "Windows Experience Index (WinSAT). Base score is the lowest subscore, max 9.9.";
 
@@ -18,9 +18,12 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     private readonly ConsoleStreamService _console;
     private readonly DispatcherTimer _timer;
     private readonly DispatcherTimer _fastMetricsTimer;
+    private readonly EventHandler _refreshTickHandler;
+    private readonly EventHandler _fastMetricsTickHandler;
 
     private bool _isRefreshing;
     private bool _isFastMetricsRefreshing;
+    private bool _disposed;
     private int _refreshQueued;
     private int _fastRefreshQueued;
     private CancellationTokenSource? _refreshCts;
@@ -48,17 +51,32 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
         {
             Interval = TimeSpan.FromSeconds(Math.Max(2, _settingsAccessor().HomeRefreshSeconds))
         };
-        _timer.Tick += (_, _) => RequestRefresh(forceIfBusy: false);
+        _refreshTickHandler = (_, _) =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            RequestRefresh(forceIfBusy: false);
+        };
+        _timer.Tick += _refreshTickHandler;
 
         _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Send)
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _fastMetricsTimer.Tick += (_, _) =>
+        _fastMetricsTickHandler = (_, _) =>
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             TickUptimeDisplay();
             _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
         };
+        _fastMetricsTimer.Tick += _fastMetricsTickHandler;
     }
 
     public string Title => "Home";
@@ -82,6 +100,27 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel
     {
         _timer.Stop();
         _fastMetricsTimer.Stop();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _timer.Stop();
+        _timer.Tick -= _refreshTickHandler;
+        _fastMetricsTimer.Stop();
+        _fastMetricsTimer.Tick -= _fastMetricsTickHandler;
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+        _refreshCts = null;
+        _fastRefreshCts?.Cancel();
+        _fastRefreshCts?.Dispose();
+        _fastRefreshCts = null;
+        GC.SuppressFinalize(this);
     }
 
     private void RequestRefresh(bool forceIfBusy)

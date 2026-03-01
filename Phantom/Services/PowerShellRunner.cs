@@ -48,7 +48,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "onedrivesetup.exe"
     };
     private static readonly Regex DownloadCommandRegex = new(@"\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm|curl|wget|Start-BitsTransfer|DownloadString)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex EncodedCommandRegex = new(@"\B-(?:enc|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex EncodedCommandRegex = new(@"\B-(?:e|en|enc|enco|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex UnsafeLanguageFeatureRegex = new(@"\b(?:Add-Type|Invoke-Command|Start-Job|Register-ScheduledJob)\b|FromBase64String\s*\(|System\.Reflection\.Assembly\s*::\s*Load", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex AlternateDataStreamRegex = new(@"[A-Za-z]:\\[^|;\r\n]*:[^\\/\r\n]+", RegexOptions.Compiled);
     private static readonly Regex StartProcessLiteralRegex = new(@"Start-Process(?:\s+-FilePath)?\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -80,6 +80,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "DownloadFile",
         "OpenRead"
     };
+    private static readonly HashSet<string> PowerShellHostCommandNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "powershell",
+        "powershell.exe",
+        "pwsh",
+        "pwsh.exe"
+    };
     private static readonly string[] AllowedOperationPrefixes =
     [
         "tweak.",
@@ -104,7 +111,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
     private readonly AppPaths _paths;
-    private readonly Func<AppSettings> _settingsAccessor;
     private readonly HashSet<string> _trustedCatalogScriptHashes;
 
     public PowerShellRunner(ConsoleStreamService console, LogService log, AppPaths paths, Func<AppSettings> settingsAccessor)
@@ -112,7 +118,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         _console = console;
         _log = log;
         _paths = paths;
-        _settingsAccessor = settingsAccessor;
+        _ = settingsAccessor;
         _trustedCatalogScriptHashes = BuildTrustedCatalogScriptHashAllowlist(paths);
     }
 
@@ -152,7 +158,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             };
         }
 
-        if (!ValidateScriptSafety(request.Script, out var blockedReason))
+        if (!ValidateScriptSafetyGuards(request.Script, out var blockedReason))
         {
             _console.Publish("Error", $"{request.OperationId}/{request.StepName}: {blockedReason}");
             await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {blockedReason}", cancellationToken).ConfigureAwait(false);
@@ -748,18 +754,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
     }
 
-    private bool ValidateScriptSafety(string script, out string reason)
+    internal static bool ValidateScriptSafetyGuards(string script, out string reason)
     {
         reason = string.Empty;
 
-        if (!_settingsAccessor().EnforceScriptSafetyGuards)
-        {
-            return true;
-        }
-
         if (EncodedCommandRegex.IsMatch(script))
         {
-            reason = "Blocked encoded command invocation pattern (-EncodedCommand/-enc).";
+            reason = "Blocked encoded command invocation pattern (-EncodedCommand aliases).";
             return false;
         }
 
@@ -852,6 +853,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
             var commandName = command.GetCommandName();
             if (!string.IsNullOrWhiteSpace(commandName))
             {
+                if (IsPowerShellHostCommand(commandName) &&
+                    CommandContainsEncodedCommandParameter(command, out var encodedParameterAlias))
+                {
+                    reason = $"Blocked encoded command argument '-{encodedParameterAlias}' in host invocation '{commandName}'.";
+                    return false;
+                }
+
                 if (DynamicInvokeAliases.Contains(commandName))
                 {
                     reason = $"Blocked dynamic script execution command '{commandName}'.";
@@ -876,7 +884,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         return true;
     }
 
-    private bool ValidateDownloadSafety(string script, out string reason)
+    private static bool ValidateDownloadSafety(string script, out string reason)
     {
         reason = string.Empty;
         if (!DownloadCommandRegex.IsMatch(script))
@@ -940,7 +948,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         return true;
     }
 
-    private bool ValidateDownloadCommandAst(CommandAst command, out string reason)
+    private static bool ValidateDownloadCommandAst(CommandAst command, out string reason)
     {
         reason = string.Empty;
         var commandName = command.GetCommandName() ?? "<dynamic>";
@@ -1010,7 +1018,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 parameterName.Equals("Url", StringComparison.OrdinalIgnoreCase));
     }
 
-    private bool ValidateDownloadMemberInvocations(ScriptBlockAst ast, out string reason)
+    private static bool ValidateDownloadMemberInvocations(ScriptBlockAst ast, out string reason)
     {
         reason = string.Empty;
         foreach (var invokeMember in ast.FindAll(static n => n is InvokeMemberExpressionAst, searchNestedScriptBlocks: true).OfType<InvokeMemberExpressionAst>())
@@ -1117,14 +1125,48 @@ public sealed class PowerShellRunner : IPowerShellRunner
         return raw[1..^1];
     }
 
+    private static bool IsPowerShellHostCommand(string commandName)
+    {
+        var trimmed = commandName.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileName(trimmed);
+        return PowerShellHostCommandNames.Contains(fileName);
+    }
+
+    private static bool CommandContainsEncodedCommandParameter(CommandAst command, out string parameterAlias)
+    {
+        parameterAlias = string.Empty;
+        foreach (var parameter in command.CommandElements.OfType<CommandParameterAst>())
+        {
+            var name = parameter.ParameterName?.Trim() ?? string.Empty;
+            if (IsEncodedCommandParameterAlias(name))
+            {
+                parameterAlias = name;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsEncodedCommandParameterAlias(string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(parameterName))
+        {
+            return false;
+        }
+
+        var normalized = parameterName.Trim().TrimStart('-');
+        return "encodedcommand".StartsWith(normalized, StringComparison.OrdinalIgnoreCase);
+    }
+
     private bool ValidateOperationAllowlist(string operationId, out string reason)
     {
         reason = string.Empty;
-        if (!_settingsAccessor().EnforceScriptSafetyGuards)
-        {
-            return true;
-        }
-
         if (AllowedOperationPrefixes.Any(prefix => operationId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
         {
             return true;
@@ -1137,11 +1179,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private bool ValidateCatalogScriptAllowlist(string operationId, string scriptHash, out string reason)
     {
         reason = string.Empty;
-        if (!_settingsAccessor().EnforceScriptSafetyGuards)
-        {
-            return true;
-        }
-
         if (!IsCatalogBackedOperation(operationId))
         {
             return true;

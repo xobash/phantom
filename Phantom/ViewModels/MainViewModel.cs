@@ -347,7 +347,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _disposed = true;
         _console.MessageReceived -= _consoleMessageReceivedHandler;
         _executionCoordinator.RunningChanged -= _runningChangedHandler;
-        Home.StopTimer();
+        if (Home is IDisposable disposableHome)
+        {
+            disposableHome.Dispose();
+        }
+        else
+        {
+            Home.StopTimer();
+        }
+
         if (Tweaks is IDisposable disposableTweaks)
         {
             disposableTweaks.Dispose();
