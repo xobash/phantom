@@ -114,8 +114,14 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var name = EscapeSingleQuotes(service.Name);
-        return ExecuteScriptAsync("services.stop", service.Name, $"Stop-Service -Name '{name}' -Force -ErrorAction Stop", cancellationToken, refreshAfter: true);
+        var safeName = TryGetSafeServiceName(service, "services.stop");
+        if (safeName is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var script = $"Stop-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -Force -ErrorAction Stop";
+        return ExecuteScriptAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private Task RestartServiceAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -125,8 +131,14 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var name = EscapeSingleQuotes(service.Name);
-        return ExecuteScriptAsync("services.restart", service.Name, $"Restart-Service -Name '{name}' -Force -ErrorAction Stop", cancellationToken, refreshAfter: true);
+        var safeName = TryGetSafeServiceName(service, "services.restart");
+        if (safeName is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var script = $"Restart-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -Force -ErrorAction Stop";
+        return ExecuteScriptAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private Task BrowseServiceLocationAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -183,9 +195,14 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var name = EscapeSingleQuotes(service.Name);
-        var script = $"Set-Service -Name '{name}' -StartupType {safeMode}";
-        return ExecuteScriptAsync($"services.mode.{safeMode.ToLowerInvariant()}", service.Name, script, cancellationToken, refreshAfter: true);
+        var safeName = TryGetSafeServiceName(service, $"services.mode.{safeMode.ToLowerInvariant()}");
+        if (safeName is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var script = $"Set-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -StartupType {safeMode}";
+        return ExecuteScriptAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private async Task ExecuteScriptAsync(string operationId, string serviceName, string script, CancellationToken cancellationToken, bool refreshAfter)
@@ -255,6 +272,19 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
     }
 
     private static string EscapeSingleQuotes(string text) => PowerShellInputSanitizer.EscapeSingleQuotes(text);
+
+    private string? TryGetSafeServiceName(ServiceInfoRow service, string context)
+    {
+        try
+        {
+            return PowerShellInputSanitizer.EnsureServiceName(service.Name, context);
+        }
+        catch (ArgumentException ex)
+        {
+            _console.Publish("Error", ex.Message);
+            return null;
+        }
+    }
 
     private static string ResolveSummary(ServiceInfoRow service)
     {

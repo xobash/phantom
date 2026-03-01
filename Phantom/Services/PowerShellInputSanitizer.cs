@@ -7,6 +7,7 @@ public static class PowerShellInputSanitizer
     private static readonly Regex PackageIdRegex = new("^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex PackageQueryRegex = new("^[A-Za-z0-9.][A-Za-z0-9 ._()+/-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex FeatureNameRegex = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.Compiled);
+    private static readonly Regex ServiceNameRegex = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex SafeArgumentRegex = new("^[A-Za-z0-9\\s._:/=+,%\\\\-]{0,256}$", RegexOptions.Compiled);
 
     public static string EnsurePackageId(string? value, string context)
@@ -87,6 +88,22 @@ public static class PowerShellInputSanitizer
             "disabled" => "Disabled",
             _ => throw new ArgumentException($"Invalid service startup mode '{mode}'.")
         };
+    }
+
+    public static string EnsureServiceName(string? value, string context)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException($"{context}: service name is required.");
+        }
+
+        if (!ServiceNameRegex.IsMatch(trimmed))
+        {
+            throw new ArgumentException($"{context}: invalid service name '{trimmed}'.");
+        }
+
+        return trimmed;
     }
 
     public static string EnsureSafeLegacyLaunchScript(string? script, string context)
