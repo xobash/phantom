@@ -212,7 +212,9 @@ public sealed class OperationEngine
                     }
 
                     var proceedWithoutVerification = !request.InteractiveDangerousPrompt ||
-                                                     await request.ConfirmDangerousAsync("Detect/verification failed. Proceed anyway? (Y/N)").ConfigureAwait(false);
+                                                     await request.ConfirmDangerousAsync(
+                                                             BuildForceDangerousVerificationPrompt(operation, currentState.StatusText))
+                                                         .ConfigureAwait(false);
                     if (!proceedWithoutVerification)
                     {
                         opResult.Cancelled = true;
@@ -591,6 +593,12 @@ public sealed class OperationEngine
         return desiredApplied
             ? state == OperationDetectState.Applied
             : state == OperationDetectState.NotApplied;
+    }
+
+    private static string BuildForceDangerousVerificationPrompt(OperationDefinition operation, string verificationStatus)
+    {
+        var status = string.IsNullOrWhiteSpace(verificationStatus) ? "Unknown" : verificationStatus.Trim();
+        return $"[{operation.Id}] {operation.Title} (Risk: {operation.RiskTier}) detect/verification failed with status '{status}'. Proceed anyway? (Y/N)";
     }
 
     private static bool ShouldPreferProcessMode(string operationId, string stepName)

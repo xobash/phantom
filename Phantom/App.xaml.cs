@@ -12,6 +12,8 @@ namespace Phantom;
 
 public partial class App : Application
 {
+    private const long EmergencyStartupLogMaxBytes = 10 * 1024 * 1024;
+    private const int EmergencyStartupLogArchiveLimit = 3;
     private AppBootstrap? _bootstrap;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -216,8 +218,49 @@ public partial class App : Application
                 "app");
             var logsDir = Path.Combine(appRoot, "logs");
             Directory.CreateDirectory(logsDir);
+            var logPath = Path.Combine(logsDir, "startup-emergency.log");
+            RotateEmergencyStartupTraceIfNeeded(logsDir, logPath);
             var line = $"[{DateTimeOffset.Now:O}] [Emergency] {message}{Environment.NewLine}";
-            File.AppendAllText(Path.Combine(logsDir, "startup-emergency.log"), line);
+            File.AppendAllText(logPath, line);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void RotateEmergencyStartupTraceIfNeeded(string logsDir, string logPath)
+    {
+        try
+        {
+            if (!File.Exists(logPath))
+            {
+                return;
+            }
+
+            var currentLog = new FileInfo(logPath);
+            if (currentLog.Length < EmergencyStartupLogMaxBytes)
+            {
+                return;
+            }
+
+            var archivePath = Path.Combine(logsDir, $"startup-emergency.{DateTimeOffset.Now:yyyyMMdd-HHmmss}.log");
+            File.Move(logPath, archivePath, overwrite: true);
+
+            var archives = Directory.GetFiles(logsDir, "startup-emergency.*.log")
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(info => info.LastWriteTimeUtc)
+                .ToList();
+
+            foreach (var stale in archives.Skip(EmergencyStartupLogArchiveLimit))
+            {
+                try
+                {
+                    stale.Delete();
+                }
+                catch
+                {
+                }
+            }
         }
         catch
         {
