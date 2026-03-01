@@ -56,8 +56,8 @@
 
             <Border Style="{StaticResource DarkCardStyle}">
                 <StackPanel>
-                    <CheckBox Content="Enforce script safety guards" IsChecked="{Binding EnforceScriptSafetyGuards}" Style="{StaticResource DarkCheckBoxStyle}"/>
-                    <TextBlock Text="Blocks dynamic script execution patterns and untrusted download hosts." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                    <TextBlock Text="Script safety guards are always enabled." FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                    <TextBlock Text="Dynamic execution patterns, encoded command aliases, and untrusted download hosts are blocked by default." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
                 </StackPanel>
             </Border>
 

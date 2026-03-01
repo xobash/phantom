@@ -6,7 +6,6 @@ public sealed class AppSettings
     public string ThemeMode { get; set; } = AppThemeModes.Auto;
     public bool EnableDestructiveOperations { get; set; }
     public bool CreateRestorePointBeforeDangerousOperations { get; set; }
-    public bool EnforceScriptSafetyGuards { get; set; } = true;
     public int HomeRefreshSeconds { get; set; } = 5;
     public int MaxLogFiles { get; set; } = 20;
     public long MaxTotalLogSizeBytes { get; set; } = 50 * 1024 * 1024;

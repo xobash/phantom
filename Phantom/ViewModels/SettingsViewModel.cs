@@ -102,19 +102,6 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         }
     }
 
-    public bool EnforceScriptSafetyGuards
-    {
-        get => _settings.EnforceScriptSafetyGuards;
-        set
-        {
-            if (_settings.EnforceScriptSafetyGuards != value)
-            {
-                _settings.EnforceScriptSafetyGuards = value;
-                Notify();
-            }
-        }
-    }
-
     public int HomeRefreshSeconds
     {
         get => _settings.HomeRefreshSeconds;
@@ -191,7 +178,6 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         Notify(nameof(UseDarkMode));
         Notify(nameof(EnableDestructiveOperations));
         Notify(nameof(CreateRestorePointBeforeDangerousOperations));
-        Notify(nameof(EnforceScriptSafetyGuards));
         Notify(nameof(HomeRefreshSeconds));
         Notify(nameof(MaxLogFiles));
         Notify(nameof(MaxTotalLogSizeBytes));

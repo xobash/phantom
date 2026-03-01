@@ -8,10 +8,7 @@ public sealed class PowerShellRunnerTests
     [Fact]
     public async Task ExecuteAsync_BlocksDynamicScriptExecution_WhenSafetyGuardsEnabled()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
@@ -33,10 +30,7 @@ public sealed class PowerShellRunnerTests
     [Fact]
     public async Task ExecuteAsync_BlocksUntrustedDownloadHost_WhenSafetyGuardsEnabled()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
@@ -56,12 +50,31 @@ public sealed class PowerShellRunnerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_BlocksEncodedCommandAliasInvocation()
+    {
+        var settings = new AppSettings();
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.encoded",
+            StepName = "apply",
+            Script = "powershell -e SQBFAFgAIAAnAGMAYQBsAGMALgBlAHgAZQAnAA==",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("encoded command", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_AllowsTrustedHost_WhenDryRun()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
@@ -83,10 +96,7 @@ public sealed class PowerShellRunnerTests
     [Fact]
     public async Task ExecuteAsync_BlocksUncatalogedTweakScript_WhenCatalogAllowlistEnabled()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
@@ -108,10 +118,7 @@ public sealed class PowerShellRunnerTests
     [Fact]
     public async Task ExecuteAsync_FailsRunspaceStep_WhenWingetReportsNoPackageFound()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
@@ -135,10 +142,7 @@ public sealed class PowerShellRunnerTests
     [Fact]
     public async Task ExecuteAsync_AllowsNonTerminatingRunspaceError_WhenNoWingetFailureMarkerPresent()
     {
-        var settings = new AppSettings
-        {
-            EnforceScriptSafetyGuards = true
-        };
+        var settings = new AppSettings();
 
         var paths = TestHelpers.CreateIsolatedPaths();
         var console = new ConsoleStreamService();
