@@ -1,11 +1,21 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Reflection;
 using System.Windows;
+using System.Windows.Documents;
 using Phantom.Commands;
 using Phantom.Models;
 using Phantom.Services;
 
 namespace Phantom.ViewModels;
+
+public enum AboutReadmeLoadState
+{
+    NotLoaded,
+    Loading,
+    Loaded,
+    Error
+}
 
 public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 {
@@ -16,10 +26,16 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     private readonly SettingsProvider _provider;
     private readonly ThemeService _theme;
     private readonly AppPaths _paths;
+    private readonly SemaphoreSlim _readmeLoadGate = new(1, 1);
 
     private AppSettings _settings = new();
     private string _selectedLog = string.Empty;
     private string _selectedLogContent = string.Empty;
+    private bool _isAboutExpanded;
+    private string _readmeMarkdown = string.Empty;
+    private FlowDocument _readmeDocument = new();
+    private AboutReadmeLoadState _readmeLoadState = AboutReadmeLoadState.NotLoaded;
+    private string _readmeErrorText = string.Empty;
 
     public SettingsViewModel(SettingsStore store, LogService logService, SettingsProvider provider, ThemeService theme, AppPaths paths)
     {
@@ -28,6 +44,12 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         _provider = provider;
         _theme = theme;
         _paths = paths;
+
+        AppDisplayName = ResolveAppDisplayName();
+        AppVersion = ResolveAppVersion();
+        AppDisplayWithVersion = $"{AppDisplayName} {AppVersion}";
+        AboutSummary = "Local-first Windows admin utility focused on safe, reversible system operations.";
+
         LogFiles = new ObservableCollection<string>();
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         RefreshLogsCommand = new AsyncRelayCommand(RefreshLogsAsync);
@@ -43,6 +65,69 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     public ObservableCollection<string> LogFiles { get; }
 
     public IReadOnlyList<string> ThemeModes => ThemeModeOptions;
+
+    public string AppDisplayName { get; }
+    public string AppVersion { get; }
+    public string AppDisplayWithVersion { get; }
+    public string AboutSummary { get; }
+
+    public bool IsAboutExpanded
+    {
+        get => _isAboutExpanded;
+        set
+        {
+            if (!SetProperty(ref _isAboutExpanded, value))
+            {
+                return;
+            }
+
+            Notify(nameof(AboutChevronGlyph));
+            if (_isAboutExpanded)
+            {
+                _ = EnsureReadmeLoadedAsync();
+            }
+        }
+    }
+
+    public string AboutChevronGlyph => _isAboutExpanded ? "\uE70E" : "\uE70D";
+
+    public string ReadmeMarkdown
+    {
+        get => _readmeMarkdown;
+        private set => SetProperty(ref _readmeMarkdown, value);
+    }
+
+    public FlowDocument ReadmeDocument
+    {
+        get => _readmeDocument;
+        private set => SetProperty(ref _readmeDocument, value);
+    }
+
+    public AboutReadmeLoadState ReadmeLoadState
+    {
+        get => _readmeLoadState;
+        private set
+        {
+            if (!SetProperty(ref _readmeLoadState, value))
+            {
+                return;
+            }
+
+            Notify(nameof(IsReadmeLoading));
+            Notify(nameof(HasReadmeError));
+            Notify(nameof(HasReadmeContent));
+        }
+    }
+
+    public string ReadmeErrorText
+    {
+        get => _readmeErrorText;
+        private set => SetProperty(ref _readmeErrorText, value);
+    }
+
+    public bool IsReadmeLoading => ReadmeLoadState == AboutReadmeLoadState.Loading;
+    public bool HasReadmeError => ReadmeLoadState == AboutReadmeLoadState.Error;
+    public bool HasReadmeContent => ReadmeLoadState == AboutReadmeLoadState.Loaded;
 
     public string SelectedThemeMode
     {
@@ -265,5 +350,130 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
             await Application.Current.Dispatcher.InvokeAsync(() =>
                 SelectedLogContent = $"Failed to load log file:{Environment.NewLine}{ex.Message}");
         }
+    }
+
+    private async Task EnsureReadmeLoadedAsync()
+    {
+        if (ReadmeLoadState == AboutReadmeLoadState.Loaded || ReadmeLoadState == AboutReadmeLoadState.Loading)
+        {
+            return;
+        }
+
+        await _readmeLoadGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (ReadmeLoadState == AboutReadmeLoadState.Loaded || ReadmeLoadState == AboutReadmeLoadState.Loading)
+            {
+                return;
+            }
+
+            await Application.Current.Dispatcher.InvokeAsync(() => ReadmeLoadState = AboutReadmeLoadState.Loading);
+
+            var readmePath = Path.Combine(AppContext.BaseDirectory, "README.md");
+            if (!File.Exists(readmePath))
+            {
+                await SetReadmeErrorAsync("README not available.", $"README file was not found at {readmePath}.").ConfigureAwait(false);
+                return;
+            }
+
+            var markdown = await File.ReadAllTextAsync(readmePath).ConfigureAwait(false);
+            var document = await Application.Current.Dispatcher.InvokeAsync(() =>
+                ReadmeMarkdownRenderer.Render(markdown, OpenReadmeLink));
+
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                ReadmeMarkdown = markdown;
+                ReadmeDocument = document;
+                ReadmeErrorText = string.Empty;
+                ReadmeLoadState = AboutReadmeLoadState.Loaded;
+            });
+        }
+        catch (Exception ex)
+        {
+            await SetReadmeErrorAsync("README not available.", $"README load failed: {ex.Message}").ConfigureAwait(false);
+        }
+        finally
+        {
+            _readmeLoadGate.Release();
+        }
+    }
+
+    private async Task SetReadmeErrorAsync(string userMessage, string diagnostic)
+    {
+        try
+        {
+            await _logService.WriteAsync("Error", diagnostic, echoToConsole: false).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Do not fail the Settings UI if log persistence fails.
+        }
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            ReadmeErrorText = userMessage;
+            ReadmeLoadState = AboutReadmeLoadState.Error;
+        });
+    }
+
+    private void OpenReadmeLink(Uri uri)
+    {
+        if (!IsAllowedReadmeLink(uri))
+        {
+            _ = _logService.WriteAsync("Warning", $"Blocked unsupported README link scheme: {uri}", echoToConsole: false);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = uri.AbsoluteUri,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _ = _logService.WriteAsync("Error", $"Failed to open README link '{uri}': {ex.Message}", echoToConsole: false);
+        }
+    }
+
+    private static bool IsAllowedReadmeLink(Uri uri)
+    {
+        if (!uri.IsAbsoluteUri)
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveAppDisplayName()
+    {
+        var assembly = Assembly.GetEntryAssembly() ?? typeof(SettingsViewModel).Assembly;
+        return assembly.GetCustomAttribute<AssemblyProductAttribute>()?.Product
+               ?? assembly.GetName().Name
+               ?? "Phantom";
+    }
+
+    private static string ResolveAppVersion()
+    {
+        var assembly = Assembly.GetEntryAssembly() ?? typeof(SettingsViewModel).Assembly;
+        var infoVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(infoVersion))
+        {
+            return infoVersion.Split('+')[0].Trim();
+        }
+
+        var version = assembly.GetName().Version;
+        if (version is null)
+        {
+            return "0.0.0";
+        }
+
+        return version.Build >= 0
+            ? $"{version.Major}.{version.Minor}.{version.Build}"
+            : $"{version.Major}.{version.Minor}";
     }
 }
