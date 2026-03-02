@@ -35,6 +35,8 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
+        HomeCardIconCatalog.ValidateRequiredMappings();
+
         _homeData = homeData;
         _telemetryStore = telemetryStore;
         _settingsAccessor = settingsAccessor;
@@ -262,11 +264,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             var score = await _homeData.RunWinsatScoreAsync(cancellationToken).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                var index = TopCards.ToList().FindIndex(c => c.Title == "Performance");
-                if (index >= 0)
-                {
-                    TopCards[index] = new HomeCard { Title = "Performance", Value = score, Tooltip = PerformanceTooltipText };
-                }
+                UpsertTopCard("Performance", score, PerformanceTooltipText);
             });
         }
         catch (Exception ex)
@@ -356,7 +354,8 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         {
             Title = title,
             Value = value,
-            Tooltip = tooltip
+            Tooltip = tooltip,
+            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph(title)
         };
 
         if (index >= 0)
@@ -378,7 +377,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             Value = value,
             SecondaryValue = cleanSecondary,
             HasSecondaryValue = !string.IsNullOrWhiteSpace(cleanSecondary),
-            IconGlyph = ResolveKpiIcon(title)
+            IconGlyph = HomeCardIconCatalog.GetKpiGlyph(title)
         };
 
         if (index >= 0)
@@ -388,22 +387,6 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         }
 
         KpiTiles.Add(next);
-    }
-
-    private static string ResolveKpiIcon(string title)
-    {
-        return title.ToLowerInvariant() switch
-        {
-            "apps" => "\uE71D",
-            "processes" => "\uE9F5",
-            "services" => "\uE895",
-            "space cleaned" => "\uE74D",
-            "cpu %" => "\uEA80",
-            "memory %" => "\uE950",
-            "gpu %" => "\uE7FC",
-            "network" => "\uE968",
-            _ => "\uE9D9"
-        };
     }
 
     private static string FormatBytes(long bytes)
@@ -430,7 +413,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     {
         if (string.IsNullOrWhiteSpace(networkText))
         {
-            return ("↑0 B/s ↓0 B/s", "0 B");
+            return ("↑ 0 B/s ↓ 0 B/s", "0 B");
         }
 
         var lines = networkText
@@ -440,7 +423,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
         if (lines.Count == 0)
         {
-            return ("↑0 B/s ↓0 B/s", "0 B");
+            return ("↑ 0 B/s ↓ 0 B/s", "0 B");
         }
 
         if (lines[0].Contains('↑') || lines[0].Contains('↓'))
@@ -452,7 +435,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
                 var rates = compactLine[..bulletIndex].Trim();
                 var totalFromInline = compactLine[(bulletIndex + 1)..].Trim();
                 var totalInline = totalFromInline.Length == 0 ? "0 B" : totalFromInline;
-                return (rates.Length == 0 ? "↑0 B/s ↓0 B/s" : rates, totalInline);
+                return (rates.Length == 0 ? "↑ 0 B/s ↓ 0 B/s" : rates, totalInline);
             }
 
             var total = lines.Count > 1 ? CompactNetworkValue(lines[1]) : "0 B";
@@ -467,7 +450,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             session = lines.Count > 2 ? lines[2] : "0 B";
         }
 
-        return ($"↑{CompactNetworkValue(upload)} ↓{CompactNetworkValue(download)}", CompactNetworkValue(session));
+        return ($"↑ {CompactNetworkValue(upload)} ↓ {CompactNetworkValue(download)}", CompactNetworkValue(session));
     }
 
     private static string ExtractNetworkValue(IReadOnlyList<string> lines, string key)
@@ -497,8 +480,17 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             .Replace("  ", " ")
             .Trim();
 
-        return CompactNetworkValue(raw)
+        var normalized = CompactNetworkValue(raw)
+            .Replace("↑", "↑ ", StringComparison.Ordinal)
+            .Replace("↓", "↓ ", StringComparison.Ordinal)
             .Replace(" • ", " • ", StringComparison.Ordinal);
+
+        while (normalized.Contains("  ", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        return normalized.Trim();
     }
 
     private static string CompactNetworkValue(string value)
@@ -617,7 +609,8 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         TopCards[uptimeIndex] = new HomeCard
         {
             Title = "Uptime",
-            Value = FormatUptime(safeSeconds)
+            Value = FormatUptime(safeSeconds),
+            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph("Uptime")
         };
     }
 }

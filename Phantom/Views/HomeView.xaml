@@ -5,153 +5,196 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              Background="{DynamicResource AppBgBrush}">
-    <Grid Background="{DynamicResource AppBgBrush}">
+    <UserControl.Resources>
+        <Style x:Key="HomeCompactCardStyle" TargetType="Border" BasedOn="{StaticResource DarkCardStyle}">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="CornerRadius" Value="10"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="{DynamicResource AppBgBrush}" ClipToBounds="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Margin="4">
-            <TextBlock Text="Home Dashboard" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,12,0"/>
-            <Button Margin="4"
+        <DockPanel Grid.Row="0" LastChildFill="False" Margin="6,4,6,6">
+            <TextBlock Text="Home Dashboard"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <Button Margin="12,0,0,0"
                     Command="{Binding RefreshCommand}"
                     Style="{StaticResource RefreshIconButtonStyle}"
                     ToolTip="Refresh home snapshot"/>
-        </StackPanel>
+        </DockPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <ItemsControl ItemsSource="{Binding TopCards}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <UniformGrid Columns="2"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource DarkCardStyle}"
-                                    ToolTip="{Binding Tooltip}"
-                                    Cursor="Hand"
-                                    Tag="{Binding Title}"
-                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-                                    <DockPanel Grid.Row="0" LastChildFill="False">
-                                        <Button DockPanel.Dock="Right"
-                                                Width="32"
-                                                Height="32"
-                                                Padding="0"
-                                                Margin="8,0,0,0"
-                                                Command="{Binding DataContext.RunWinsatCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                ToolTip="Run Windows Experience Index benchmark (WinSAT)">
-                                            <Button.Style>
-                                                <Style TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Title}" Value="Performance">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                            <Viewbox Width="16" Height="16" Stretch="Uniform">
-                                                <Path Stroke="{DynamicResource DarkTextBrush}"
-                                                      StrokeThickness="1.8"
-                                                      Fill="Transparent"
-                                                      StrokeStartLineCap="Round"
-                                                      StrokeEndLineCap="Round"
-                                                      StrokeLineJoin="Round"
-                                                      Data="M12,2 C8.8,5.3 7.8,8.1 7.8,10.5 C7.8,13.4 9.8,15.5 12.3,15.5 C14.8,15.5 16.8,13.4 16.8,10.5 C16.8,8.2 15.6,5.4 12,2 Z M12.3,8.1 C11.1,9.3 10.8,10.3 10.8,11.3 C10.8,12.4 11.6,13.2 12.3,13.2 C13,13.2 13.8,12.4 13.8,11.3 C13.8,10.3 13.5,9.3 12.3,8.1 Z"/>
-                                            </Viewbox>
-                                        </Button>
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </DockPanel>
-                                    <TextBlock Grid.Row="1" Text="{Binding Value}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+        <Grid Grid.Row="1" Margin="2,0,2,2" ClipToBounds="True">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="0.56*"/>
+                <RowDefinition Height="0.44*"/>
+            </Grid.RowDefinitions>
 
-                <ItemsControl ItemsSource="{Binding KpiTiles}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <UniformGrid Columns="4"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource DarkCardStyle}"
-                                    Cursor="Hand"
-                                    Tag="{Binding Title}"
-                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
-                                <Grid MinHeight="124">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+            <ItemsControl Grid.Row="0" ItemsSource="{Binding TopCards}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="2"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource HomeCompactCardStyle}"
+                                ToolTip="{Binding Tooltip}"
+                                Cursor="Hand"
+                                Tag="{Binding Title}"
+                                PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
+                            <Grid MinHeight="72">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                                    <TextBlock Text="{Binding Title}" FontSize="14" Opacity="0.78" Grid.Row="0" Grid.Column="0"/>
-
-                                    <TextBlock x:Name="KpiValue"
-                                               Grid.Row="1"
-                                               Grid.Column="1"
-                                               Text="{Binding Value}"
-                                               FontSize="30"
-                                               FontWeight="SemiBold"
-                                               HorizontalAlignment="Right"
-                                               VerticalAlignment="Bottom"
-                                               TextAlignment="Right"
-                                               TextWrapping="Wrap"/>
-
-                                    <TextBlock Grid.Row="1"
-                                               Grid.Column="0"
-                                               Text="{Binding IconGlyph}"
+                                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                                    <TextBlock Text="{Binding IconGlyph}"
                                                FontFamily="Segoe MDL2 Assets"
-                                               FontSize="24"
-                                               Opacity="0.95"
-                                               VerticalAlignment="Bottom"
-                                               HorizontalAlignment="Left"/>
-
-                                    <TextBlock x:Name="KpiSecondary"
-                                               Grid.Row="1"
-                                               Grid.Column="1"
-                                               Text="{Binding SecondaryValue}"
-                                               FontSize="34"
+                                               FontSize="17"
+                                               Opacity="0.94"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Title}"
+                                               Margin="10,0,0,0"
                                                FontWeight="SemiBold"
-                                               HorizontalAlignment="Right"
-                                               VerticalAlignment="Bottom"
-                                               Visibility="Collapsed"/>
+                                               FontSize="15"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
 
-                                </Grid>
-                            </Border>
-                            <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding Title}" Value="Network">
-                                    <Setter TargetName="KpiValue" Property="Grid.Row" Value="0"/>
-                                    <Setter TargetName="KpiValue" Property="FontSize" Value="22"/>
-                                    <Setter TargetName="KpiValue" Property="Margin" Value="0,0,0,8"/>
-                                    <Setter TargetName="KpiValue" Property="VerticalAlignment" Value="Top"/>
-                                    <Setter TargetName="KpiValue" Property="TextWrapping" Value="NoWrap"/>
-                                    <Setter TargetName="KpiValue" Property="TextTrimming" Value="CharacterEllipsis"/>
-                                    <Setter TargetName="KpiValue" Property="TextAlignment" Value="Right"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding HasSecondaryValue}" Value="True">
-                                    <Setter TargetName="KpiSecondary" Property="Visibility" Value="Visible"/>
-                                    <Setter TargetName="KpiSecondary" Property="TextAlignment" Value="Right"/>
-                                </DataTrigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                <Button Grid.Row="0"
+                                        Grid.Column="1"
+                                        Width="30"
+                                        Height="30"
+                                        Padding="0"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RunWinsatCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        ToolTip="Run Windows Experience Index benchmark (WinSAT)">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Title}" Value="Performance">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Viewbox Width="15" Height="15" Stretch="Uniform">
+                                        <Path Stroke="{DynamicResource DarkTextBrush}"
+                                              StrokeThickness="1.8"
+                                              Fill="Transparent"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"
+                                              Data="M12,2 C8.8,5.3 7.8,8.1 7.8,10.5 C7.8,13.4 9.8,15.5 12.3,15.5 C14.8,15.5 16.8,13.4 16.8,10.5 C16.8,8.2 15.6,5.4 12,2 Z M12.3,8.1 C11.1,9.3 10.8,10.3 10.8,11.3 C10.8,12.4 11.6,13.2 12.3,13.2 C13,13.2 13.8,12.4 13.8,11.3 C13.8,10.3 13.5,9.3 12.3,8.1 Z"/>
+                                    </Viewbox>
+                                </Button>
 
-            </StackPanel>
-        </ScrollViewer>
+                                <TextBlock Grid.Row="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="{Binding Value}"
+                                           Margin="0,6,0,0"
+                                           FontSize="14"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Top"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ItemsControl Grid.Row="1" ItemsSource="{Binding KpiTiles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="4"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource HomeCompactCardStyle}"
+                                Cursor="Hand"
+                                Tag="{Binding Title}"
+                                PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
+                            <Grid MinHeight="108">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="{Binding Title}"
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Opacity="0.82"
+                                           Grid.Row="0"
+                                           Grid.Column="0"/>
+
+                                <TextBlock x:Name="KpiStatusTop"
+                                           Grid.Row="0"
+                                           Grid.Column="1"
+                                           Text="{Binding Value}"
+                                           FontSize="13.5"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Top"
+                                           Visibility="Collapsed"/>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Text="{Binding IconGlyph}"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="21"
+                                           Opacity="0.95"
+                                           VerticalAlignment="Bottom"
+                                           HorizontalAlignment="Left"/>
+
+                                <TextBlock x:Name="KpiPrimaryBottom"
+                                           Grid.Row="1"
+                                           Grid.Column="1"
+                                           Text="{Binding Value}"
+                                           FontSize="35"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Bottom"
+                                           TextAlignment="Right"
+                                           TextWrapping="NoWrap"/>
+
+                                <TextBlock x:Name="KpiSecondaryBottom"
+                                           Grid.Row="1"
+                                           Grid.Column="1"
+                                           Text="{Binding SecondaryValue}"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Bottom"
+                                           TextAlignment="Right"
+                                           Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding HasSecondaryValue}" Value="True">
+                                <Setter TargetName="KpiStatusTop" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="KpiPrimaryBottom" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="KpiSecondaryBottom" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
     </Grid>
 </UserControl>

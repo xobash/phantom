@@ -5,6 +5,7 @@ public sealed class HomeCard
     public string Title { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
     public string? Tooltip { get; set; }
+    public string IconGlyph { get; set; } = string.Empty;
 }
 
 public sealed class KpiTile
@@ -13,7 +14,7 @@ public sealed class KpiTile
     public string Value { get; set; } = string.Empty;
     public string SecondaryValue { get; set; } = string.Empty;
     public bool HasSecondaryValue { get; set; }
-    public string IconGlyph { get; set; } = "\uE9D9";
+    public string IconGlyph { get; set; } = string.Empty;
 }
 
 public sealed class InstalledAppInfo
