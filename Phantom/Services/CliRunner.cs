@@ -95,7 +95,7 @@ public sealed class CliRunner
             return 0;
         }
 
-        var hasDangerous = operations.Any(o => o.RiskTier == RiskTier.Dangerous || !o.Reversible);
+        var hasDangerous = operations.Any(o => o.RiskTier == RiskTier.Dangerous || !o.Reversible || o.Destructive);
         var acknowledgement = (dangerousAcknowledgement ?? config.DangerousAcknowledgement ?? string.Empty).Trim();
         var forceDangerousEnabled = config.ConfirmDangerous && forceDangerous;
 
@@ -137,9 +137,9 @@ public sealed class CliRunner
         var result = await _engine.ExecuteBatchAsync(new OperationRequest
         {
             Operations = operations,
-            Undo = false,
-            DryRun = false,
-                EnableDestructiveOperations = settings.EnableDestructiveOperations,
+                Undo = false,
+                DryRun = false,
+                EnableDestructiveOperations = forceDangerousEnabled || settings.EnableDestructiveOperations,
                 ForceDangerous = forceDangerousEnabled,
                 SkipCaptureCheck = skipCaptureCheck,
                 InteractiveDangerousPrompt = false,

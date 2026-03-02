@@ -2,6 +2,9 @@ namespace Phantom.Services;
 
 public static class RuntimeOperationScriptCatalog
 {
+    private const string OoShutUp10ExpectedSha256 = "01D64C54DBA3F7B53B697EB7D863DFA4BA3CD57A5D04A10140C40E45AC6BCAE9";
+    private const string OoShutUp10ExpectedPublisher = "O&O Software GmbH";
+
     private static readonly IReadOnlyDictionary<string, string[]> DnsServersByProfile =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -69,16 +72,37 @@ public static class RuntimeOperationScriptCatalog
 
     public static string BuildOoShutUp10RunScript()
     {
-        return """
-               $downloadUrl='https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe'
-               $toolRoot=Join-Path $env:TEMP 'Phantom\Tools'
-               $exePath=Join-Path $toolRoot 'OOSU10.exe'
-               New-Item -Path $toolRoot -ItemType Directory -Force | Out-Null
-               Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing -ErrorAction Stop
-               if(-not (Test-Path $exePath)){ throw 'O&O ShutUp10 download failed.' }
-               Start-Process -FilePath $exePath
-               Write-Output "O&O ShutUp10 launched from $exePath"
-               """;
+        return $$"""
+                 $ErrorActionPreference='Stop'
+                 Set-StrictMode -Version Latest
+                 $downloadUrl='https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe'
+                 $toolRoot=Join-Path $env:ProgramData 'Phantom\Tools'
+                 $exePath=Join-Path $toolRoot 'OOSU10.exe'
+                 New-Item -Path $toolRoot -ItemType Directory -Force | Out-Null
+                 try {
+                   $acl = Get-Acl -Path $toolRoot -ErrorAction Stop
+                   $acl.SetAccessRuleProtection($true, $false)
+                   foreach($entry in @($acl.Access)){ [void]$acl.RemoveAccessRule($entry) }
+                   $admins = New-Object System.Security.Principal.NTAccount('BUILTIN', 'Administrators')
+                   $system = New-Object System.Security.Principal.NTAccount('NT AUTHORITY', 'SYSTEM')
+                   $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule($admins, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+                   $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule($system, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+                   [void]$acl.SetAccessRule($ruleAdmins)
+                   [void]$acl.SetAccessRule($ruleSystem)
+                   Set-Acl -Path $toolRoot -AclObject $acl -ErrorAction Stop
+                 } catch {
+                   throw "Failed to enforce secure ACL on $toolRoot. $($_.Exception.Message)"
+                 }
+                 Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing -ErrorAction Stop
+                 if(-not (Test-Path $exePath)){ throw 'O&O ShutUp10 download failed.' }
+                 $hash=(Get-FileHash -Path $exePath -Algorithm SHA256 -ErrorAction Stop).Hash
+                 if($hash -ne '{{OoShutUp10ExpectedSha256}}'){ throw "O&O ShutUp10 hash mismatch. Expected {{OoShutUp10ExpectedSha256}}, got $hash." }
+                 $sig=Get-AuthenticodeSignature -FilePath $exePath
+                 if($sig.Status -ne 'Valid'){ throw "O&O ShutUp10 signature validation failed: $($sig.Status)." }
+                 if($null -eq $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notmatch [Regex]::Escape('{{OoShutUp10ExpectedPublisher}}')){ throw "Unexpected O&O ShutUp10 signer: $($sig.SignerCertificate.Subject)." }
+                 Start-Process -FilePath 'OOSU10.exe' -WorkingDirectory $toolRoot
+                 Write-Output "O&O ShutUp10 launched from $exePath"
+                 """;
     }
 
     public static string BuildOoShutUp10UndoScript()

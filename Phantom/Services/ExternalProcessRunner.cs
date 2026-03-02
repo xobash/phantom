@@ -45,7 +45,7 @@ public sealed class ExternalProcessRunner
         }
 
         var args = request.Arguments ?? Array.Empty<string>();
-        var argsText = string.Join(" ", args.Select(QuoteArgument));
+        var argsText = string.Join(" ", args.Select(WindowsCommandLine.QuoteArgument));
         _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.FilePath} {argsText}".TrimEnd());
 
         var stopwatch = Stopwatch.StartNew();
@@ -174,21 +174,6 @@ public sealed class ExternalProcessRunner
         catch (OperationCanceledException)
         {
         }
-    }
-
-    private static string QuoteArgument(string argument)
-    {
-        if (string.IsNullOrEmpty(argument))
-        {
-            return "\"\"";
-        }
-
-        if (!argument.Any(char.IsWhiteSpace) && !argument.Contains('"'))
-        {
-            return argument;
-        }
-
-        return "\"" + argument.Replace("\"", "\\\"") + "\"";
     }
 
     private static void TryKillProcess(Process process)

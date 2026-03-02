@@ -25,6 +25,15 @@ public static class CatalogTrustService
 
     public static bool ValidateCatalogFileIntegrity(AppPaths paths, out string reason)
     {
+        var valid = TryValidateCatalogIntegrityAndBuildAllowlist(paths, out _, out reason);
+        return valid;
+    }
+
+    public static bool TryValidateCatalogIntegrityAndBuildAllowlist(AppPaths paths, out HashSet<string> hashes, out string reason)
+    {
+        hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var catalogBytesByName = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var pair in ExpectedDataFileHashes)
         {
             var fullPath = Path.Combine(paths.BaseDirectory, "Data", pair.Key);
@@ -34,12 +43,75 @@ public static class CatalogTrustService
                 return false;
             }
 
-            var actual = ComputeFileHash(fullPath);
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(fullPath);
+            }
+            catch (Exception ex)
+            {
+                reason = $"Failed to read catalog file {pair.Key}: {ex.Message}";
+                return false;
+            }
+
+            var actual = Convert.ToHexString(SHA256.HashData(bytes));
             if (!actual.Equals(pair.Value, StringComparison.OrdinalIgnoreCase))
             {
                 reason = $"Catalog integrity check failed for {pair.Key}. Expected {pair.Value}, got {actual}.";
                 return false;
             }
+
+            catalogBytesByName[pair.Key] = bytes;
+        }
+
+        try
+        {
+            if (catalogBytesByName.TryGetValue("tweaks.json", out var tweaksBytes))
+            {
+                var tweaks = JsonSerializer.Deserialize<List<TweakDefinition>>(tweaksBytes, JsonOptions) ?? new List<TweakDefinition>();
+                foreach (var tweak in tweaks)
+                {
+                    AddScriptHash(hashes, TweakScriptNormalizer.WrapDetectScript(tweak.DetectScript));
+                    AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.ApplyScript));
+                    AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.UndoScript));
+                }
+            }
+
+            if (catalogBytesByName.TryGetValue("fixes.json", out var fixesBytes))
+            {
+                var fixes = JsonSerializer.Deserialize<List<FixDefinition>>(fixesBytes, JsonOptions) ?? new List<FixDefinition>();
+                foreach (var fix in fixes)
+                {
+                    AddScriptHash(hashes, fix.ApplyScript);
+                    AddScriptHash(hashes, fix.UndoScript);
+                }
+            }
+
+            if (catalogBytesByName.TryGetValue("legacy-panels.json", out var panelsBytes))
+            {
+                var panels = JsonSerializer.Deserialize<List<LegacyPanelDefinition>>(panelsBytes, JsonOptions) ?? new List<LegacyPanelDefinition>();
+                foreach (var panel in panels)
+                {
+                    AddScriptHash(hashes, panel.LaunchScript);
+                }
+            }
+
+            foreach (var tweak in RequestedTweaksCatalog.CreateRequestedTweaks())
+            {
+                AddScriptHash(hashes, tweak.DetectScript);
+                AddScriptHash(hashes, tweak.ApplyScript);
+                AddScriptHash(hashes, tweak.UndoScript);
+            }
+
+            foreach (var script in RuntimeOperationScriptCatalog.GetTrustedRuntimeMutationScripts())
+            {
+                AddScriptHash(hashes, script);
+            }
+        }
+        catch (Exception ex)
+        {
+            reason = $"Failed to build trusted script hash allowlist: {ex.Message}";
+            return false;
         }
 
         reason = string.Empty;
@@ -48,51 +120,9 @@ public static class CatalogTrustService
 
     public static HashSet<string> BuildTrustedCatalogScriptHashAllowlist(AppPaths paths)
     {
-        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (File.Exists(paths.TweaksFile))
+        if (!TryValidateCatalogIntegrityAndBuildAllowlist(paths, out var hashes, out var reason))
         {
-            var tweaksJson = File.ReadAllText(paths.TweaksFile);
-            var tweaks = JsonSerializer.Deserialize<List<TweakDefinition>>(tweaksJson, JsonOptions) ?? new List<TweakDefinition>();
-            foreach (var tweak in tweaks)
-            {
-                AddScriptHash(hashes, TweakScriptNormalizer.WrapDetectScript(tweak.DetectScript));
-                AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.ApplyScript));
-                AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.UndoScript));
-            }
-        }
-
-        if (File.Exists(paths.FixesFile))
-        {
-            var fixesJson = File.ReadAllText(paths.FixesFile);
-            var fixes = JsonSerializer.Deserialize<List<FixDefinition>>(fixesJson, JsonOptions) ?? new List<FixDefinition>();
-            foreach (var fix in fixes)
-            {
-                AddScriptHash(hashes, fix.ApplyScript);
-                AddScriptHash(hashes, fix.UndoScript);
-            }
-        }
-
-        if (File.Exists(paths.LegacyPanelsFile))
-        {
-            var panelsJson = File.ReadAllText(paths.LegacyPanelsFile);
-            var panels = JsonSerializer.Deserialize<List<LegacyPanelDefinition>>(panelsJson, JsonOptions) ?? new List<LegacyPanelDefinition>();
-            foreach (var panel in panels)
-            {
-                AddScriptHash(hashes, panel.LaunchScript);
-            }
-        }
-
-        foreach (var tweak in RequestedTweaksCatalog.CreateRequestedTweaks())
-        {
-            AddScriptHash(hashes, tweak.DetectScript);
-            AddScriptHash(hashes, tweak.ApplyScript);
-            AddScriptHash(hashes, tweak.UndoScript);
-        }
-
-        foreach (var script in RuntimeOperationScriptCatalog.GetTrustedRuntimeMutationScripts())
-        {
-            AddScriptHash(hashes, script);
+            throw new InvalidDataException(reason);
         }
 
         return hashes;

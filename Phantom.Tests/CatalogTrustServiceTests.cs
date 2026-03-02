@@ -36,4 +36,17 @@ public sealed class CatalogTrustServiceTests
             Assert.Contains(CatalogTrustService.ComputeScriptHash(runtimeScript), allowlist);
         }
     }
+
+    [Fact]
+    public void TryValidateCatalogIntegrityAndBuildAllowlist_FailsWhenCatalogFileIsTampered()
+    {
+        var paths = TestHelpers.CreateIsolatedPaths();
+        File.AppendAllText(paths.TweaksFile, Environment.NewLine + " ");
+
+        var success = CatalogTrustService.TryValidateCatalogIntegrityAndBuildAllowlist(paths, out var allowlist, out var reason);
+
+        Assert.False(success);
+        Assert.Empty(allowlist);
+        Assert.Contains("integrity check failed", reason, StringComparison.OrdinalIgnoreCase);
+    }
 }

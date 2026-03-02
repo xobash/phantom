@@ -282,7 +282,7 @@ public partial class App : Application
                 return false;
             }
 
-            var quotedArgs = string.Join(" ", args.Select(QuoteArgument));
+            var quotedArgs = string.Join(" ", args.Select(WindowsCommandLine.QuoteArgument));
             var psi = new ProcessStartInfo
             {
                 FileName = fileName,
@@ -304,21 +304,6 @@ public partial class App : Application
             message = ex.Message;
             return false;
         }
-    }
-
-    private static string QuoteArgument(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "\"\"";
-        }
-
-        if (!value.Contains(' ') && !value.Contains('"'))
-        {
-            return value;
-        }
-
-        return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
     private void StartAmbientAnimations()
