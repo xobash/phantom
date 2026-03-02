@@ -1,5 +1,6 @@
 using Phantom.Models;
 using Phantom.Services;
+using System.Reflection;
 
 namespace Phantom.Tests;
 
@@ -137,6 +138,63 @@ public sealed class PowerShellRunnerTests
 
         Assert.True(result.Success);
         Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AllowsRuntimeDnsScript_WhenHashIsTrusted()
+    {
+        var settings = new AppSettings();
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+        var script = RuntimeOperationScriptCatalog.BuildDnsApplyScript("Google");
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "tweak.dns.google",
+            StepName = "set-dns",
+            Script = script,
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksTamperedRuntimeDnsScript_WhenHashIsNotTrusted()
+    {
+        var settings = new AppSettings();
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "tweak.dns.google",
+            StepName = "set-dns",
+            Script = "Write-Output 'tampered dns script'",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("trusted catalog allowlist", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IsEncodedCommandParameterAlias_DoesNotTreatEncodingAsEncodedCommand()
+    {
+        var method = typeof(PowerShellRunner).GetMethod(
+            "IsEncodedCommandParameterAlias",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+        Assert.False((bool)method!.Invoke(null, ["Encoding"])!);
+        Assert.True((bool)method.Invoke(null, ["enc"])!);
     }
 
     [Fact]

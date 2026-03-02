@@ -50,50 +50,6 @@ public sealed class HomeDataService
         return snapshot;
     }
 
-    public async Task<(double CpuUsage, double MemoryUsage, string Uptime)> GetFastMetricsAsync(CancellationToken cancellationToken)
-    {
-        _console.Publish("Trace", "HomeDataService.GetFastMetricsAsync started.");
-        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
-        {
-            _console.Publish("Warning", "HomeDataService.GetFastMetricsAsync unavailable on non-Windows host.");
-            return (0, 0, "Unavailable");
-        }
-
-        const string script = @"
-$ErrorActionPreference = 'Stop'
-$os = Get-CimInstance Win32_OperatingSystem
-$cpu = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
-$memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
-$uptime = (Get-Date) - $os.LastBootUpTime
-[PSCustomObject]@{
-  CpuUsage = [math]::Round($cpu, 2)
-  MemoryUsage = [math]::Round($memoryPct, 2)
-  Uptime = [string]::Format('{0:00}:{1:00}:{2:00}', [int]$uptime.TotalHours, $uptime.Minutes, $uptime.Seconds)
-} | ConvertTo-Json -Compress";
-
-        var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            _console.Publish("Warning", "HomeDataService.GetFastMetricsAsync returned empty JSON.");
-            return (0, 0, "Unavailable");
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
-            var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
-            var uptime = doc.RootElement.GetProperty("Uptime").GetString() ?? "Unavailable";
-            _console.Publish("Trace", $"HomeDataService.GetFastMetricsAsync completed. cpu={cpu:F2}, memory={memory:F2}, uptime={uptime}");
-            return (cpu, memory, uptime);
-        }
-        catch (Exception ex)
-        {
-            _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
-            return (0, 0, "Unavailable");
-        }
-    }
-
     public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)

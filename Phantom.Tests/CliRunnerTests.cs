@@ -35,7 +35,7 @@ public sealed class CliRunnerTests
             query,
             settingsStore);
 
-        var exitCode = await cli.RunAsync(@"..\..\outside.json", forceDangerous: false, dangerousAcknowledgement: null, CancellationToken.None);
+        var exitCode = await cli.RunAsync(@"..\..\outside.json", forceDangerous: false, dangerousAcknowledgement: null, skipCaptureCheck: false, CancellationToken.None);
 
         Assert.Equal(2, exitCode);
         Assert.Contains(console.Snapshot, e =>
@@ -88,7 +88,7 @@ public sealed class CliRunnerTests
         };
         await File.WriteAllTextAsync(configPath, System.Text.Json.JsonSerializer.Serialize(config));
 
-        var exitCode = await cli.RunAsync(configPath, forceDangerous: true, dangerousAcknowledgement: null, CancellationToken.None);
+        var exitCode = await cli.RunAsync(configPath, forceDangerous: true, dangerousAcknowledgement: null, skipCaptureCheck: false, CancellationToken.None);
 
         Assert.Equal(3, exitCode);
     }

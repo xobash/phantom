@@ -204,6 +204,194 @@ public sealed class OperationEngineTests
         Assert.DoesNotContain(runner.Requests, r => r.OperationId == "op.dangerous.restorepoint");
     }
 
+    [Fact]
+    public async Task ExecuteBatchAsync_BlocksReversibleOperation_WhenStateCaptureFails_WithoutSkipOverride()
+    {
+        var settings = new AppSettings
+        {
+            EnableDestructiveOperations = true,
+            CreateRestorePointBeforeDangerousOperations = false
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var undoStore = new UndoStateStore(new JsonFileStore(), paths);
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new StubRunner(request =>
+        {
+            if (request.StepName.StartsWith("capture:", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PowerShellExecutionResult { Success = false, ExitCode = 1, CombinedOutput = "capture failed" };
+            }
+
+            return new PowerShellExecutionResult { Success = true, ExitCode = 0 };
+        });
+        var engine = new OperationEngine(runner, undoStore, new NetworkGuardService(), console, log, () => settings);
+
+        var result = await engine.ExecuteBatchAsync(new OperationRequest
+        {
+            Operations =
+            [
+                new OperationDefinition
+                {
+                    Id = "op.capture.guard",
+                    Title = "Capture guard test",
+                    Description = "test",
+                    RiskTier = RiskTier.Advanced,
+                    Reversible = true,
+                    StateCaptureScripts = [new PowerShellStep { Name = "state", Script = "Write-Output 'capture'" }],
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'apply'" }],
+                    UndoScripts = [new PowerShellStep { Name = "undo", Script = "Write-Output 'undo'" }]
+                }
+            ],
+            Undo = false,
+            DryRun = false,
+            EnableDestructiveOperations = true,
+            ForceDangerous = true,
+            SkipCaptureCheck = false,
+            ConfirmDangerousAsync = _ => Task.FromResult(true)
+        }, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("state capture failed", result.Results[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(runner.Requests, request =>
+            string.Equals(request.OperationId, "op.capture.guard", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.StepName, "apply", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ExecuteBatchAsync_AllowsReversibleOperation_WhenSkipCaptureOverrideIsEnabled()
+    {
+        var settings = new AppSettings
+        {
+            EnableDestructiveOperations = true,
+            CreateRestorePointBeforeDangerousOperations = false
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var undoStore = new UndoStateStore(new JsonFileStore(), paths);
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new StubRunner(request =>
+        {
+            if (request.StepName.StartsWith("capture:", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PowerShellExecutionResult { Success = false, ExitCode = 1, CombinedOutput = "capture failed" };
+            }
+
+            return new PowerShellExecutionResult { Success = true, ExitCode = 0, CombinedOutput = "ok" };
+        });
+        var engine = new OperationEngine(runner, undoStore, new NetworkGuardService(), console, log, () => settings);
+
+        var result = await engine.ExecuteBatchAsync(new OperationRequest
+        {
+            Operations =
+            [
+                new OperationDefinition
+                {
+                    Id = "op.capture.override",
+                    Title = "Capture override test",
+                    Description = "test",
+                    RiskTier = RiskTier.Advanced,
+                    Reversible = true,
+                    StateCaptureScripts = [new PowerShellStep { Name = "state", Script = "Write-Output 'capture'" }],
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'apply'" }],
+                    UndoScripts = [new PowerShellStep { Name = "undo", Script = "Write-Output 'undo'" }]
+                }
+            ],
+            Undo = false,
+            DryRun = false,
+            EnableDestructiveOperations = true,
+            ForceDangerous = true,
+            SkipCaptureCheck = true,
+            ConfirmDangerousAsync = _ => Task.FromResult(true)
+        }, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.Contains(runner.Requests, request =>
+            string.Equals(request.OperationId, "op.capture.override", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.StepName, "apply", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ExecuteBatchAsync_ContinuesRollbackUndoSteps_AfterUndoFailure()
+    {
+        var settings = new AppSettings
+        {
+            EnableDestructiveOperations = true,
+            CreateRestorePointBeforeDangerousOperations = false
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var undoStore = new UndoStateStore(new JsonFileStore(), paths);
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new StubRunner(request =>
+        {
+            if (string.Equals(request.OperationId, "op.second", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(request.StepName, "apply", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PowerShellExecutionResult { Success = false, ExitCode = 1, CombinedOutput = "fail" };
+            }
+
+            if (string.Equals(request.OperationId, "op.first.rollback", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(request.StepName, "undo-1", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PowerShellExecutionResult { Success = false, ExitCode = 1, CombinedOutput = "undo fail" };
+            }
+
+            return new PowerShellExecutionResult { Success = true, ExitCode = 0, CombinedOutput = "ok" };
+        });
+        var engine = new OperationEngine(runner, undoStore, new NetworkGuardService(), console, log, () => settings);
+
+        var result = await engine.ExecuteBatchAsync(new OperationRequest
+        {
+            Operations =
+            [
+                new OperationDefinition
+                {
+                    Id = "op.first",
+                    Title = "first",
+                    Description = "first",
+                    RiskTier = RiskTier.Basic,
+                    Reversible = true,
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'apply 1'" }],
+                    UndoScripts =
+                    [
+                        new PowerShellStep { Name = "undo-1", Script = "Write-Output 'undo 1'" },
+                        new PowerShellStep { Name = "undo-2", Script = "Write-Output 'undo 2'" }
+                    ]
+                },
+                new OperationDefinition
+                {
+                    Id = "op.second",
+                    Title = "second",
+                    Description = "second",
+                    RiskTier = RiskTier.Basic,
+                    Reversible = true,
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'apply 2'" }],
+                    UndoScripts = [new PowerShellStep { Name = "undo", Script = "Write-Output 'undo second'" }]
+                }
+            ],
+            Undo = false,
+            DryRun = false,
+            EnableDestructiveOperations = true,
+            ForceDangerous = false,
+            SkipCaptureCheck = false,
+            ConfirmDangerousAsync = _ => Task.FromResult(true)
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains(runner.Requests, request =>
+            string.Equals(request.OperationId, "op.first.rollback", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.StepName, "undo-1", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(runner.Requests, request =>
+            string.Equals(request.OperationId, "op.first.rollback", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.StepName, "undo-2", StringComparison.OrdinalIgnoreCase));
+    }
+
     private sealed class StubRunner : IPowerShellRunner
     {
         private readonly Func<PowerShellExecutionRequest, PowerShellExecutionResult> _handler;
