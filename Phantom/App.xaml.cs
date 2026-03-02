@@ -97,30 +97,32 @@ public partial class App : Application
             _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
             await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
 
-            AppDomain.CurrentDomain.UnhandledException += async (_, args) =>
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             {
                 try
                 {
                     if (_bootstrap is not null)
                     {
-                        _bootstrap.Console.Publish("Fatal", args.ExceptionObject?.ToString() ?? "Unknown fatal error");
-                        await _bootstrap.Log.WriteAsync("Fatal", args.ExceptionObject?.ToString() ?? "Unknown fatal error");
+                        var fatal = args.ExceptionObject?.ToString() ?? "Unknown fatal error";
+                        _bootstrap.Console.Publish("Fatal", fatal);
+                        _bootstrap.Log.WriteAsync("Fatal", fatal).GetAwaiter().GetResult();
                     }
                     else
                     {
                         WriteEmergencyStartupTrace($"Fatal before bootstrap: {args.ExceptionObject}");
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    WriteEmergencyStartupTrace($"UnhandledException logging failed: {ex}");
                 }
             };
 
             var args = e.Args ?? Array.Empty<string>();
-            if (TryParseCli(args, out var configPath, out var run, out var forceDangerous, out var dangerousAcknowledgement) && run)
+            if (TryParseCli(args, out var configPath, out var run, out var forceDangerous, out var dangerousAcknowledgement, out var skipCaptureCheck) && run)
             {
-                _bootstrap.Console.Publish("Trace", $"CLI mode requested. configPath={configPath}, forceDangerous={forceDangerous}");
-                var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, dangerousAcknowledgement, CancellationToken.None);
+                _bootstrap.Console.Publish("Trace", $"CLI mode requested. configPath={configPath}, forceDangerous={forceDangerous}, skipCaptureCheck={skipCaptureCheck}");
+                var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, dangerousAcknowledgement, skipCaptureCheck, CancellationToken.None);
                 _bootstrap.Console.Publish("Trace", $"CLI mode completed with exitCode={exitCode}");
                 Shutdown(exitCode);
                 return;
@@ -361,12 +363,19 @@ public partial class App : Application
         }
     }
 
-    private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous, out string? dangerousAcknowledgement)
+    private static bool TryParseCli(
+        string[] args,
+        out string? configPath,
+        out bool run,
+        out bool forceDangerous,
+        out string? dangerousAcknowledgement,
+        out bool skipCaptureCheck)
     {
         configPath = null;
         run = false;
         forceDangerous = false;
         dangerousAcknowledgement = null;
+        skipCaptureCheck = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -394,6 +403,12 @@ public partial class App : Application
             {
                 dangerousAcknowledgement = args[i + 1];
                 i++;
+                continue;
+            }
+
+            if (string.Equals(current, "-SkipCaptureCheck", StringComparison.OrdinalIgnoreCase))
+            {
+                skipCaptureCheck = true;
             }
         }
 

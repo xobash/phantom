@@ -13,16 +13,31 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
     private readonly HomeDataService _homeData;
     private readonly ConsoleStreamService _console;
     private readonly IPowerShellRunner _runner;
+    private readonly OperationEngine _operationEngine;
+    private readonly ExecutionCoordinator _executionCoordinator;
+    private readonly IUserPromptService _promptService;
+    private readonly Func<AppSettings> _settingsAccessor;
 
     private string _search = string.Empty;
     private bool _isRefreshing;
     private string _servicesCountLabel = "0 services";
 
-    public ServicesViewModel(HomeDataService homeData, ConsoleStreamService console, IPowerShellRunner runner)
+    public ServicesViewModel(
+        HomeDataService homeData,
+        ConsoleStreamService console,
+        IPowerShellRunner runner,
+        OperationEngine operationEngine,
+        ExecutionCoordinator executionCoordinator,
+        IUserPromptService promptService,
+        Func<AppSettings> settingsAccessor)
     {
         _homeData = homeData;
         _console = console;
         _runner = runner;
+        _operationEngine = operationEngine;
+        _executionCoordinator = executionCoordinator;
+        _promptService = promptService;
+        _settingsAccessor = settingsAccessor;
 
         Services = new ObservableCollection<ServiceInfoRow>();
         ServicesView = CollectionViewSource.GetDefaultView(Services);
@@ -120,8 +135,11 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var script = $"Stop-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -Force -ErrorAction Stop";
-        return ExecuteScriptAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true);
+        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
+        var script = $"Stop-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
+        var undoScript = $"Start-Service -Name {serviceLiteral} -ErrorAction Stop";
+        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
+        return ExecuteManagedOperationAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true, undoScript, captureScript);
     }
 
     private Task RestartServiceAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -137,8 +155,10 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var script = $"Restart-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -Force -ErrorAction Stop";
-        return ExecuteScriptAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true);
+        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
+        var script = $"Restart-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
+        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
+        return ExecuteManagedOperationAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true, "Write-Output 'No automated undo for restart.'", captureScript);
     }
 
     private Task BrowseServiceLocationAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -162,7 +182,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        return ExecuteScriptAsync("services.browse", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(folder)}'", cancellationToken, refreshAfter: false);
+        return ExecuteTransientScriptAsync("services.browse", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(folder)}'", cancellationToken, refreshAfter: false);
     }
 
     private Task SearchOnlineAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -174,7 +194,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 
         var query = Uri.EscapeDataString($"{service.DisplayName} {service.Name} windows service");
         var url = $"https://www.bing.com/search?q={query}";
-        return ExecuteScriptAsync("services.search", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(url)}'", cancellationToken, refreshAfter: false);
+        return ExecuteTransientScriptAsync("services.search", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(url)}'", cancellationToken, refreshAfter: false);
     }
 
     private Task SetModeAsync(ServiceInfoRow? service, string mode, CancellationToken cancellationToken)
@@ -201,11 +221,109 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var script = $"Set-Service -Name {PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName)} -StartupType {safeMode}";
-        return ExecuteScriptAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true);
+        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
+        var script = $"Set-Service -Name {serviceLiteral} -StartupType {safeMode} -ErrorAction Stop";
+        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
+        return ExecuteManagedOperationAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true, "Write-Output 'Undo for service startup mode is not automatic.'", captureScript);
     }
 
-    private async Task ExecuteScriptAsync(string operationId, string serviceName, string script, CancellationToken cancellationToken, bool refreshAfter)
+    private async Task ExecuteManagedOperationAsync(
+        string operationId,
+        string serviceName,
+        string script,
+        CancellationToken cancellationToken,
+        bool refreshAfter,
+        string undoScript,
+        string stateCaptureScript)
+    {
+        CancellationToken coordinatorToken;
+        try
+        {
+            coordinatorToken = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(coordinatorToken, cancellationToken);
+
+        try
+        {
+            var operation = new OperationDefinition
+            {
+                Id = operationId,
+                Title = $"{serviceName} ({operationId})",
+                Description = $"Service operation for {serviceName}.",
+                RiskTier = RiskTier.Advanced,
+                Reversible = true,
+                RunScripts =
+                [
+                    new PowerShellStep
+                    {
+                        Name = serviceName,
+                        Script = script
+                    }
+                ],
+                UndoScripts =
+                [
+                    new PowerShellStep
+                    {
+                        Name = "undo",
+                        Script = undoScript
+                    }
+                ],
+                StateCaptureScripts =
+                [
+                    new PowerShellStep
+                    {
+                        Name = "service-state",
+                        Script = stateCaptureScript
+                    }
+                ]
+            };
+
+            var precheck = await _operationEngine.RunBatchPrecheckAsync([operation], linked.Token).ConfigureAwait(false);
+            if (!precheck.IsSuccess)
+            {
+                _console.Publish("Error", precheck.Message);
+                return;
+            }
+
+            var batch = await _operationEngine.ExecuteBatchAsync(new OperationRequest
+            {
+                Operations = [operation],
+                Undo = false,
+                DryRun = false,
+                EnableDestructiveOperations = _settingsAccessor().EnableDestructiveOperations,
+                ForceDangerous = false,
+                SkipCaptureCheck = false,
+                ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
+            }, linked.Token).ConfigureAwait(false);
+
+            var result = batch.Results.FirstOrDefault(r => string.Equals(r.OperationId, operationId, StringComparison.OrdinalIgnoreCase));
+            if (result is null || !result.Success)
+            {
+                _console.Publish("Error", $"{operationId} failed for {serviceName}.");
+            }
+
+            if (refreshAfter)
+            {
+                await RefreshAsync(linked.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", $"{operationId}: operation cancelled.");
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+        }
+    }
+
+    private async Task ExecuteTransientScriptAsync(string operationId, string serviceName, string script, CancellationToken cancellationToken, bool refreshAfter)
     {
         var result = await _runner.ExecuteAsync(new PowerShellExecutionRequest
         {

@@ -11,6 +11,7 @@ public sealed class OperationRequest
     public bool DryRun { get; init; }
     public bool EnableDestructiveOperations { get; init; }
     public bool ForceDangerous { get; init; }
+    public bool SkipCaptureCheck { get; init; }
     public bool InteractiveDangerousPrompt { get; init; } = true;
     public required Func<string, Task<bool>> ConfirmDangerousAsync { get; init; }
 }
@@ -246,6 +247,7 @@ public sealed class OperationEngine
                 }
 
                 var effectiveRisk = operation.RiskTier;
+                var skipExecution = false;
                 var captureFailed = false;
 
                 if (!request.Undo && operation.Reversible && operation.StateCaptureScripts.Length > 0)
@@ -275,8 +277,23 @@ public sealed class OperationEngine
                     if (captureFailed)
                     {
                         opResult.CaptureFailed = true;
-                        effectiveRisk = RiskTier.Dangerous;
-                        _console.Publish("Warning", $"{operation.Title}: Undo state capture failed. Undo may not be possible.");
+                        if (request.SkipCaptureCheck)
+                        {
+                            effectiveRisk = RiskTier.Dangerous;
+                            _console.Publish("Warning", $"{operation.Title}: Undo state capture failed. Proceeding because --skip-capture-check override is active.");
+                            await _log.WriteAsync(
+                                    "Warning",
+                                    $"{operation.Id}: state capture failed and execution continued because --skip-capture-check was provided.",
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            skipExecution = true;
+                            opResult.Message = "Blocked: reversible operation state capture failed. Re-run with --skip-capture-check only if you explicitly accept no rollback path.";
+                            _console.Publish("Error", $"{operation.Id}: {opResult.Message}");
+                            await _log.WriteAsync("Error", $"{operation.Id}: blocked due to failed reversible state capture.", cancellationToken).ConfigureAwait(false);
+                        }
                     }
                     else if (captured.Count > 0)
                     {
@@ -286,7 +303,7 @@ public sealed class OperationEngine
                     }
                 }
 
-                if (effectiveRisk == RiskTier.Dangerous || !operation.Reversible || opResult.CaptureFailed)
+                if (!skipExecution && (effectiveRisk == RiskTier.Dangerous || !operation.Reversible || opResult.CaptureFailed))
                 {
                     var confirmed = await request.ConfirmDangerousAsync(
                             BuildDangerousOperationPrompt(operation, request.ForceDangerous, currentState.StatusText))
@@ -300,33 +317,54 @@ public sealed class OperationEngine
                     }
                 }
 
-                var allSucceeded = true;
-                foreach (var step in scripts)
+                var allSucceeded = !skipExecution;
+                var failedRunStep = string.Empty;
+                if (!skipExecution)
                 {
-                    currentStepName = step.Name;
-                    _console.Publish("Trace", $"Operation step start: {operation.Id}/{step.Name}");
-                    var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+                    foreach (var step in scripts)
                     {
-                        OperationId = operation.Id,
-                        StepName = step.Name,
-                        Script = step.Script,
-                        DryRun = request.DryRun,
-                        PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
-                        Timeout = MutationStepTimeout
-                    }, cancellationToken).ConfigureAwait(false);
+                        currentStepName = step.Name;
+                        _console.Publish("Trace", $"Operation step start: {operation.Id}/{step.Name}");
+                        var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+                        {
+                            OperationId = operation.Id,
+                            StepName = step.Name,
+                            Script = step.Script,
+                            DryRun = request.DryRun,
+                            PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
+                            Timeout = MutationStepTimeout
+                        }, cancellationToken).ConfigureAwait(false);
 
-                    if (!stepResult.Success)
-                    {
-                        _console.Publish("Error", $"Operation step failed: {operation.Id}/{step.Name}");
-                        allSucceeded = false;
-                        opResult.Message = $"Step failed: {step.Name}";
-                        break;
+                        if (!stepResult.Success)
+                        {
+                            _console.Publish("Error", $"Operation step failed: {operation.Id}/{step.Name}");
+                            allSucceeded = false;
+                            failedRunStep = step.Name;
+                            opResult.Message = $"Step failed: {step.Name}";
+                            break;
+                        }
+
+                        _console.Publish("Trace", $"Operation step completed: {operation.Id}/{step.Name}");
                     }
-
-                    _console.Publish("Trace", $"Operation step completed: {operation.Id}/{step.Name}");
                 }
 
-                if (allSucceeded && !request.DryRun)
+                if (!allSucceeded && !skipExecution && !request.DryRun && !request.Undo && operation.Reversible && operation.UndoScripts.Length > 0)
+                {
+                    var rollbackAttempt = await ExecuteRollbackStepsAsync(operation, $"{operation.Id}.rollback.partial", cancellationToken).ConfigureAwait(false);
+                    if (rollbackAttempt.Success)
+                    {
+                        opResult.Message = $"Step failed: {failedRunStep}. Automatic rollback completed.";
+                    }
+                    else
+                    {
+                        var failedSteps = rollbackAttempt.FailedSteps.Count == 0
+                            ? "unknown"
+                            : string.Join(", ", rollbackAttempt.FailedSteps);
+                        opResult.Message = $"Step failed: {failedRunStep}. Automatic rollback reported failures in: {failedSteps}.";
+                    }
+                }
+
+                if (allSucceeded && !request.DryRun && !skipExecution)
                 {
                     var verification = await VerifyOperationStateAsync(operation, desiredApplied, cancellationToken).ConfigureAwait(false);
                     opResult.VerificationAttempted = verification.Attempted;
@@ -335,17 +373,20 @@ public sealed class OperationEngine
 
                     if (verification.Attempted && !verification.Passed)
                     {
-                        allSucceeded = false;
-                        opResult.Message = $"Verification failed: expected {(desiredApplied ? "Applied" : "Not Applied")} state but detect returned '{verification.StatusText}'.";
-                        _console.Publish("Error", $"{operation.Id}: {opResult.Message}");
-                        await _log.WriteAsync("Error", $"{operation.Id}: {opResult.Message}", cancellationToken).ConfigureAwait(false);
+                        opResult.Message = $"Completed with verification mismatch: expected {(desiredApplied ? "Applied" : "Not Applied")} but detect returned '{verification.StatusText}'.";
+                        _console.Publish("Warning", $"{operation.Id}: {opResult.Message}");
+                        await _log.WriteAsync("Warning", $"{operation.Id}: {opResult.Message}", cancellationToken).ConfigureAwait(false);
                     }
                 }
 
                 opResult.Success = allSucceeded;
                 if (allSucceeded)
                 {
-                    opResult.Message = request.DryRun ? "Dry-run completed." : "Completed successfully.";
+                    if (string.Equals(opResult.Message, "Not executed", StringComparison.Ordinal))
+                    {
+                        opResult.Message = request.DryRun ? "Dry-run completed." : "Completed successfully.";
+                    }
+
                     if (!request.DryRun && !request.Undo)
                     {
                         successfullyApplied.Add(operation);
@@ -412,49 +453,29 @@ public sealed class OperationEngine
                 continue;
             }
 
-            var allRollbackStepsSucceeded = true;
-            var failedRollbackStep = string.Empty;
-            foreach (var step in operation.UndoScripts)
-            {
-                failedRollbackStep = step.Name;
-                var rollbackStep = await _runner.ExecuteAsync(new PowerShellExecutionRequest
-                {
-                    OperationId = $"{operation.Id}.rollback",
-                    StepName = step.Name,
-                    Script = step.Script,
-                    DryRun = false,
-                    PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
-                    Timeout = MutationStepTimeout
-                }, cancellationToken).ConfigureAwait(false);
-
-                if (!rollbackStep.Success)
-                {
-                    allRollbackStepsSucceeded = false;
-                    rollbackResult.Message = $"Rollback step failed: {step.Name}";
-                    break;
-                }
-            }
-
-            if (allRollbackStepsSucceeded)
+            var rollbackAttempt = await ExecuteRollbackStepsAsync(operation, $"{operation.Id}.rollback", cancellationToken).ConfigureAwait(false);
+            if (rollbackAttempt.Success)
             {
                 rollbackResult.Success = true;
                 rollbackResult.Message = "Rollback completed successfully.";
             }
             else
             {
-                rollbackResult.Message = $"Rollback failed for step '{failedRollbackStep}'.";
-                var compensation = await _runner.TryCompensateFromSafetyBackupsAsync(operation.Id, cancellationToken).ConfigureAwait(false);
-                if (compensation.Attempted)
+                var failedSteps = rollbackAttempt.FailedSteps.Count == 0
+                    ? "unknown"
+                    : string.Join(", ", rollbackAttempt.FailedSteps);
+                rollbackResult.Message = $"Rollback completed with failures in steps: {failedSteps}.";
+                if (rollbackAttempt.Compensation.Attempted)
                 {
-                    rollbackResult.Message = $"{rollbackResult.Message} {compensation.Message}";
-                    if (compensation.Success)
+                    rollbackResult.Message = $"{rollbackResult.Message} {rollbackAttempt.Compensation.Message}";
+                    if (rollbackAttempt.Compensation.Success)
                     {
                         rollbackResult.Success = true;
                     }
 
                     await _log.WriteAsync(
-                            compensation.Success ? "Warning" : "Error",
-                            $"{operation.Id}.rollback compensation: {compensation.Message}",
+                            rollbackAttempt.Compensation.Success ? "Warning" : "Error",
+                            $"{operation.Id}.rollback compensation: {rollbackAttempt.Compensation.Message}",
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -474,7 +495,15 @@ public sealed class OperationEngine
                 return false;
             }
 
-            var description = $"Phantom {DateTime.Now:yyyyMMdd-HHmmss} {operation.Id}";
+            var operationToken = new string(operation.Id
+                .Where(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_')
+                .ToArray());
+            if (string.IsNullOrWhiteSpace(operationToken))
+            {
+                operationToken = "operation";
+            }
+
+            var description = $"Phantom {DateTime.Now:yyyyMMdd-HHmmss} {operationToken}";
             if (description.Length > 220)
             {
                 description = description[..220];
@@ -588,7 +617,7 @@ public sealed class OperationEngine
     private static string BuildForceDangerousVerificationPrompt(OperationDefinition operation, string verificationStatus)
     {
         var status = string.IsNullOrWhiteSpace(verificationStatus) ? "Unknown" : verificationStatus.Trim();
-        return $"[{operation.Id}] {operation.Title} (Risk: {operation.RiskTier}) detect/verification failed with status '{status}'. Proceeding can apply changes without reliable state verification and may be irreversible. Type Y only if you explicitly accept potential system instability or data loss. (Y/N)";
+        return $"[{operation.Id}] {operation.Title} (Risk: {operation.RiskTier}) detect/verification failed with status '{status}'. Proceeding can apply changes without reliable state verification, can remove rollback certainty, and may cause permanent system changes. Type Y only if you explicitly accept these risks. (Y/N)";
     }
 
     private static string BuildDangerousOperationPrompt(OperationDefinition operation, bool forceDangerous, string verificationStatus)
@@ -597,7 +626,7 @@ public sealed class OperationEngine
         var forceText = forceDangerous
             ? " Force-dangerous override is active, but safety gates remain enforced."
             : string.Empty;
-        return $"DANGEROUS OPERATION: [{operation.Id}] {operation.Title}. Risk tier: {operation.RiskTier}. Current detect status: '{status}'. This operation can cause irreversible system changes.{forceText} Confirm execution? (Y/N)";
+        return $"DANGEROUS OPERATION: [{operation.Id}] {operation.Title}. Risk tier: {operation.RiskTier}. Current detect status: '{status}'. This operation can cause irreversible system changes. Automatic compensation restores registry backups only; service/file/task changes may require manual recovery.{forceText} Confirm execution? (Y/N)";
     }
 
     private static bool ShouldPreferProcessMode(string operationId, string stepName)
@@ -608,7 +637,46 @@ public sealed class OperationEngine
             return false;
         }
 
-        return operationId.StartsWith("store.manager.", StringComparison.OrdinalIgnoreCase);
+        return operationId.StartsWith("store.manager.", StringComparison.OrdinalIgnoreCase) ||
+               operationId.StartsWith("feature.repair.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<(bool Success, List<string> FailedSteps, BackupCompensationResult Compensation)> ExecuteRollbackStepsAsync(
+        OperationDefinition operation,
+        string rollbackOperationId,
+        CancellationToken cancellationToken)
+    {
+        var failedSteps = new List<string>();
+        foreach (var step in operation.UndoScripts)
+        {
+            var rollbackStep = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+            {
+                OperationId = rollbackOperationId,
+                StepName = step.Name,
+                Script = step.Script,
+                DryRun = false,
+                PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
+                Timeout = MutationStepTimeout
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (!rollbackStep.Success)
+            {
+                failedSteps.Add(step.Name);
+            }
+        }
+
+        if (failedSteps.Count == 0)
+        {
+            return (true, failedSteps, new BackupCompensationResult
+            {
+                Attempted = false,
+                Success = false,
+                Message = string.Empty
+            });
+        }
+
+        var compensation = await _runner.TryCompensateFromSafetyBackupsAsync(operation.Id, cancellationToken).ConfigureAwait(false);
+        return (false, failedSteps, compensation);
     }
 
     private static bool IsOperationCompatible(OperationDefinition operation, Version currentOsVersion)

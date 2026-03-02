@@ -622,16 +622,51 @@ if ($null -eq $storageSense) { $storageSense = 0 }
 
         try
         {
-            var result = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+            var operation = new OperationDefinition
             {
-                OperationId = operationId,
-                StepName = stepName,
-                Script = script,
+                Id = operationId,
+                Title = operationId,
+                Description = $"{operationId}/{stepName}",
+                RiskTier = RiskTier.Basic,
+                Reversible = true,
+                RunScripts =
+                [
+                    new PowerShellStep
+                    {
+                        Name = stepName,
+                        Script = script
+                    }
+                ],
+                UndoScripts =
+                [
+                    new PowerShellStep
+                    {
+                        Name = "undo-noop",
+                        Script = "Write-Output 'No undo action defined for this operation.'"
+                    }
+                ]
+            };
+
+            var precheck = await _operationEngine.RunBatchPrecheckAsync([operation], linked.Token).ConfigureAwait(false);
+            if (!precheck.IsSuccess)
+            {
+                _console.Publish("Error", precheck.Message);
+                return;
+            }
+
+            var batch = await _operationEngine.ExecuteBatchAsync(new OperationRequest
+            {
+                Operations = [operation],
+                Undo = false,
                 DryRun = false,
-                PreferProcessMode = forceProcessMode
+                EnableDestructiveOperations = _settingsAccessor().EnableDestructiveOperations,
+                ForceDangerous = false,
+                SkipCaptureCheck = false,
+                ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
             }, linked.Token).ConfigureAwait(false);
 
-            if (!result.Success)
+            var result = batch.Results.FirstOrDefault(r => string.Equals(r.OperationId, operationId, StringComparison.OrdinalIgnoreCase));
+            if (result is null || !result.Success)
             {
                 _console.Publish("Error", $"{operationId}: command failed.");
             }

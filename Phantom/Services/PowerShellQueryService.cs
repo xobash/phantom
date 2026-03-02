@@ -11,6 +11,29 @@ public sealed class PowerShellQueryService
     private static readonly Regex SecretAssignmentRegex = new(
         @"(?im)\b(api[_-]?key|token|password|secret)\b\s*[:=]\s*(['""]?)(?<value>[^'""]+)\2",
         RegexOptions.Compiled);
+    private static readonly string[] MutatingCommandMarkers =
+    [
+        "Set-ItemProperty",
+        "New-Item",
+        "Remove-Item",
+        "Rename-Item",
+        "Set-Content",
+        "Add-Content",
+        "Clear-Content",
+        "Set-Service",
+        "Stop-Service",
+        "Restart-Service",
+        "Enable-ScheduledTask",
+        "Disable-ScheduledTask",
+        "Start-Process",
+        "Invoke-WebRequest",
+        "Invoke-RestMethod",
+        "Start-BitsTransfer",
+        "Checkpoint-Computer",
+        "reg add",
+        "reg delete",
+        "sc.exe"
+    ];
 
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
@@ -47,6 +70,18 @@ public sealed class PowerShellQueryService
             {
                 _console.Publish("Error", blocked, persist: false);
             }
+            await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            return (1, string.Empty, blocked);
+        }
+
+        if (!ValidateReadOnlyQueryScript(script, out blockedReason))
+        {
+            var blocked = $"Blocked PowerShell query script: {blockedReason}";
+            if (echoToConsole)
+            {
+                _console.Publish("Error", blocked, persist: false);
+            }
+
             await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
             return (1, string.Empty, blocked);
         }
@@ -169,8 +204,7 @@ public sealed class PowerShellQueryService
     private static (Process? Process, string Host, string Error, string CommandLine) StartPowerShellProcess(string script)
     {
         Exception? lastError = null;
-        var wrappedScript = $"$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$VerbosePreference='SilentlyContinue';$InformationPreference='Continue';& {{ {script} }}";
-        var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrappedScript));
+        var wrappedScript = $"$ErrorActionPreference='Continue';$PSDefaultParameterValues['*:ErrorAction']='Stop';$ProgressPreference='SilentlyContinue';$VerbosePreference='SilentlyContinue';$InformationPreference='Continue';& {{ {script} }}";
 
         foreach (var host in new[] { "pwsh.exe", "powershell.exe" })
         {
@@ -189,8 +223,8 @@ public sealed class PowerShellQueryService
             psi.ArgumentList.Add("-NonInteractive");
             psi.ArgumentList.Add("-ExecutionPolicy");
             psi.ArgumentList.Add("RemoteSigned");
-            psi.ArgumentList.Add("-EncodedCommand");
-            psi.ArgumentList.Add(encodedScript);
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add("-");
 
             try
             {
@@ -199,7 +233,7 @@ public sealed class PowerShellQueryService
                 {
                     try
                     {
-                        process.StandardInput.WriteLine();
+                        process.StandardInput.WriteLine(wrappedScript);
                         process.StandardInput.Flush();
                         process.StandardInput.Close();
                     }
@@ -208,7 +242,7 @@ public sealed class PowerShellQueryService
                         // Best-effort stdin guard. Query execution still proceeds.
                     }
 
-                    var fullCommandLine = $"{host} -NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <redacted>";
+                    var fullCommandLine = $"{host} -NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -Command - <script-via-stdin>";
                     return (process, host, string.Empty, fullCommandLine);
                 }
             }
@@ -316,6 +350,21 @@ public sealed class PowerShellQueryService
         var bytes = Encoding.UTF8.GetBytes(script ?? string.Empty);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
+    }
+
+    private static bool ValidateReadOnlyQueryScript(string script, out string reason)
+    {
+        foreach (var marker in MutatingCommandMarkers)
+        {
+            if (script.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                reason = $"read-only query policy blocked command marker '{marker}'.";
+                return false;
+            }
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     private static bool IsDiagnosticScriptLoggingEnabled()

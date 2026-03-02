@@ -17,7 +17,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     private string _selectedMode = "Security";
     private string _serviceStatus = "Unknown";
     private string _policySummary = "Unknown";
-    private string _policySource = @"Source: HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate (Registry64, machine scope).";
+    private string _policySource = $"Source: {UpdateModeOperationFactory.RegistryPolicyRootPath.Replace(":", string.Empty)} (Registry64, machine scope).";
     private string _policyExplanation = "Read-only snapshot. Preset buttons update these policy values and related Windows Update service behavior.";
 
     public UpdatesViewModel(
@@ -98,7 +98,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     private async Task ApplyModeByNameAsync(string mode, CancellationToken cancellationToken)
     {
-        mode = NormalizeMode(mode);
+        mode = UpdateModeOperationFactory.NormalizeMode(mode);
         SelectedMode = mode;
 
         if (string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
@@ -111,13 +111,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
             }
         }
 
-        OperationDefinition operation = mode switch
-        {
-            "Default" => BuildDefaultModeOperation(),
-            "Security" => BuildSecurityModeOperation(),
-            "Disable All" => BuildDisableAllModeOperation(),
-            _ => BuildSecurityModeOperation()
-        };
+        var operation = UpdateModeOperationFactory.BuildModeOperation(mode);
 
         await ExecuteUpdateOperationAsync(
                 operation,
@@ -125,21 +119,6 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
                 forceDangerous: string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
             .ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
-    }
-
-    private static string NormalizeMode(string? mode)
-    {
-        if (string.Equals(mode, "Default", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Default";
-        }
-
-        if (string.Equals(mode, "Disable All", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Disable All";
-        }
-
-        return "Security";
     }
 
     private static string BuildPolicySummary(string rawJson)
@@ -192,7 +171,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
 
     private async Task RestoreDefaultAsync(CancellationToken cancellationToken)
     {
-        await ExecuteUpdateOperationAsync(BuildDefaultModeOperation(), cancellationToken).ConfigureAwait(false);
+        await ExecuteUpdateOperationAsync(UpdateModeOperationFactory.BuildDefaultModeOperation(), cancellationToken).ConfigureAwait(false);
         await RefreshStatusAsync(cancellationToken, echoQueryToConsole: false).ConfigureAwait(false);
     }
 
@@ -201,11 +180,7 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         var service = await _queryService.InvokeAsync("Get-Service wuauserv | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
         var bits = await _queryService.InvokeAsync("Get-Service bits | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
         var policy = await _queryService.InvokeAsync(
-                "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; " +
-                "$feature=$null; $quality=$null; $noAuto=$null; " +
-                "if(Test-Path $wu){ try { $feature=(Get-ItemProperty -Path $wu -Name DeferFeatureUpdatesPeriodInDays -ErrorAction Stop).DeferFeatureUpdatesPeriodInDays } catch {}; try { $quality=(Get-ItemProperty -Path $wu -Name DeferQualityUpdatesPeriodInDays -ErrorAction Stop).DeferQualityUpdatesPeriodInDays } catch {} }; " +
-                "if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch {} }; " +
-                "[PSCustomObject]@{ DeferFeatureUpdatesPeriodInDays=$feature; DeferQualityUpdatesPeriodInDays=$quality; NoAutoUpdate=$noAuto } | ConvertTo-Json -Compress",
+                UpdateModeOperationFactory.BuildPolicySummaryQueryScript(),
                 cancellationToken,
                 echoToConsole: echoQueryToConsole)
             .ConfigureAwait(false);
@@ -316,90 +291,4 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         }
     }
 
-    private static OperationDefinition BuildDefaultModeOperation()
-    {
-        return new OperationDefinition
-        {
-            Id = "updates.mode.default",
-            Title = "Restore default Windows Update behavior",
-            Description = "Undo custom update policies and service configuration.",
-            RiskTier = RiskTier.Basic,
-            Reversible = true,
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "restore-default",
-                    Script = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if (Test-Path $au) { Remove-Item -Path $au -Recurse -Force -ErrorAction Stop }; if (Test-Path $wu) { Remove-Item -Path $wu -Recurse -Force -ErrorAction Stop }; Set-Service wuauserv -StartupType Manual; Set-Service bits -StartupType Manual; Start-Service wuauserv -ErrorAction Stop; Start-Service bits -ErrorAction Stop"
-                }
-            ],
-            DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if(($noAuto -ne 1) -and $wu -ne 'Disabled' -and $bits -ne 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "undo-to-security",
-                    Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord"
-                }
-            ]
-        };
-    }
-
-    private static OperationDefinition BuildSecurityModeOperation()
-    {
-        return new OperationDefinition
-        {
-            Id = "updates.mode.security",
-            Title = "Set Security mode",
-            Description = "Delay feature updates by 365 days and quality updates by 4 days.",
-            RiskTier = RiskTier.Basic,
-            Reversible = true,
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "apply-security",
-                    Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Force | Out-Null; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferFeatureUpdatesPeriodInDays -Value 365 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Name DeferQualityUpdatesPeriodInDays -Value 4 -Type DWord; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 0 -Type DWord"
-                }
-            ],
-            DetectScript = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if((Test-Path $wu) -and (Test-Path $au)){ $p=Get-ItemProperty -Path $wu -ErrorAction Stop; $a=Get-ItemProperty -Path $au -ErrorAction Stop; if($p.DeferFeatureUpdatesPeriodInDays -eq 365 -and $p.DeferQualityUpdatesPeriodInDays -eq 4 -and $a.NoAutoUpdate -eq 0){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'} } else {'PHANTOM_STATUS=NotApplied'}",
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "undo-default",
-                    Script = BuildDefaultModeOperation().RunScripts[0].Script
-                }
-            ]
-        };
-    }
-
-    private static OperationDefinition BuildDisableAllModeOperation()
-    {
-        return new OperationDefinition
-        {
-            Id = "updates.mode.disableall",
-            Title = "Disable ALL updates",
-            Description = "Disables Windows Update services and policies.",
-            RiskTier = RiskTier.Dangerous,
-            Reversible = true,
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "disable-updates",
-                    Script = "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' -Name NoAutoUpdate -Value 1 -Type DWord; Stop-Service wuauserv -Force -ErrorAction Stop; Stop-Service bits -Force -ErrorAction Stop; Set-Service wuauserv -StartupType Disabled; Set-Service bits -StartupType Disabled"
-                }
-            ],
-            DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if($noAuto -eq 1 -and $wu -eq 'Disabled' -and $bits -eq 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "undo-default",
-                    Script = BuildDefaultModeOperation().RunScripts[0].Script
-                }
-            ]
-        };
-    }
 }

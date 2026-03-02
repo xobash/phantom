@@ -1193,7 +1193,24 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         var normalized = parameterName.Trim().TrimStart('-');
-        return "encodedcommand".StartsWith(normalized, StringComparison.OrdinalIgnoreCase);
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        if (normalized.Equals("encoding", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("encodedarguments", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        const string encodedCommand = "encodedcommand";
+        if (normalized.Length > encodedCommand.Length)
+        {
+            return false;
+        }
+
+        return encodedCommand.StartsWith(normalized, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool ValidateOperationAllowlist(string operationId, out string reason)
@@ -1212,12 +1229,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         reason = string.Empty;
         if (!IsCatalogBackedOperation(operationId))
-        {
-            return true;
-        }
-
-        if (operationId.StartsWith("tweak.dns.", StringComparison.OrdinalIgnoreCase) ||
-            operationId.Equals("tweak.run-oo-shutup10", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

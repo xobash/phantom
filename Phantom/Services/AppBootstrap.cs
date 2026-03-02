@@ -40,7 +40,7 @@ public sealed class AppBootstrap : IDisposable
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme, Paths);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
         Apps = new AppsViewModel(HomeData, Console, Runner);
-        Services = new ServicesViewModel(HomeData, Console, Runner);
+        Services = new ServicesViewModel(HomeData, Console, Runner, Operations, ExecutionCoordinator, Prompt, () => SettingsProvider.Current);
         Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);

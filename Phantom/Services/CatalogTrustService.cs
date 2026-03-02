@@ -90,6 +90,11 @@ public static class CatalogTrustService
             AddScriptHash(hashes, tweak.UndoScript);
         }
 
+        foreach (var script in RuntimeOperationScriptCatalog.GetTrustedRuntimeMutationScripts())
+        {
+            AddScriptHash(hashes, script);
+        }
+
         return hashes;
     }
 

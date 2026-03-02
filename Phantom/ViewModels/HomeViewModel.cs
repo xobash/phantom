@@ -64,9 +64,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         };
         _timer.Tick += _refreshTickHandler;
 
-        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Send)
+        _fastMetricsTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromSeconds(1)
+            Interval = TimeSpan.FromSeconds(2)
         };
         _fastMetricsTickHandler = (_, _) =>
         {

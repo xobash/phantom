@@ -30,5 +30,10 @@ public sealed class CatalogTrustServiceTests
             Assert.Contains(CatalogTrustService.ComputeScriptHash(tweak.ApplyScript), allowlist);
             Assert.Contains(CatalogTrustService.ComputeScriptHash(tweak.UndoScript), allowlist);
         }
+
+        foreach (var runtimeScript in RuntimeOperationScriptCatalog.GetTrustedRuntimeMutationScripts())
+        {
+            Assert.Contains(CatalogTrustService.ComputeScriptHash(runtimeScript), allowlist);
+        }
     }
 }

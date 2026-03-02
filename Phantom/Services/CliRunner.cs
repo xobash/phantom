@@ -36,10 +36,10 @@ public sealed class CliRunner
         _settingsStore = settingsStore;
     }
 
-    public async Task<int> RunAsync(string configPath, bool forceDangerous, string? dangerousAcknowledgement, CancellationToken cancellationToken)
+    public async Task<int> RunAsync(string configPath, bool forceDangerous, string? dangerousAcknowledgement, bool skipCaptureCheck, CancellationToken cancellationToken)
     {
-        _console.Publish("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}");
-        await _log.WriteAsync("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}", cancellationToken).ConfigureAwait(false);
+        _console.Publish("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}, skipCaptureCheck={skipCaptureCheck}");
+        await _log.WriteAsync("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}, skipCaptureCheck={skipCaptureCheck}", cancellationToken).ConfigureAwait(false);
 
         if (!TryNormalizeConfigPath(configPath, out var normalizedConfigPath, out var validationError))
         {
@@ -113,6 +113,14 @@ public sealed class CliRunner
             return 3;
         }
 
+        if (skipCaptureCheck && !forceDangerousEnabled)
+        {
+            var skipCaptureMessage = "The -SkipCaptureCheck override is allowed only together with confirmDangerous=true and -ForceDangerous.";
+            _console.Publish("Error", skipCaptureMessage);
+            await _log.WriteAsync("Error", skipCaptureMessage, cancellationToken).ConfigureAwait(false);
+            return 3;
+        }
+
         if (operations.SelectMany(o => o.RunScripts).Any(s => s.RequiresNetwork) && !_network.IsOnline())
         {
             await _log.WriteAsync("Error", "Offline detected. Network-required actions blocked.", cancellationToken).ConfigureAwait(false);
@@ -131,11 +139,12 @@ public sealed class CliRunner
             Operations = operations,
             Undo = false,
             DryRun = false,
-            EnableDestructiveOperations = settings.EnableDestructiveOperations,
-            ForceDangerous = forceDangerousEnabled,
-            InteractiveDangerousPrompt = false,
-            ConfirmDangerousAsync = prompt =>
-            {
+                EnableDestructiveOperations = settings.EnableDestructiveOperations,
+                ForceDangerous = forceDangerousEnabled,
+                SkipCaptureCheck = skipCaptureCheck,
+                InteractiveDangerousPrompt = false,
+                ConfirmDangerousAsync = prompt =>
+                {
                 _console.Publish("Warning", $"CLI dangerous confirmation: {prompt}");
                 return Task.FromResult(forceDangerousEnabled && string.Equals(acknowledgement, RequiredDangerousAcknowledgement, StringComparison.Ordinal));
             }
@@ -304,42 +313,7 @@ public sealed class CliRunner
                 UndoScripts = [new PowerShellStep { Name = "undo", Script = f.UndoScript }]
             }));
 
-        operations.Add(config.UpdateMode switch
-        {
-            "Disable All" => new OperationDefinition
-            {
-                Id = "updates.mode.disableall",
-                Title = "Disable updates",
-                Description = "Disable all updates",
-                RiskTier = RiskTier.Dangerous,
-                Reversible = true,
-                DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if($noAuto -eq 1 -and $wu -eq 'Disabled' -and $bits -eq 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
-                RunScripts = [new PowerShellStep { Name = "disable", Script = BuildUpdateDisableAllRunScript() }],
-                UndoScripts = [new PowerShellStep { Name = "default", Script = BuildUpdateDefaultRestoreScript() }]
-            },
-            "Security" => new OperationDefinition
-            {
-                Id = "updates.mode.security",
-                Title = "Security update mode",
-                Description = "Security mode",
-                RiskTier = RiskTier.Basic,
-                Reversible = true,
-                DetectScript = "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; if((Test-Path $wu) -and (Test-Path $au)){ $p=Get-ItemProperty -Path $wu -ErrorAction Stop; $a=Get-ItemProperty -Path $au -ErrorAction Stop; if($p.DeferFeatureUpdatesPeriodInDays -eq 365 -and $p.DeferQualityUpdatesPeriodInDays -eq 4 -and $a.NoAutoUpdate -eq 0){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'} } else {'PHANTOM_STATUS=NotApplied'}",
-                RunScripts = [new PowerShellStep { Name = "security", Script = BuildUpdateSecurityRunScript() }],
-                UndoScripts = [new PowerShellStep { Name = "default", Script = BuildUpdateSecurityUndoScript() }]
-            },
-            _ => new OperationDefinition
-            {
-                Id = "updates.mode.default",
-                Title = "Default updates",
-                Description = "Restore default update behavior",
-                RiskTier = RiskTier.Basic,
-                Reversible = true,
-                DetectScript = "$au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; $noAuto=$null; if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch { $noAuto=$null } }; $wu=(Get-Service wuauserv -ErrorAction Stop).StartType; $bits=(Get-Service bits -ErrorAction Stop).StartType; if(($noAuto -ne 1) -and $wu -ne 'Disabled' -and $bits -ne 'Disabled'){'PHANTOM_STATUS=Applied'} else {'PHANTOM_STATUS=NotApplied'}",
-                RunScripts = [new PowerShellStep { Name = "default", Script = BuildUpdateDefaultRestoreScript() }],
-                UndoScripts = [new PowerShellStep { Name = "none", Script = "Write-Output 'No-op'" }]
-            }
-        });
+        operations.Add(UpdateModeOperationFactory.BuildModeOperation(config.UpdateMode));
 
         return operations;
     }
@@ -347,204 +321,50 @@ public sealed class CliRunner
     private static string BuildRegistryCaptureScript(string key)
     {
         var escaped = key.Replace("'", "''");
-        return "$WarningPreference='Continue'; " +
-               $"$p='{escaped}'; " +
-               "if (Test-Path $p) { " +
-               "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
-               "$out = [ordered]@{}; " +
-               "foreach ($prop in $item.PSObject.Properties) { " +
-               "if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }; " +
-               "$value = $prop.Value; " +
-               "if ($value -is [byte[]]) { $out[$prop.Name] = [Convert]::ToBase64String($value) } else { $out[$prop.Name] = $value } " +
-               "}; " +
-               "$out | ConvertTo-Json -Depth 8 -Compress " +
-               "} else { '' }";
+        return $$"""
+$WarningPreference='Continue'
+$p='{{escaped}}'
+if (Test-Path $p) {
+  $item = Get-ItemProperty -Path $p -ErrorAction Stop
+  $out = [ordered]@{}
+  foreach ($prop in $item.PSObject.Properties) {
+    if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }
+    $value = $prop.Value
+    $entry = [ordered]@{
+      Type  = 'Unknown'
+      Value = $null
     }
 
-    private static string BuildUpdateDisableAllRunScript()
-    {
-        return """
-$ErrorActionPreference='Stop'
-$auSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
-$stateDir=Join-Path $env:ProgramData 'Phantom\state'
-$statePath=Join-Path $stateDir 'windows-update-service-modes.json'
-
-function Set-RegistryDword64([string]$subKey,[string]$name,[int]$value) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.CreateSubKey($subKey)
-    if($null -eq $key){ throw "Unable to open HKLM:\$subKey" }
-    try { $key.SetValue($name,$value,[Microsoft.Win32.RegistryValueKind]::DWord) } finally { $key.Dispose() }
-  } finally {
-    $base.Dispose()
-  }
-}
-
-function Get-ServiceStartMode([string]$serviceName) {
-  return (Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop).StartMode
-}
-
-New-Item -Path $stateDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
-@{
-  WuauservStartMode = Get-ServiceStartMode 'wuauserv'
-  BitsStartMode = Get-ServiceStartMode 'bits'
-} | ConvertTo-Json -Compress | Set-Content -Path $statePath -Encoding UTF8 -Force -ErrorAction Stop
-
-Set-RegistryDword64 -subKey $auSubKey -name 'NoAutoUpdate' -value 1
-Stop-Service -Name wuauserv -Force -ErrorAction Stop
-Stop-Service -Name bits -Force -ErrorAction Stop
-Set-Service -Name wuauserv -StartupType Disabled -ErrorAction Stop
-Set-Service -Name bits -StartupType Disabled -ErrorAction Stop
-""";
+    if ($null -eq $value) {
+      $entry.Type = 'Null'
+      $entry.Value = $null
+    } elseif ($value -is [byte[]]) {
+      $entry.Type = 'Binary'
+      $entry.Value = [Convert]::ToBase64String($value)
+    } elseif ($value -is [int32]) {
+      $entry.Type = 'DWord'
+      $entry.Value = [int]$value
+    } elseif ($value -is [int64]) {
+      $entry.Type = 'QWord'
+      $entry.Value = [long]$value
+    } elseif ($value -is [string[]]) {
+      $entry.Type = 'MultiString'
+      $entry.Value = $value
+    } elseif ($value -is [string]) {
+      $entry.Type = 'String'
+      $entry.Value = $value
+    } else {
+      $entry.Type = $value.GetType().FullName
+      $entry.Value = $value
     }
 
-    private static string BuildUpdateDefaultRestoreScript()
-    {
-        return """
-$ErrorActionPreference='Stop'
-$wuSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
-$auSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
-$statePath=Join-Path (Join-Path $env:ProgramData 'Phantom\state') 'windows-update-service-modes.json'
-
-function Remove-RegistryValue64([string]$subKey,[string]$name) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.OpenSubKey($subKey,$true)
-    if($null -eq $key){ return }
-    try {
-      if($null -ne $key.GetValue($name,$null)){ $key.DeleteValue($name,$false) }
-    } finally {
-      $key.Dispose()
-    }
-  } finally {
-    $base.Dispose()
+    $out[$prop.Name] = $entry
   }
+
+  $out | ConvertTo-Json -Depth 10 -Compress
+} else {
+  ''
 }
-
-function Remove-RegistrySubKeyIfEmpty64([string]$subKey) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.OpenSubKey($subKey,$false)
-    if($null -eq $key){ return }
-    try {
-      $valueNames=$key.GetValueNames() | Where-Object { $_ -ne '' }
-      if($key.SubKeyCount -eq 0 -and $valueNames.Count -eq 0){
-        $base.DeleteSubKey($subKey,$false)
-      }
-    } finally {
-      $key.Dispose()
-    }
-  } finally {
-    $base.Dispose()
-  }
-}
-
-function Resolve-ServiceStartupType([string]$mode) {
-  switch ($mode.ToLowerInvariant()) {
-    'auto' { return 'Automatic' }
-    'automatic' { return 'Automatic' }
-    'manual' { return 'Manual' }
-    'disabled' { return 'Disabled' }
-    default { return 'Manual' }
-  }
-}
-
-$wuMode='Manual'
-$bitsMode='Manual'
-if(Test-Path $statePath){
-  try {
-    $state=Get-Content -Path $statePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    if($null -ne $state -and $null -ne $state.WuauservStartMode -and -not [string]::IsNullOrWhiteSpace($state.WuauservStartMode)){ $wuMode=[string]$state.WuauservStartMode }
-    if($null -ne $state -and $null -ne $state.BitsStartMode -and -not [string]::IsNullOrWhiteSpace($state.BitsStartMode)){ $bitsMode=[string]$state.BitsStartMode }
-  } catch {
-  }
-}
-
-$wuStartup=Resolve-ServiceStartupType $wuMode
-$bitsStartup=Resolve-ServiceStartupType $bitsMode
-Set-Service -Name wuauserv -StartupType $wuStartup -ErrorAction Stop
-Set-Service -Name bits -StartupType $bitsStartup -ErrorAction Stop
-if($wuStartup -ne 'Disabled'){ Start-Service -Name wuauserv -ErrorAction Stop }
-if($bitsStartup -ne 'Disabled'){ Start-Service -Name bits -ErrorAction Stop }
-
-Remove-RegistryValue64 -subKey $auSubKey -name 'NoAutoUpdate'
-Remove-RegistryValue64 -subKey $wuSubKey -name 'DeferFeatureUpdatesPeriodInDays'
-Remove-RegistryValue64 -subKey $wuSubKey -name 'DeferQualityUpdatesPeriodInDays'
-Remove-RegistrySubKeyIfEmpty64 -subKey $auSubKey
-Remove-RegistrySubKeyIfEmpty64 -subKey $wuSubKey
-if(Test-Path $statePath){ Remove-Item -Path $statePath -Force -ErrorAction SilentlyContinue }
-""";
-    }
-
-    private static string BuildUpdateSecurityRunScript()
-    {
-        return """
-$ErrorActionPreference='Stop'
-$wuSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
-$auSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
-
-function Set-RegistryDword64([string]$subKey,[string]$name,[int]$value) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.CreateSubKey($subKey)
-    if($null -eq $key){ throw "Unable to open HKLM:\$subKey" }
-    try { $key.SetValue($name,$value,[Microsoft.Win32.RegistryValueKind]::DWord) } finally { $key.Dispose() }
-  } finally {
-    $base.Dispose()
-  }
-}
-
-Set-RegistryDword64 -subKey $wuSubKey -name 'DeferFeatureUpdatesPeriodInDays' -value 365
-Set-RegistryDword64 -subKey $wuSubKey -name 'DeferQualityUpdatesPeriodInDays' -value 4
-Set-RegistryDword64 -subKey $auSubKey -name 'NoAutoUpdate' -value 0
-""";
-    }
-
-    private static string BuildUpdateSecurityUndoScript()
-    {
-        return """
-$ErrorActionPreference='Stop'
-$wuSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
-$auSubKey='SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
-
-function Remove-RegistryValue64([string]$subKey,[string]$name) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.OpenSubKey($subKey,$true)
-    if($null -eq $key){ return }
-    try {
-      if($null -ne $key.GetValue($name,$null)){ $key.DeleteValue($name,$false) }
-    } finally {
-      $key.Dispose()
-    }
-  } finally {
-    $base.Dispose()
-  }
-}
-
-function Remove-RegistrySubKeyIfEmpty64([string]$subKey) {
-  $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-  try {
-    $key=$base.OpenSubKey($subKey,$false)
-    if($null -eq $key){ return }
-    try {
-      $valueNames=$key.GetValueNames() | Where-Object { $_ -ne '' }
-      if($key.SubKeyCount -eq 0 -and $valueNames.Count -eq 0){
-        $base.DeleteSubKey($subKey,$false)
-      }
-    } finally {
-      $key.Dispose()
-    }
-  } finally {
-    $base.Dispose()
-  }
-}
-
-Remove-RegistryValue64 -subKey $auSubKey -name 'NoAutoUpdate'
-Remove-RegistryValue64 -subKey $wuSubKey -name 'DeferFeatureUpdatesPeriodInDays'
-Remove-RegistryValue64 -subKey $wuSubKey -name 'DeferQualityUpdatesPeriodInDays'
-Remove-RegistrySubKeyIfEmpty64 -subKey $auSubKey
-Remove-RegistrySubKeyIfEmpty64 -subKey $wuSubKey
 """;
     }
 
