@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Phantom.Models;
 
 namespace Phantom.Services;
@@ -9,7 +10,8 @@ public static class CatalogTrustService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     // These hashes are compiled into the binary so pre-elevation catalog tampering is detectable.
