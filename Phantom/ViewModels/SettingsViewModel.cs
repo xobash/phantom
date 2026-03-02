@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
 using System.Windows;
 using System.Windows.Documents;
 using Phantom.Commands;
@@ -19,6 +20,7 @@ public enum AboutReadmeLoadState
 
 public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 {
+    private const int MaxLogPreviewBytes = 256 * 1024;
     private static readonly IReadOnlyList<string> ThemeModeOptions = new[] { AppThemeModes.Auto, AppThemeModes.Light, AppThemeModes.Dark };
 
     private readonly SettingsStore _store;
@@ -342,7 +344,10 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 
         try
         {
-            var content = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+            var fileInfo = new FileInfo(path);
+            var content = fileInfo.Length <= MaxLogPreviewBytes
+                ? await File.ReadAllTextAsync(path).ConfigureAwait(false)
+                : await ReadTailPreviewAsync(path, fileInfo.Length).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() => SelectedLogContent = content);
         }
         catch (Exception ex)
@@ -350,6 +355,35 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
             await Application.Current.Dispatcher.InvokeAsync(() =>
                 SelectedLogContent = $"Failed to load log file:{Environment.NewLine}{ex.Message}");
         }
+    }
+
+    private static async Task<string> ReadTailPreviewAsync(string path, long fileLength)
+    {
+        var previewBytes = (int)Math.Min(MaxLogPreviewBytes, fileLength);
+        var buffer = new byte[previewBytes];
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 8192, useAsync: true);
+        var start = Math.Max(0, fileLength - previewBytes);
+        stream.Seek(start, SeekOrigin.Begin);
+
+        var offset = 0;
+        while (offset < previewBytes)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset, previewBytes - offset)).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            offset += read;
+        }
+
+        var tailText = Encoding.UTF8.GetString(buffer, 0, offset);
+        var totalKb = fileLength / 1024d;
+        return $"[Preview truncated. Showing last {MaxLogPreviewBytes / 1024} KB of {totalKb:N1} KB file.]"
+               + Environment.NewLine
+               + Environment.NewLine
+               + tailText;
     }
 
     private async Task EnsureReadmeLoadedAsync()
