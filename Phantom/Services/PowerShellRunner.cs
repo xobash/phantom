@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Management.Automation;
 using System.Management.Automation.Language;
 using System.Management.Automation.Runspaces;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -20,7 +19,8 @@ public interface IPowerShellRunner
 
 public sealed class PowerShellRunner : IPowerShellRunner
 {
-    private const string BootstrapScript = "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;";
+    private const string BootstrapScript = "$ErrorActionPreference='Continue';$PSDefaultParameterValues['*:ErrorAction']='Stop';$WarningPreference='Continue';Set-StrictMode -Version Latest;";
+    private static readonly TimeSpan DefaultExecutionTimeout = TimeSpan.FromMinutes(10);
     private static readonly HashSet<string> TrustedDownloadHosts =
     [
         "community.chocolatey.org",
@@ -111,7 +111,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
     private readonly AppPaths _paths;
-    private readonly HashSet<string> _trustedCatalogScriptHashes;
+    private readonly object _catalogAllowlistSync = new();
+    private HashSet<string>? _trustedCatalogScriptHashes;
+    private DateTime _tweaksLastWriteUtc;
+    private DateTime _fixesLastWriteUtc;
+    private DateTime _panelsLastWriteUtc;
 
     public PowerShellRunner(ConsoleStreamService console, LogService log, AppPaths paths, Func<AppSettings> settingsAccessor)
     {
@@ -119,12 +123,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
         _log = log;
         _paths = paths;
         _ = settingsAccessor;
-        _trustedCatalogScriptHashes = BuildTrustedCatalogScriptHashAllowlist(paths);
     }
 
     public async Task<PowerShellExecutionResult> ExecuteAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
-        var scriptHash = ComputeScriptHash(request.Script);
+        var scriptHash = CatalogTrustService.ComputeScriptHash(request.Script);
         _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
         await _log.WriteAsync("Command", request.Script, cancellationToken).ConfigureAwait(false);
         await _log.WriteAsync(
@@ -182,71 +185,100 @@ public sealed class PowerShellRunner : IPowerShellRunner
             };
         }
 
-        if (!request.DryRun && !request.SkipSafetyBackup)
-        {
-            await CreatePreExecutionBackupsAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (request.DryRun)
-        {
-            _console.Publish("DryRun", "Dry-run enabled. Command was not executed.");
-            await _log.WriteAsync("DryRun", "Dry-run enabled. Command was not executed.", cancellationToken).ConfigureAwait(false);
-            return new PowerShellExecutionResult { Success = true, ExitCode = 0 };
-        }
-
-        if (request.PreferProcessMode)
-        {
-            var processModeResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
-            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync preferred process mode completed. op={request.OperationId}, step={request.StepName}, exit={processModeResult.ExitCode}, success={processModeResult.Success}");
-            return processModeResult;
-        }
-
+        CancellationTokenSource? timeoutCts = null;
+        var effectiveTimeout = request.Timeout ?? DefaultExecutionTimeout;
         try
         {
-            var runspaceResult = await ExecuteViaRunspaceAsync(request, cancellationToken).ConfigureAwait(false);
-            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
-            return runspaceResult;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (PSInvalidOperationException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
-            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
-            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
-            return processResult;
-        }
-        catch (InvalidOperationException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-            await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
-            var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
-            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
-            return processResult;
-        }
-        catch (RuntimeException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            if (ShouldFallbackOnRuntimeException(request.StepName, ex))
+            var effectiveToken = cancellationToken;
+            if (effectiveTimeout > TimeSpan.Zero)
+            {
+                timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(effectiveTimeout);
+                effectiveToken = timeoutCts.Token;
+            }
+
+            if (!request.DryRun && !request.SkipSafetyBackup)
+            {
+                await CreatePreExecutionBackupsAsync(request, effectiveToken).ConfigureAwait(false);
+            }
+
+            if (request.DryRun)
+            {
+                _console.Publish("DryRun", "Dry-run enabled. Command was not executed.");
+                await _log.WriteAsync("DryRun", "Dry-run enabled. Command was not executed.", effectiveToken).ConfigureAwait(false);
+                return new PowerShellExecutionResult { Success = true, ExitCode = 0 };
+            }
+
+            if (request.PreferProcessMode)
+            {
+                var processModeResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
+                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync preferred process mode completed. op={request.OperationId}, step={request.StepName}, exit={processModeResult.ExitCode}, success={processModeResult.Success}");
+                return processModeResult;
+            }
+
+            try
+            {
+                var runspaceResult = await ExecuteViaRunspaceAsync(request, effectiveToken).ConfigureAwait(false);
+                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
+                return runspaceResult;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (PSInvalidOperationException ex) when (!effectiveToken.IsCancellationRequested)
             {
                 _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", cancellationToken).ConfigureAwait(false);
-                var processResult = await ExecuteViaProcessAsync(request, cancellationToken).ConfigureAwait(false);
+                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
                 _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
                 return processResult;
             }
+            catch (InvalidOperationException ex) when (!effectiveToken.IsCancellationRequested)
+            {
+                _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
+                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
+                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                return processResult;
+            }
+            catch (RuntimeException ex) when (!effectiveToken.IsCancellationRequested)
+            {
+                if (ShouldFallbackOnRuntimeException(request.StepName, ex))
+                {
+                    _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
+                    await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                    var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
+                    _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                    return processResult;
+                }
 
-            var failure = $"Runspace execution failed for mutating step '{request.StepName}'. External fallback was blocked to avoid re-running a partially executed script. {ex.Message}";
-            _console.Publish("Error", failure);
-            await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {ex}", cancellationToken).ConfigureAwait(false);
+                var failure = $"Runspace execution failed for mutating step '{request.StepName}'. External fallback was blocked to avoid re-running a partially executed script. {ex.Message}";
+                _console.Publish("Error", failure);
+                await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {ex}", effectiveToken).ConfigureAwait(false);
+                return new PowerShellExecutionResult
+                {
+                    Success = false,
+                    ExitCode = 1,
+                    CombinedOutput = failure
+                };
+            }
+        }
+        catch (OperationCanceledException) when (timeoutCts is not null && timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            var timeoutMessage = $"{request.OperationId}/{request.StepName}: timed out after {effectiveTimeout.TotalSeconds:F0}s.";
+            _console.Publish("Error", timeoutMessage);
+            await _log.WriteAsync("Error", timeoutMessage, CancellationToken.None).ConfigureAwait(false);
             return new PowerShellExecutionResult
             {
                 Success = false,
-                ExitCode = 1,
-                CombinedOutput = failure
+                ExitCode = 124,
+                CombinedOutput = timeoutMessage
             };
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
         }
     }
 
@@ -658,7 +690,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
         psi.ArgumentList.Add("-EncodedCommand");
         psi.ArgumentList.Add(encodedCommand);
 
-        var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <sha256:{ComputeScriptHash(wrapped)}>";
+        var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <sha256:{CatalogTrustService.ComputeScriptHash(wrapped)}>";
         _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
         await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken).ConfigureAwait(false);
 
@@ -1190,7 +1222,14 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return true;
         }
 
-        if (_trustedCatalogScriptHashes.Contains(scriptHash))
+        if (!CatalogTrustService.ValidateCatalogFileIntegrity(_paths, out var integrityReason))
+        {
+            reason = $"Blocked script for operation '{operationId}' because catalog integrity validation failed. {integrityReason}";
+            return false;
+        }
+
+        var trustedHashes = GetTrustedCatalogScriptHashes();
+        if (trustedHashes.Contains(scriptHash))
         {
             return true;
         }
@@ -1206,87 +1245,45 @@ public sealed class PowerShellRunner : IPowerShellRunner
                operationId.StartsWith("panel.", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static HashSet<string> BuildTrustedCatalogScriptHashAllowlist(AppPaths paths)
+    private HashSet<string> GetTrustedCatalogScriptHashes()
     {
-        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
-        try
+        lock (_catalogAllowlistSync)
         {
-            if (File.Exists(paths.TweaksFile))
+            var tweaksWrite = GetFileWriteTimeUtc(_paths.TweaksFile);
+            var fixesWrite = GetFileWriteTimeUtc(_paths.FixesFile);
+            var panelsWrite = GetFileWriteTimeUtc(_paths.LegacyPanelsFile);
+
+            var needsRefresh =
+                _trustedCatalogScriptHashes is null ||
+                tweaksWrite != _tweaksLastWriteUtc ||
+                fixesWrite != _fixesLastWriteUtc ||
+                panelsWrite != _panelsLastWriteUtc;
+
+            if (needsRefresh)
             {
-                var tweaksJson = File.ReadAllText(paths.TweaksFile);
-                var tweaks = JsonSerializer.Deserialize<List<TweakDefinition>>(tweaksJson, options) ?? new List<TweakDefinition>();
-                foreach (var tweak in tweaks)
+                try
                 {
-                    AddScriptHash(hashes, tweak.DetectScript);
-                    AddScriptHash(hashes, tweak.ApplyScript);
-                    AddScriptHash(hashes, tweak.UndoScript);
+                    _trustedCatalogScriptHashes = CatalogTrustService.BuildTrustedCatalogScriptHashAllowlist(_paths);
                 }
-            }
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            if (File.Exists(paths.FixesFile))
-            {
-                var fixesJson = File.ReadAllText(paths.FixesFile);
-                var fixes = JsonSerializer.Deserialize<List<FixDefinition>>(fixesJson, options) ?? new List<FixDefinition>();
-                foreach (var fix in fixes)
+                catch (Exception ex)
                 {
-                    AddScriptHash(hashes, fix.ApplyScript);
-                    AddScriptHash(hashes, fix.UndoScript);
+                    _trustedCatalogScriptHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    _console.Publish("Error", $"Trusted catalog allowlist refresh failed: {ex.Message}");
                 }
+
+                _tweaksLastWriteUtc = tweaksWrite;
+                _fixesLastWriteUtc = fixesWrite;
+                _panelsLastWriteUtc = panelsWrite;
+                _console.Publish("Trace", $"Trusted catalog allowlist refreshed. hashCount={_trustedCatalogScriptHashes.Count}");
             }
-        }
-        catch
-        {
-        }
 
-        try
-        {
-            if (File.Exists(paths.LegacyPanelsFile))
-            {
-                var panelsJson = File.ReadAllText(paths.LegacyPanelsFile);
-                var panels = JsonSerializer.Deserialize<List<LegacyPanelDefinition>>(panelsJson, options) ?? new List<LegacyPanelDefinition>();
-                foreach (var panel in panels)
-                {
-                    AddScriptHash(hashes, panel.LaunchScript);
-                }
-            }
+            return _trustedCatalogScriptHashes ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
-        catch
-        {
-        }
-
-        foreach (var tweak in RequestedTweaksCatalog.CreateRequestedTweaks())
-        {
-            AddScriptHash(hashes, tweak.DetectScript);
-            AddScriptHash(hashes, tweak.ApplyScript);
-            AddScriptHash(hashes, tweak.UndoScript);
-        }
-
-        return hashes;
     }
 
-    private static void AddScriptHash(HashSet<string> hashes, string script)
+    private static DateTime GetFileWriteTimeUtc(string path)
     {
-        if (string.IsNullOrWhiteSpace(script))
-        {
-            return;
-        }
-
-        hashes.Add(ComputeScriptHash(script));
-    }
-
-    private static string ComputeScriptHash(string script)
-    {
-        var bytes = Encoding.UTF8.GetBytes(script ?? string.Empty);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash);
+        return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
     }
 
     private static bool ValidateExternalScriptSignatures(string script, out string reason)

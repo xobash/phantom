@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using Phantom.Services;
 using Phantom.ViewModels;
 
 namespace Phantom.Views;
@@ -11,6 +12,8 @@ namespace Phantom.Views;
 public partial class MainWindow : Window
 {
     private static readonly Regex ProgressPercentRegex = new(@"(?<!\d)(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled);
+    private static readonly Regex FailureTokenRegex = new(@"\b(false|failed|failure|error|exception|blocked|denied|timed\s*out|cancelled|missing|not\s+applied|not\s+installed|managed\s*/\s*restricted|no\s+package\s+found)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex SuccessTokenRegex = new(@"\b(true|success|succeeded|completed\s+successfully|applied|installed|enabled|present|passed|done)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private MainViewModel? _viewModel;
     private string _activeConsoleFilter = "All logs";
@@ -125,7 +128,7 @@ public partial class MainWindow : Window
 
         paragraph.Inlines.Add(new Run($"[{item.Timestamp:HH:mm:ss}] [{item.Stream}] ")
         {
-            Foreground = GetStreamBrush(item.Stream)
+            Foreground = GetStreamBrush(item)
         });
 
         paragraph.Inlines.Add(new Run(item.Text)
@@ -149,9 +152,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private static Brush GetStreamBrush(string stream)
+    private static Brush GetStreamBrush(Phantom.Models.PowerShellOutputEvent item)
     {
         var darkTheme = IsDarkConsoleTheme();
+        var stream = item.Stream ?? string.Empty;
+        var classification = ClassifyLine(item);
+
+        if (classification == ConsoleLineClassification.Command)
+        {
+            return darkTheme ? Brushes.White : Brushes.Black;
+        }
+
+        if (classification == ConsoleLineClassification.Success)
+        {
+            return darkTheme ? Brushes.LightGreen : Brushes.ForestGreen;
+        }
+
+        if (classification == ConsoleLineClassification.Failure)
+        {
+            return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
+        }
+
+        if (classification == ConsoleLineClassification.Warning)
+        {
+            return darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod;
+        }
+
         if (string.IsNullOrWhiteSpace(stream))
         {
             return darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray;
@@ -163,7 +189,7 @@ public partial class MainWindow : Window
             "warning" => darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod,
             "info" => darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue,
             "query" => darkTheme ? Brushes.DeepSkyBlue : Brushes.Teal,
-            "command" => darkTheme ? Brushes.Plum : Brushes.MediumPurple,
+            "command" => darkTheme ? Brushes.White : Brushes.Black,
             "progress" => darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen,
             "output" => darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray,
             "trace" => darkTheme ? Brushes.SlateGray : Brushes.Gray,
@@ -174,54 +200,37 @@ public partial class MainWindow : Window
     private static Brush GetMessageBrush(Phantom.Models.PowerShellOutputEvent item)
     {
         var darkTheme = IsDarkConsoleTheme();
-        var stream = item.Stream ?? string.Empty;
-        var text = item.Text ?? string.Empty;
-        var normalized = text.ToLowerInvariant();
-
-        if (stream.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
-            stream.Equals("Fatal", StringComparison.OrdinalIgnoreCase) ||
-            stream.Equals("StartupError", StringComparison.OrdinalIgnoreCase) ||
-            stream.Equals("DispatcherUnhandled", StringComparison.OrdinalIgnoreCase) ||
-            stream.Equals("UnobservedTaskException", StringComparison.OrdinalIgnoreCase))
+        switch (ClassifyLine(item))
         {
-            return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
-        }
+            case ConsoleLineClassification.Command:
+                return darkTheme ? Brushes.White : Brushes.Black;
+            case ConsoleLineClassification.Success:
+                return darkTheme ? Brushes.LightGreen : Brushes.ForestGreen;
+            case ConsoleLineClassification.Failure:
+                return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
+            case ConsoleLineClassification.Warning:
+                return darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod;
+            default:
+            {
+                var stream = item.Stream ?? string.Empty;
+                if (stream.Equals("Query", StringComparison.OrdinalIgnoreCase))
+                {
+                    return darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue;
+                }
 
-        if (normalized.Contains(" failed") ||
-            normalized.Contains("exception") ||
-            normalized.Contains("error"))
-        {
-            return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
-        }
+                if (stream.Equals("Progress", StringComparison.OrdinalIgnoreCase))
+                {
+                    return darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen;
+                }
 
-        if (stream.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("cancelled") ||
-            normalized.Contains("warning"))
-        {
-            return darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod;
-        }
+                if (stream.Equals("Trace", StringComparison.OrdinalIgnoreCase))
+                {
+                    return darkTheme ? Brushes.Gainsboro : Brushes.DimGray;
+                }
 
-        if (IsSuccessMessage(stream, normalized))
-        {
-            return darkTheme ? Brushes.LightGreen : Brushes.ForestGreen;
+                return darkTheme ? Brushes.WhiteSmoke : Brushes.Black;
+            }
         }
-
-        if (stream.Equals("Query", StringComparison.OrdinalIgnoreCase))
-        {
-            return darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue;
-        }
-
-        if (stream.Equals("Progress", StringComparison.OrdinalIgnoreCase))
-        {
-            return darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen;
-        }
-
-        if (stream.Equals("Trace", StringComparison.OrdinalIgnoreCase))
-        {
-            return darkTheme ? Brushes.Gainsboro : Brushes.DimGray;
-        }
-
-        return darkTheme ? Brushes.WhiteSmoke : Brushes.Black;
     }
 
     private static Brush GetProgressBrush()
@@ -229,30 +238,59 @@ public partial class MainWindow : Window
         return IsDarkConsoleTheme() ? Brushes.MediumAquamarine : Brushes.SeaGreen;
     }
 
-    private static bool IsSuccessMessage(string stream, string normalizedMessage)
+    private static ConsoleLineClassification ClassifyLine(Phantom.Models.PowerShellOutputEvent item)
     {
-        if (string.IsNullOrWhiteSpace(normalizedMessage))
+        var stream = (item.Stream ?? string.Empty).Trim();
+        var message = (item.Text ?? string.Empty).Trim();
+        if (stream.Equals("Command", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return ConsoleLineClassification.Command;
         }
 
-        if (normalizedMessage.Contains("startup completed") ||
-            normalizedMessage.Contains("initialization completed") ||
-            normalizedMessage.Contains("completed. success=true") ||
-            normalizedMessage.Contains("passed.") ||
-            normalizedMessage.Contains("launched") ||
-            normalizedMessage.Contains("wired and ready") ||
-            normalizedMessage.Contains("present"))
+        if (string.IsNullOrWhiteSpace(message))
         {
-            return true;
+            return stream.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+                ? ConsoleLineClassification.Warning
+                : ConsoleLineClassification.Neutral;
         }
 
-        return stream.Equals("Info", StringComparison.OrdinalIgnoreCase) &&
-               (normalizedMessage.Contains("completed") ||
-                normalizedMessage.Contains("applied") ||
-                normalizedMessage.Contains("installed") ||
-                normalizedMessage.Contains("exported") ||
-                normalizedMessage.Contains("imported"));
+        if (stream.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("Fatal", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("StartupError", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("DispatcherUnhandled", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("UnobservedTaskException", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConsoleLineClassification.Failure;
+        }
+
+        if (FailureTokenRegex.IsMatch(message))
+        {
+            return ConsoleLineClassification.Failure;
+        }
+
+        var status = OperationStatusParser.Parse(message);
+        if (status == OperationDetectState.NotApplied &&
+            (message.Contains("Not Applied", StringComparison.OrdinalIgnoreCase) ||
+             message.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+             message.Equals("False", StringComparison.OrdinalIgnoreCase) ||
+             message.Contains("Not Installed", StringComparison.OrdinalIgnoreCase) ||
+             message.Contains("Disabled", StringComparison.OrdinalIgnoreCase)))
+        {
+            return ConsoleLineClassification.Failure;
+        }
+
+        if (status == OperationDetectState.Applied ||
+            SuccessTokenRegex.IsMatch(message))
+        {
+            return ConsoleLineClassification.Success;
+        }
+
+        if (stream.Equals("Warning", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConsoleLineClassification.Warning;
+        }
+
+        return ConsoleLineClassification.Neutral;
     }
 
     private static bool TryExtractProgressPercent(string text, out int percent)
@@ -291,5 +329,14 @@ public partial class MainWindow : Window
         var color = brush.Color;
         var luminance = ((0.2126 * color.R) + (0.7152 * color.G) + (0.0722 * color.B)) / 255d;
         return luminance < 0.55;
+    }
+
+    private enum ConsoleLineClassification
+    {
+        Neutral,
+        Command,
+        Success,
+        Failure,
+        Warning
     }
 }

@@ -5,6 +5,8 @@ namespace Phantom.Services;
 
 public sealed class CliRunner
 {
+    private const string RequiredDangerousAcknowledgement = "I_UNDERSTAND_NO_ROLLBACK";
+
     private readonly AppPaths _paths;
     private readonly DefinitionCatalogService _definitions;
     private readonly OperationEngine _engine;
@@ -34,7 +36,7 @@ public sealed class CliRunner
         _settingsStore = settingsStore;
     }
 
-    public async Task<int> RunAsync(string configPath, bool forceDangerous, CancellationToken cancellationToken)
+    public async Task<int> RunAsync(string configPath, bool forceDangerous, string? dangerousAcknowledgement, CancellationToken cancellationToken)
     {
         _console.Publish("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}");
         await _log.WriteAsync("Trace", $"CliRunner.RunAsync started. configPath={configPath}, forceDangerous={forceDangerous}", cancellationToken).ConfigureAwait(false);
@@ -94,9 +96,20 @@ public sealed class CliRunner
         }
 
         var hasDangerous = operations.Any(o => o.RiskTier == RiskTier.Dangerous || !o.Reversible);
-        if (hasDangerous && !(config.ConfirmDangerous && forceDangerous))
+        var acknowledgement = (dangerousAcknowledgement ?? config.DangerousAcknowledgement ?? string.Empty).Trim();
+        var forceDangerousEnabled = config.ConfirmDangerous && forceDangerous;
+
+        if (hasDangerous && !forceDangerousEnabled)
         {
             await _log.WriteAsync("Error", "Dangerous operations requested but not confirmed. Set confirmDangerous=true and pass -ForceDangerous.", cancellationToken).ConfigureAwait(false);
+            return 3;
+        }
+
+        if (hasDangerous && !string.Equals(acknowledgement, RequiredDangerousAcknowledgement, StringComparison.Ordinal))
+        {
+            var ackMessage = $"Dangerous operations require -AcknowledgeDangerous {RequiredDangerousAcknowledgement}.";
+            _console.Publish("Error", ackMessage);
+            await _log.WriteAsync("Error", ackMessage, cancellationToken).ConfigureAwait(false);
             return 3;
         }
 
@@ -119,9 +132,13 @@ public sealed class CliRunner
             Undo = false,
             DryRun = false,
             EnableDestructiveOperations = settings.EnableDestructiveOperations,
-            ForceDangerous = config.ConfirmDangerous && forceDangerous,
+            ForceDangerous = forceDangerousEnabled,
             InteractiveDangerousPrompt = false,
-            ConfirmDangerousAsync = _ => Task.FromResult(config.ConfirmDangerous && forceDangerous)
+            ConfirmDangerousAsync = prompt =>
+            {
+                _console.Publish("Warning", $"CLI dangerous confirmation: {prompt}");
+                return Task.FromResult(forceDangerousEnabled && string.Equals(acknowledgement, RequiredDangerousAcknowledgement, StringComparison.Ordinal));
+            }
         }, cancellationToken).ConfigureAwait(false);
 
         foreach (var item in result.Results)
@@ -219,6 +236,18 @@ public sealed class CliRunner
         operations.AddRange(selectedApps.Select(BuildStoreInstallOperation));
 
         var tweaks = await _definitions.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
+        var tweakLookup = tweaks.ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var requested in CatalogTrustService.GetRequestedTweaks())
+        {
+            if (tweakLookup.ContainsKey(requested.Id))
+            {
+                continue;
+            }
+
+            tweaks.Add(requested);
+            tweakLookup[requested.Id] = requested;
+        }
+
         operations.AddRange(tweaks
             .Where(t => config.Tweaks.Contains(t.Id, StringComparer.OrdinalIgnoreCase))
                 .Select(t => new OperationDefinition

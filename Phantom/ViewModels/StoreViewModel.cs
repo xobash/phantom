@@ -1,9 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Data;
-using Microsoft.Win32;
 using Phantom.Commands;
 using Phantom.Models;
 using Phantom.Services;
@@ -69,8 +67,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync, CanRunStoreOperation);
         UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync, CanRunStoreOperation);
         UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync, CanRunStoreOperation);
-        ImportCatalogCommand = new AsyncRelayCommand(ImportCatalogAsync);
-        ExportCatalogCommand = new AsyncRelayCommand(ExportCatalogAsync);
 
         _executionCoordinator.RunningChanged += OnExecutionCoordinatorRunningChanged;
     }
@@ -91,8 +87,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     public AsyncRelayCommand InstallSelectedCommand { get; }
     public AsyncRelayCommand UninstallSelectedCommand { get; }
     public AsyncRelayCommand UpgradeSelectedCommand { get; }
-    public AsyncRelayCommand ImportCatalogCommand { get; }
-    public AsyncRelayCommand ExportCatalogCommand { get; }
 
     public bool WingetInstalled
     {
@@ -250,62 +244,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         var selected = Catalog.Where(x => x.Selected).ToList();
         var operations = BuildOperationsForSelected(selected, BuildUpgradeOperation);
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task ImportCatalogAsync(CancellationToken cancellationToken)
-    {
-        var dialog = new OpenFileDialog
-        {
-            Filter = "JSON (*.json)|*.json",
-            Title = "Import app catalog"
-        };
-
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        List<CatalogApp> apps;
-        try
-        {
-            var text = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(false);
-            apps = JsonSerializer.Deserialize<List<CatalogApp>>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<CatalogApp>();
-            ValidateCatalogEntries(apps);
-        }
-        catch (Exception ex)
-        {
-            _console.Publish("Error", $"Catalog import failed: {ex.Message}");
-            return;
-        }
-
-        await Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            Catalog.Clear();
-            foreach (var app in apps)
-            {
-                Catalog.Add(app);
-            }
-        });
-
-        _console.Publish("Info", $"Imported catalog with {Catalog.Count} entries.");
-    }
-
-    private async Task ExportCatalogAsync(CancellationToken cancellationToken)
-    {
-        var dialog = new SaveFileDialog
-        {
-            Filter = "JSON (*.json)|*.json",
-            FileName = "catalog.apps.json",
-            Title = "Export app catalog"
-        };
-
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        await _catalogService.SaveCatalogAsync(dialog.FileName, Catalog.ToList(), cancellationToken).ConfigureAwait(false);
-        _console.Publish("Info", $"Exported catalog to {dialog.FileName}");
     }
 
     private async Task<bool> ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
@@ -697,26 +635,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private static string NormalizeSilentArgs(string? raw, string context)
     {
         return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
-    }
-
-    private static void ValidateCatalogEntries(IEnumerable<CatalogApp> apps)
-    {
-        var index = 0;
-        foreach (var app in apps)
-        {
-            index++;
-            var context = $"catalog entry #{index}";
-            if (string.IsNullOrWhiteSpace(app.DisplayName))
-            {
-                throw new ArgumentException($"{context}: displayName is required.");
-            }
-
-            _ = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
-            _ = NormalizePackageId(app.WingetId, $"{context} wingetId");
-            _ = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-
-            _ = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
-        }
     }
 
     private bool FilterCatalog(object obj)

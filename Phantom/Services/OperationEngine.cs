@@ -24,6 +24,10 @@ public sealed class OperationBatchResult
 
 public sealed class OperationEngine
 {
+    private static readonly TimeSpan DetectStepTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan MutationStepTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan RestorePointStepTimeout = TimeSpan.FromMinutes(2);
+
     private readonly IPowerShellRunner _runner;
     private readonly UndoStateStore _undoStore;
     private readonly NetworkGuardService _network;
@@ -128,32 +132,17 @@ public sealed class OperationEngine
             restorePointReady = await TryCreateRestorePointAsync(firstDangerousOperation, cancellationToken).ConfigureAwait(false);
             if (!restorePointReady)
             {
-                if (request.ForceDangerous)
+                var blockedResult = new OperationExecutionResult
                 {
-                    var proceedWithoutRestorePoint = !request.InteractiveDangerousPrompt ||
-                                                     await request.ConfirmDangerousAsync("System Restore is unavailable. Continue without a restore point? (Y/N)").ConfigureAwait(false);
-                    if (proceedWithoutRestorePoint)
-                    {
-                        restorePointReady = true;
-                        _console.Publish("Warning", "Proceeding without restore point because force-dangerous override was confirmed.");
-                        await _log.WriteAsync("Warning", "Proceeding without restore point due to force-dangerous override.", cancellationToken).ConfigureAwait(false);
-                    }
-                }
-
-                if (!restorePointReady)
-                {
-                    var blockedResult = new OperationExecutionResult
-                    {
-                        OperationId = firstDangerousOperation.Id,
-                        RequiresReboot = firstDangerousOperation.RequiresReboot,
-                        Success = false,
-                        Message = "Safety gate blocked batch: restore point creation failed before execution."
-                    };
-                    result.Results.Add(blockedResult);
-                    _console.Publish("Error", blockedResult.Message);
-                    await _log.WriteAsync("Error", blockedResult.Message, cancellationToken).ConfigureAwait(false);
-                    return result;
-                }
+                    OperationId = firstDangerousOperation.Id,
+                    RequiresReboot = firstDangerousOperation.RequiresReboot,
+                    Success = false,
+                    Message = "Safety gate blocked batch: restore point creation failed before execution."
+                };
+                result.Results.Add(blockedResult);
+                _console.Publish("Error", blockedResult.Message);
+                await _log.WriteAsync("Error", blockedResult.Message, cancellationToken).ConfigureAwait(false);
+                return result;
             }
         }
 
@@ -264,14 +253,15 @@ public sealed class OperationEngine
                     var captured = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var capture in operation.StateCaptureScripts)
                     {
-                        var captureResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
-                        {
-                            OperationId = operation.Id,
-                            StepName = $"capture:{capture.Name}",
-                            Script = capture.Script,
-                            DryRun = request.DryRun,
-                            SkipSafetyBackup = true
-                        }, cancellationToken).ConfigureAwait(false);
+                    var captureResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+                    {
+                        OperationId = operation.Id,
+                        StepName = $"capture:{capture.Name}",
+                        Script = capture.Script,
+                        DryRun = request.DryRun,
+                        SkipSafetyBackup = true,
+                        Timeout = DetectStepTimeout
+                    }, cancellationToken).ConfigureAwait(false);
 
                         if (!captureResult.Success)
                         {
@@ -298,20 +288,15 @@ public sealed class OperationEngine
 
                 if (effectiveRisk == RiskTier.Dangerous || !operation.Reversible || opResult.CaptureFailed)
                 {
-                    if (!request.ForceDangerous)
+                    var confirmed = await request.ConfirmDangerousAsync(
+                            BuildDangerousOperationPrompt(operation, request.ForceDangerous, currentState.StatusText))
+                        .ConfigureAwait(false);
+                    if (!confirmed)
                     {
-                        var confirmed = await request.ConfirmDangerousAsync("ARE YOU SURE? (Y/N)").ConfigureAwait(false);
-                        if (!confirmed)
-                        {
-                            opResult.Message = "User rejected dangerous operation.";
-                            opResult.Cancelled = true;
-                            result.Results.Add(opResult);
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        _console.Publish("Warning", $"Dangerous operation forced by configuration: {operation.Title}");
+                        opResult.Message = "User rejected dangerous operation.";
+                        opResult.Cancelled = true;
+                        result.Results.Add(opResult);
+                        continue;
                     }
                 }
 
@@ -326,7 +311,8 @@ public sealed class OperationEngine
                         StepName = step.Name,
                         Script = step.Script,
                         DryRun = request.DryRun,
-                        PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name)
+                        PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
+                        Timeout = MutationStepTimeout
                     }, cancellationToken).ConfigureAwait(false);
 
                     if (!stepResult.Success)
@@ -437,7 +423,8 @@ public sealed class OperationEngine
                     StepName = step.Name,
                     Script = step.Script,
                     DryRun = false,
-                    PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name)
+                    PreferProcessMode = ShouldPreferProcessMode(operation.Id, step.Name),
+                    Timeout = MutationStepTimeout
                 }, cancellationToken).ConfigureAwait(false);
 
                 if (!rollbackStep.Success)
@@ -494,13 +481,16 @@ public sealed class OperationEngine
             }
 
             _console.Publish("Info", $"Creating restore point before dangerous operation: {operation.Title}");
-            var script = $"Checkpoint-Computer -Description '{description.Replace("'", "''")}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop";
+            var safeDescription = PowerShellInputSanitizer.ToSingleQuotedLiteral(description);
+            var script = "$restoreDescription=" + safeDescription + "; " +
+                         "Checkpoint-Computer -Description $restoreDescription -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop";
             var rpResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
             {
                 OperationId = "safety.restore-point",
                 StepName = operation.Id,
                 Script = script,
-                DryRun = false
+                DryRun = false,
+                Timeout = RestorePointStepTimeout
             }, cancellationToken).ConfigureAwait(false);
 
             if (rpResult.Success)
@@ -540,7 +530,8 @@ public sealed class OperationEngine
             StepName = "detect",
             Script = operation.DetectScript,
             DryRun = false,
-            SkipSafetyBackup = true
+            SkipSafetyBackup = true,
+            Timeout = DetectStepTimeout
         }, cancellationToken).ConfigureAwait(false);
 
         if (!detect.Success)
@@ -597,7 +588,16 @@ public sealed class OperationEngine
     private static string BuildForceDangerousVerificationPrompt(OperationDefinition operation, string verificationStatus)
     {
         var status = string.IsNullOrWhiteSpace(verificationStatus) ? "Unknown" : verificationStatus.Trim();
-        return $"[{operation.Id}] {operation.Title} (Risk: {operation.RiskTier}) detect/verification failed with status '{status}'. Proceed anyway? (Y/N)";
+        return $"[{operation.Id}] {operation.Title} (Risk: {operation.RiskTier}) detect/verification failed with status '{status}'. Proceeding can apply changes without reliable state verification and may be irreversible. Type Y only if you explicitly accept potential system instability or data loss. (Y/N)";
+    }
+
+    private static string BuildDangerousOperationPrompt(OperationDefinition operation, bool forceDangerous, string verificationStatus)
+    {
+        var status = string.IsNullOrWhiteSpace(verificationStatus) ? "Unknown" : verificationStatus.Trim();
+        var forceText = forceDangerous
+            ? " Force-dangerous override is active, but safety gates remain enforced."
+            : string.Empty;
+        return $"DANGEROUS OPERATION: [{operation.Id}] {operation.Title}. Risk tier: {operation.RiskTier}. Current detect status: '{status}'. This operation can cause irreversible system changes.{forceText} Confirm execution? (Y/N)";
     }
 
     private static bool ShouldPreferProcessMode(string operationId, string stepName)

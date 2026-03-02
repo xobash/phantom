@@ -117,10 +117,10 @@ public partial class App : Application
             };
 
             var args = e.Args ?? Array.Empty<string>();
-            if (TryParseCli(args, out var configPath, out var run, out var forceDangerous) && run)
+            if (TryParseCli(args, out var configPath, out var run, out var forceDangerous, out var dangerousAcknowledgement) && run)
             {
                 _bootstrap.Console.Publish("Trace", $"CLI mode requested. configPath={configPath}, forceDangerous={forceDangerous}");
-                var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, CancellationToken.None);
+                var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, dangerousAcknowledgement, CancellationToken.None);
                 _bootstrap.Console.Publish("Trace", $"CLI mode completed with exitCode={exitCode}");
                 Shutdown(exitCode);
                 return;
@@ -361,11 +361,12 @@ public partial class App : Application
         }
     }
 
-    private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous)
+    private static bool TryParseCli(string[] args, out string? configPath, out bool run, out bool forceDangerous, out string? dangerousAcknowledgement)
     {
         configPath = null;
         run = false;
         forceDangerous = false;
+        dangerousAcknowledgement = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -386,6 +387,13 @@ public partial class App : Application
             if (string.Equals(current, "-ForceDangerous", StringComparison.OrdinalIgnoreCase))
             {
                 forceDangerous = true;
+                continue;
+            }
+
+            if (string.Equals(current, "-AcknowledgeDangerous", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                dangerousAcknowledgement = args[i + 1];
+                i++;
             }
         }
 

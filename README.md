@@ -162,16 +162,16 @@ Output is written to `./app/`. The build is self-contained — no separate .NET 
 ./app/Phantom.exe -Config <path-to-config.json> -Run
 ```
 
-Add `-ForceDangerous` to allow dangerous operations in CLI mode. This flag is only respected when the config also sets `"confirmDangerous": true`.
+Add `-ForceDangerous` for dangerous operations in CLI mode, plus a second explicit acknowledgement token. This is only respected when the config also sets `"confirmDangerous": true`.
 
 ```powershell
-./app/Phantom.exe -Config ./my-config.json -Run -ForceDangerous
+./app/Phantom.exe -Config ./my-config.json -Run -ForceDangerous -AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK
 ```
 
 ### Caveats
 
 - Administrator elevation is mandatory. The app will not prompt for it — launch from an already-elevated shell.
-- The `-ForceDangerous` flag in CLI mode bypasses the interactive confirmation prompt. Use with care in automation pipelines.
+- Dangerous CLI execution requires all three: config `"confirmDangerous": true`, `-ForceDangerous`, and `-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`.
 - WinSAT scores may be stale if Windows has not run a formal assessment; Phantom can trigger one on demand but it takes several minutes.
 - Feature toggles that require a reboot will not take effect until the system is restarted — Phantom will warn you but cannot force a reboot.
 - The Chocolatey install script (`community.chocolatey.org`) requires an internet connection and is only fetched when you explicitly choose to install Chocolatey.
@@ -229,7 +229,7 @@ The build output is self-contained — the .NET 8 runtime is bundled. winget and
 
 **No automatic outbound connections:** Phantom makes no network calls on its own. The only outbound URLs in the codebase are the official winget installer (`aka.ms/getwinget`) and the Chocolatey install script (`community.chocolatey.org/install.ps1`), both of which are only triggered by an explicit user action.
 
-**Dangerous operation gates:** Irreversible operations require both a Settings toggle and an in-prompt confirmation. In CLI mode, `-ForceDangerous` bypasses the interactive prompt but still requires `"confirmDangerous": true` in the config file — preventing accidental execution from a bare command line.
+**Dangerous operation gates:** Irreversible operations require both a Settings toggle and explicit confirmation. In CLI mode, dangerous operations require `"confirmDangerous": true`, `-ForceDangerous`, and an explicit acknowledgement token (`-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`). Restore point safeguards are not bypassed by force mode.
 
 **Supply chain considerations:** The `irm | iex` pattern downloads and executes a remote PowerShell script. If you are security-conscious about this, review `launch.ps1` in the repository before running it. The script's only external action is installing the .NET 8 SDK via winget and cloning/building from this repository.
 

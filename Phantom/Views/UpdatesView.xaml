@@ -116,8 +116,26 @@
 
         <Border Grid.Row="2" Style="{StaticResource DarkCardStyle}">
             <StackPanel>
-                <TextBlock Text="Policy values" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
-                <TextBox Text="{Binding PolicySummary}" Margin="0,8,0,0" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Height="260" Style="{StaticResource DarkTextBoxStyle}"/>
+                <TextBlock Text="Policy values (read-only)"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource DarkTextBrush}"/>
+                <TextBlock Margin="0,8,0,0"
+                           Text="{Binding PolicyExplanation}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+                <TextBlock Margin="0,6,0,0"
+                           Text="{Binding PolicySource}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+                <TextBox Text="{Binding PolicySummary}"
+                         Margin="0,8,0,0"
+                         IsReadOnly="True"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         Height="260"
+                         ToolTip="This section displays effective machine policy values from registry. Use the preset buttons above to change them safely."
+                         Style="{StaticResource DarkTextBoxStyle}"/>
             </StackPanel>
         </Border>
     </Grid>

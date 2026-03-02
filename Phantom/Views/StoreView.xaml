@@ -72,11 +72,8 @@
                     <Button Command="{Binding RefreshManagersCommand}"
                             Style="{StaticResource RefreshIconButtonStyle}"
                             ToolTip="Refresh package manager status"/>
-                    <Button Content="Install missing managers" Command="{Binding InstallMissingManagersCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="{Binding WingetToggleLabel}" Command="{Binding ToggleWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="{Binding ChocoToggleLabel}" Command="{Binding ToggleChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Import catalog" Command="{Binding ImportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
-                    <Button Content="Export catalog" Command="{Binding ExportCatalogCommand}" Style="{StaticResource DarkButtonStyle}"/>
                 </StackPanel>
 
                 <TextBox Grid.Row="2"
@@ -124,7 +121,7 @@
                                     <TextBlock Text="{Binding Name}"
                                                FontSize="15"
                                                FontWeight="SemiBold"
-                                               Foreground="{DynamicResource AccentBrush}"/>
+                                               Foreground="{DynamicResource ConsoleAccentBlueBrush}"/>
                                 </Border>
                             </DataTemplate>
                         </GroupStyle.HeaderTemplate>

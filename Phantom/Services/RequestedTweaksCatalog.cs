@@ -488,32 +488,121 @@ internal static class RequestedTweaksCatalog
                 Set-Content -Path $hosts -Value $filtered -Encoding Ascii -Force
                 """),
 
-            T("block-razer-software-installs", "Block Razer Software Installs", "Blocks common Razer download endpoints.", RiskTier.Dangerous, "System", true,
+            T("block-razer-software-installs", "Block Razer Software Installs", "Blocks common Razer installer/update endpoints using hosts and outbound firewall rules.", RiskTier.Dangerous, "System", true,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-                if(-not (Test-Path $hosts)){ 'Not Applied'; return }
-                if(Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch '# PHANTOM_RAZER_BLOCK' -Quiet){'Applied'} else {'Not Applied'}
+                $marker='# PHANTOM_RAZER_BLOCK'
+                $hostsApplied=$false
+                if(Test-Path $hosts){
+                  $hostsApplied=Get-Content -Path $hosts -ErrorAction Stop | Select-String -SimpleMatch $marker -Quiet
+                }
+                $stateKey='HKLM:\SOFTWARE\Phantom\Tweaks\BlockRazerSoftwareInstalls'
+                $stateApplied=$false
+                try {
+                  $stateApplied=((Get-ItemProperty -Path $stateKey -Name Enabled -ErrorAction Stop).Enabled -eq 1)
+                } catch {
+                  $stateApplied=$false
+                }
+                $fwApplied=$true
+                if($null -ne (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+                  $rules=@(Get-NetFirewallRule -DisplayName 'Phantom Block Razer*' -ErrorAction SilentlyContinue)
+                  $fwApplied=($rules.Count -gt 0)
+                }
+                if($hostsApplied -and $stateApplied -and $fwApplied){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
                 $marker='# PHANTOM_RAZER_BLOCK'
-                $entries=@('0.0.0.0 rzr.to','0.0.0.0 assets.razerzone.com','0.0.0.0 dl.razerzone.com','0.0.0.0 synapse.razer.com')
+                $entries=@(
+                  '0.0.0.0 rzr.to',
+                  '0.0.0.0 assets.razerzone.com',
+                  '0.0.0.0 assets2.razerzone.com',
+                  '0.0.0.0 dl.razerzone.com',
+                  '0.0.0.0 synapse.razer.com',
+                  '0.0.0.0 drivers.razersynapse.com',
+                  '0.0.0.0 api.razerzone.com'
+                )
                 $content=if(Test-Path $hosts){Get-Content -Path $hosts -ErrorAction Stop}else{@()}
                 $filtered=$content | Where-Object {$_ -notmatch 'PHANTOM_RAZER_BLOCK'}
                 foreach($line in $entries){$filtered += "$line $marker"}
                 Set-Content -Path $hosts -Value $filtered -Encoding Ascii -Force
+
+                if($null -ne (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) -and
+                   $null -ne (Get-Command New-NetFirewallRule -ErrorAction SilentlyContinue)){
+                  $rulePrefix='Phantom Block Razer'
+                  $existing=@(Get-NetFirewallRule -DisplayName "$rulePrefix*" -ErrorAction SilentlyContinue)
+                  foreach($rule in $existing){
+                    Remove-NetFirewallRule -Name $rule.Name -ErrorAction SilentlyContinue | Out-Null
+                  }
+
+                  $programs=@(
+                    (Join-Path ${env:ProgramFiles(x86)} 'Razer\Razer Central\Razer Central.exe'),
+                    (Join-Path ${env:ProgramFiles(x86)} 'Razer\Razer Services\Razer Central\RazerCentralService.exe'),
+                    (Join-Path ${env:ProgramFiles(x86)} 'Razer\RazerAppEngine\RazerAppEngine.exe'),
+                    (Join-Path ${env:ProgramFiles} 'Razer\RazerAppEngine\RazerAppEngine.exe'),
+                    (Join-Path ${env:ProgramData} 'Razer\Razer Central\RazerInstaller.exe')
+                  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+
+                  $idx=0
+                  foreach($program in $programs){
+                    $idx++
+                    try {
+                      New-NetFirewallRule -DisplayName "$rulePrefix Program $idx" -Direction Outbound -Action Block -Program $program -Profile Any | Out-Null
+                    } catch {
+                    }
+                  }
+                }
+
+                New-Item -Path 'HKLM:\SOFTWARE\Phantom\Tweaks\BlockRazerSoftwareInstalls' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Phantom\Tweaks\BlockRazerSoftwareInstalls' -Name Enabled -Type DWord -Value 1
+                Write-Output 'Applied'
                 """,
                 """
                 $hosts=Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-                $content=Get-Content -Path $hosts -ErrorAction Stop
-                $filtered=$content | Where-Object {$_ -notmatch 'PHANTOM_RAZER_BLOCK'}
-                Set-Content -Path $hosts -Value $filtered -Encoding Ascii -Force
+                if(Test-Path $hosts){
+                  $content=Get-Content -Path $hosts -ErrorAction Stop
+                  $filtered=$content | Where-Object {$_ -notmatch 'PHANTOM_RAZER_BLOCK'}
+                  Set-Content -Path $hosts -Value $filtered -Encoding Ascii -Force
+                }
+
+                if($null -ne (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+                  $rules=@(Get-NetFirewallRule -DisplayName 'Phantom Block Razer*' -ErrorAction SilentlyContinue)
+                  foreach($rule in $rules){
+                    Remove-NetFirewallRule -Name $rule.Name -ErrorAction SilentlyContinue | Out-Null
+                  }
+                }
+
+                if(Test-Path 'HKLM:\SOFTWARE\Phantom\Tweaks\BlockRazerSoftwareInstalls'){
+                  Remove-Item -Path 'HKLM:\SOFTWARE\Phantom\Tweaks\BlockRazerSoftwareInstalls' -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                Write-Output 'Not Applied'
                 """),
 
             T("brave-debloat", "Brave Debloat", "Applies Brave policy keys to disable sponsored/extra features.", RiskTier.Advanced, "HKLM", true,
                 """
                 $p='HKLM:\SOFTWARE\Policies\BraveSoftware\Brave'
-                if((Get-ItemProperty -Path $p -Name BraveRewardsDisabled -ErrorAction Stop).BraveRewardsDisabled -eq 1){'Applied'} else {'Not Applied'}
+                $expected=@{
+                  BraveRewardsDisabled=1
+                  BraveWalletDisabled=1
+                  BraveAIChatEnabled=0
+                  BackgroundModeEnabled=0
+                  BraveNewsDisabled=1
+                  BraveVPNDisabled=1
+                }
+                $ok=$true
+                foreach($name in $expected.Keys){
+                  try {
+                    $value=[int](Get-ItemPropertyValue -Path $p -Name $name -ErrorAction Stop)
+                    if($value -ne [int]$expected[$name]){
+                      $ok=$false
+                      break
+                    }
+                  } catch {
+                    $ok=$false
+                    break
+                  }
+                }
+                if($ok){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $p='HKLM:\SOFTWARE\Policies\BraveSoftware\Brave'
@@ -522,13 +611,20 @@ internal static class RequestedTweaksCatalog
                 Set-ItemProperty -Path $p -Name BraveWalletDisabled -Type DWord -Value 1
                 Set-ItemProperty -Path $p -Name BraveAIChatEnabled -Type DWord -Value 0
                 Set-ItemProperty -Path $p -Name BackgroundModeEnabled -Type DWord -Value 0
+                Set-ItemProperty -Path $p -Name BraveNewsDisabled -Type DWord -Value 1
+                Set-ItemProperty -Path $p -Name BraveVPNDisabled -Type DWord -Value 1
+                Write-Output 'Applied'
                 """,
                 """
                 $p='HKLM:\SOFTWARE\Policies\BraveSoftware\Brave'
-                Remove-ItemProperty -Path $p -Name BraveRewardsDisabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name BraveWalletDisabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name BraveAIChatEnabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name BackgroundModeEnabled -ErrorAction Stop
+                if(Test-Path $p){
+                  foreach($name in @('BraveRewardsDisabled','BraveWalletDisabled','BraveAIChatEnabled','BackgroundModeEnabled','BraveNewsDisabled','BraveVPNDisabled')){
+                    if($null -ne (Get-ItemProperty -Path $p -Name $name -ErrorAction SilentlyContinue)){
+                      Remove-ItemProperty -Path $p -Name $name -ErrorAction Stop
+                    }
+                  }
+                }
+                Write-Output 'Not Applied'
                 """),
 
             T("disable-fullscreen-optimizations", "Disable Fullscreen Optimizations", "Disables fullscreen optimization behavior in GameDVR pipeline.", RiskTier.Advanced, "HKCU", true,
@@ -594,9 +690,28 @@ internal static class RequestedTweaksCatalog
             T("edge-debloat", "Edge Debloat", "Applies Edge policies to reduce background/promotional features.", RiskTier.Advanced, "HKLM", true,
                 """
                 $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
-                $value=$null
-                try { $value = Get-ItemPropertyValue -Path $p -Name HubsSidebarEnabled -ErrorAction Stop } catch { $value = $null }
-                if($null -ne $value -and [int]$value -eq 0){'Applied'} else {'Not Applied'}
+                $expected=@{
+                  HubsSidebarEnabled=0
+                  StartupBoostEnabled=0
+                  ShowRecommendationsEnabled=0
+                  PersonalizationReportingEnabled=0
+                  EdgeShoppingAssistantEnabled=0
+                  WebWidgetAllowed=0
+                }
+                $ok=$true
+                foreach($name in $expected.Keys){
+                  try {
+                    $value=[int](Get-ItemPropertyValue -Path $p -Name $name -ErrorAction Stop)
+                    if($value -ne [int]$expected[$name]){
+                      $ok=$false
+                      break
+                    }
+                  } catch {
+                    $ok=$false
+                    break
+                  }
+                }
+                if($ok){'Applied'} else {'Not Applied'}
                 """,
                 """
                 $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
@@ -606,14 +721,19 @@ internal static class RequestedTweaksCatalog
                 Set-ItemProperty -Path $p -Name ShowRecommendationsEnabled -Type DWord -Value 0
                 Set-ItemProperty -Path $p -Name PersonalizationReportingEnabled -Type DWord -Value 0
                 Set-ItemProperty -Path $p -Name EdgeShoppingAssistantEnabled -Type DWord -Value 0
+                Set-ItemProperty -Path $p -Name WebWidgetAllowed -Type DWord -Value 0
+                Write-Output 'Applied'
                 """,
                 """
                 $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
-                Remove-ItemProperty -Path $p -Name HubsSidebarEnabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name StartupBoostEnabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name ShowRecommendationsEnabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name PersonalizationReportingEnabled -ErrorAction Stop
-                Remove-ItemProperty -Path $p -Name EdgeShoppingAssistantEnabled -ErrorAction Stop
+                if(Test-Path $p){
+                  foreach($name in @('HubsSidebarEnabled','StartupBoostEnabled','ShowRecommendationsEnabled','PersonalizationReportingEnabled','EdgeShoppingAssistantEnabled','WebWidgetAllowed')){
+                    if($null -ne (Get-ItemProperty -Path $p -Name $name -ErrorAction SilentlyContinue)){
+                      Remove-ItemProperty -Path $p -Name $name -ErrorAction Stop
+                    }
+                  }
+                }
+                Write-Output 'Not Applied'
                 """),
 
             T("prefer-ipv4-over-ipv6", "Prefer IPv4 over IPv6", "Configures prefix policy to prefer IPv4 while keeping IPv6 enabled.", RiskTier.Advanced, "HKLM", true,
@@ -946,36 +1066,11 @@ internal static class RequestedTweaksCatalog
             RiskTier = riskTier,
             Scope = scope,
             Reversible = reversible,
-            DetectScript = WrapDetectScript(detectScript),
-            ApplyScript = WrapMutationScript(applyScript),
-            UndoScript = WrapMutationScript(undoScript),
+            DetectScript = TweakScriptNormalizer.WrapDetectScript(detectScript),
+            ApplyScript = TweakScriptNormalizer.WrapMutationScript(applyScript),
+            UndoScript = TweakScriptNormalizer.WrapMutationScript(undoScript),
             Destructive = destructive,
             StateCaptureKeys = []
         };
-    }
-
-    private static string WrapDetectScript(string detectScript)
-    {
-        var body = (detectScript ?? string.Empty).Trim();
-        return "$___phantomDetect='Not Applied'\n" +
-               "try {\n" +
-               "  $___phantomRaw = @(\n" +
-               body + "\n" +
-               "  ) | Out-String\n" +
-               "  $___phantomRaw = $___phantomRaw.Trim()\n" +
-               "  if(-not [string]::IsNullOrWhiteSpace($___phantomRaw)) { $___phantomDetect = $___phantomRaw }\n" +
-               "}\n" +
-               "catch {\n" +
-               "  $___phantomDetect='Not Applied'\n" +
-               "}\n" +
-               "$___phantomDetect";
-    }
-
-    private static string WrapMutationScript(string script)
-    {
-        var body = (script ?? string.Empty).Trim();
-        return "$ErrorActionPreference='Stop'\n" +
-               "Set-StrictMode -Version Latest\n" +
-               body;
     }
 }

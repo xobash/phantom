@@ -70,6 +70,7 @@ public sealed class PowerShellExecutionRequest
     public bool DryRun { get; set; }
     public bool PreferProcessMode { get; set; }
     public bool SkipSafetyBackup { get; set; }
+    public TimeSpan? Timeout { get; set; }
 }
 
 public sealed class PowerShellExecutionResult
@@ -95,6 +96,7 @@ public sealed class OperationSelection
 public sealed class AutomationConfig
 {
     public bool ConfirmDangerous { get; set; }
+    public string DangerousAcknowledgement { get; set; } = string.Empty;
     public string[] StoreSelections { get; set; } = Array.Empty<string>();
     public string[] Tweaks { get; set; } = Array.Empty<string>();
     public string[] Features { get; set; } = Array.Empty<string>();

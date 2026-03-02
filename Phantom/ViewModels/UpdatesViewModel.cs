@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Phantom.Commands;
 using Phantom.Models;
 using Phantom.Services;
@@ -16,6 +17,8 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     private string _selectedMode = "Security";
     private string _serviceStatus = "Unknown";
     private string _policySummary = "Unknown";
+    private string _policySource = @"Source: HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate (Registry64, machine scope).";
+    private string _policyExplanation = "Read-only snapshot. Preset buttons update these policy values and related Windows Update service behavior.";
 
     public UpdatesViewModel(
         OperationEngine operationEngine,
@@ -61,6 +64,18 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     {
         get => _policySummary;
         set => SetProperty(ref _policySummary, value);
+    }
+
+    public string PolicySource
+    {
+        get => _policySource;
+        set => SetProperty(ref _policySource, value);
+    }
+
+    public string PolicyExplanation
+    {
+        get => _policyExplanation;
+        set => SetProperty(ref _policyExplanation, value);
     }
 
     public AsyncRelayCommand ApplyModeCommand { get; }
@@ -127,6 +142,54 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
         return "Security";
     }
 
+    private static string BuildPolicySummary(string rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return "No explicit Windows Update policy values are set.";
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            var feature = GetPolicyValue(root, "DeferFeatureUpdatesPeriodInDays");
+            var quality = GetPolicyValue(root, "DeferQualityUpdatesPeriodInDays");
+            var noAuto = GetPolicyValue(root, "NoAutoUpdate");
+
+            return
+                "Current machine policy values (read-only):" + Environment.NewLine +
+                $"- DeferFeatureUpdatesPeriodInDays: {feature}" + Environment.NewLine +
+                $"- DeferQualityUpdatesPeriodInDays: {quality}" + Environment.NewLine +
+                $"- AU\\NoAutoUpdate: {noAuto}" + Environment.NewLine + Environment.NewLine +
+                "How this is used:" + Environment.NewLine +
+                "- Default Settings clears policy values and restores update services." + Environment.NewLine +
+                "- Security Settings writes 365/4 defer values and keeps automatic updates enabled." + Environment.NewLine +
+                "- Disable All Updates sets NoAutoUpdate=1 and disables update services.";
+        }
+        catch
+        {
+            return $"Policy query output:{Environment.NewLine}{rawJson.Trim()}";
+        }
+    }
+
+    private static string GetPolicyValue(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return "Not set";
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.String => value.GetString() ?? "Not set",
+            JsonValueKind.True => "1",
+            JsonValueKind.False => "0",
+            _ => value.GetRawText()
+        };
+    }
+
     private async Task RestoreDefaultAsync(CancellationToken cancellationToken)
     {
         await ExecuteUpdateOperationAsync(BuildDefaultModeOperation(), cancellationToken).ConfigureAwait(false);
@@ -137,10 +200,18 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     {
         var service = await _queryService.InvokeAsync("Get-Service wuauserv | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
         var bits = await _queryService.InvokeAsync("Get-Service bits | Select-Object -ExpandProperty Status", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
-        var policy = await _queryService.InvokeAsync("$p='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; if(Test-Path $p){Get-ItemProperty -Path $p | Select-Object DeferFeatureUpdatesPeriodInDays, DeferQualityUpdatesPeriodInDays | ConvertTo-Json -Compress}else{'{}'}", cancellationToken, echoToConsole: echoQueryToConsole).ConfigureAwait(false);
+        var policy = await _queryService.InvokeAsync(
+                "$wu='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate'; $au='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU'; " +
+                "$feature=$null; $quality=$null; $noAuto=$null; " +
+                "if(Test-Path $wu){ try { $feature=(Get-ItemProperty -Path $wu -Name DeferFeatureUpdatesPeriodInDays -ErrorAction Stop).DeferFeatureUpdatesPeriodInDays } catch {}; try { $quality=(Get-ItemProperty -Path $wu -Name DeferQualityUpdatesPeriodInDays -ErrorAction Stop).DeferQualityUpdatesPeriodInDays } catch {} }; " +
+                "if(Test-Path $au){ try { $noAuto=(Get-ItemProperty -Path $au -Name NoAutoUpdate -ErrorAction Stop).NoAutoUpdate } catch {} }; " +
+                "[PSCustomObject]@{ DeferFeatureUpdatesPeriodInDays=$feature; DeferQualityUpdatesPeriodInDays=$quality; NoAutoUpdate=$noAuto } | ConvertTo-Json -Compress",
+                cancellationToken,
+                echoToConsole: echoQueryToConsole)
+            .ConfigureAwait(false);
 
         ServiceStatus = $"wuauserv: {service.Stdout.Trim()} | BITS: {bits.Stdout.Trim()}";
-        PolicySummary = string.IsNullOrWhiteSpace(policy.Stdout) ? "No explicit policy" : policy.Stdout.Trim();
+        PolicySummary = BuildPolicySummary(policy.Stdout);
     }
 
     private async Task ResetUpdateComponentsAsync(CancellationToken cancellationToken)

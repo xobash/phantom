@@ -88,56 +88,65 @@
                                     Cursor="Hand"
                                     Tag="{Binding Title}"
                                     PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
-                                <Grid>
+                                <Grid MinHeight="124">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
-                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
 
-                                    <TextBlock x:Name="KpiTitle" Text="{Binding Title}" FontSize="14" Opacity="0.75"/>
-                                    <TextBlock x:Name="KpiValue" Grid.Row="1" Text="{Binding Value}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                                <Setter Property="FontSize" Value="20"/>
-                                                <Setter Property="LineHeight" Value="24"/>
-                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
-                                                <Setter Property="TextWrapping" Value="Wrap"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Title}" Value="Network">
-                                                        <Setter Property="FontSize" Value="11"/>
-                                                        <Setter Property="LineHeight" Value="14"/>
-                                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                                        <Setter Property="TextAlignment" Value="Right"/>
-                                                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
-                                                        <Setter Property="TextWrapping" Value="NoWrap"/>
-                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <TextBlock x:Name="KpiSecondary"
-                                               Grid.Row="2"
-                                               Text="{Binding SecondaryValue}"
-                                               FontSize="32"
+                                    <TextBlock Text="{Binding Title}" FontSize="14" Opacity="0.78" Grid.Row="0" Grid.Column="0"/>
+
+                                    <TextBlock x:Name="KpiValue"
+                                               Grid.Row="1"
+                                               Grid.Column="1"
+                                               Text="{Binding Value}"
+                                               FontSize="30"
                                                FontWeight="SemiBold"
-                                               Margin="0,8,0,0"
                                                HorizontalAlignment="Right"
-                                               Visibility="Collapsed"
-                                               Foreground="{DynamicResource DarkTextBrush}">
-                                        <TextBlock.Style>
-                                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Setter Property="FontSize" Value="30"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                               VerticalAlignment="Bottom"
+                                               TextAlignment="Right"
+                                               TextWrapping="Wrap"/>
+
+                                    <TextBlock Grid.Row="1"
+                                               Grid.Column="0"
+                                               Text="{Binding IconGlyph}"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="24"
+                                               Opacity="0.95"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Left"/>
+
+                                    <TextBlock x:Name="KpiSecondary"
+                                               Grid.Row="1"
+                                               Grid.Column="1"
+                                               Text="{Binding SecondaryValue}"
+                                               FontSize="34"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Bottom"
+                                               Visibility="Collapsed"/>
+
                                 </Grid>
                             </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Title}" Value="Network">
+                                    <Setter TargetName="KpiValue" Property="Grid.Row" Value="0"/>
+                                    <Setter TargetName="KpiValue" Property="FontSize" Value="22"/>
+                                    <Setter TargetName="KpiValue" Property="Margin" Value="0,0,0,8"/>
+                                    <Setter TargetName="KpiValue" Property="VerticalAlignment" Value="Top"/>
+                                    <Setter TargetName="KpiValue" Property="TextWrapping" Value="NoWrap"/>
+                                    <Setter TargetName="KpiValue" Property="TextTrimming" Value="CharacterEllipsis"/>
+                                    <Setter TargetName="KpiValue" Property="TextAlignment" Value="Right"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding HasSecondaryValue}" Value="True">
+                                    <Setter TargetName="KpiSecondary" Property="Visibility" Value="Visible"/>
+                                    <Setter TargetName="KpiSecondary" Property="TextAlignment" Value="Right"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

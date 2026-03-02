@@ -26,7 +26,7 @@ public sealed class DefinitionCatalogService
         => SaveAsync(path, apps, cancellationToken);
 
     public Task<List<TweakDefinition>> LoadTweaksAsync(CancellationToken cancellationToken = default)
-        => LoadValidatedArrayAsync<TweakDefinition>(_paths.TweaksFile, "tweaks", ValidateTweak, cancellationToken);
+        => LoadValidatedArrayAsync<TweakDefinition>(_paths.TweaksFile, "tweaks", ValidateTweak, cancellationToken, NormalizeTweak);
 
     public Task<List<FeatureDefinition>> LoadFeaturesAsync(CancellationToken cancellationToken = default)
         => LoadValidatedArrayAsync<FeatureDefinition>(_paths.FeaturesFile, "features", ValidateFeature, cancellationToken);
@@ -57,7 +57,8 @@ public sealed class DefinitionCatalogService
         string path,
         string schemaName,
         Action<JsonElement, int, List<string>> validateItem,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<T>? normalize = null)
     {
         if (!File.Exists(path))
         {
@@ -66,8 +67,23 @@ public sealed class DefinitionCatalogService
 
         var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         ValidateArraySchema(path, schemaName, json, validateItem);
-        var model = JsonSerializer.Deserialize<List<T>>(json, _options);
-        return model ?? new List<T>();
+        var model = JsonSerializer.Deserialize<List<T>>(json, _options) ?? new List<T>();
+        if (normalize is not null)
+        {
+            foreach (var item in model)
+            {
+                normalize(item);
+            }
+        }
+
+        return model;
+    }
+
+    private static void NormalizeTweak(TweakDefinition tweak)
+    {
+        tweak.DetectScript = TweakScriptNormalizer.WrapDetectScript(tweak.DetectScript);
+        tweak.ApplyScript = TweakScriptNormalizer.WrapMutationScript(tweak.ApplyScript);
+        tweak.UndoScript = TweakScriptNormalizer.WrapMutationScript(tweak.UndoScript);
     }
 
     private async Task SaveAsync<T>(string path, T value, CancellationToken cancellationToken)
@@ -145,6 +161,7 @@ public sealed class DefinitionCatalogService
             var errors = new List<string>();
             var root = doc.RootElement;
             ValidateBoolean(root, "confirmDangerous", "selection-config", errors, required: false);
+            ValidateString(root, "dangerousAcknowledgement", "selection-config", errors, required: false, allowEmpty: true);
             ValidateStringArray(root, "storeSelections", "selection-config", errors, required: false);
             ValidateStringArray(root, "tweaks", "selection-config", errors, required: false);
             ValidateStringArray(root, "features", "selection-config", errors, required: false);

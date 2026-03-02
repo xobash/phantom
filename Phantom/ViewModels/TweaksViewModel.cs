@@ -179,6 +179,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private bool _disposed;
     private bool _expandAllSections;
     private bool _suppressExpandAllApply;
+    private bool _isBraveInstalled;
+    private bool _isEdgeInstalled;
 
     private string _search = string.Empty;
     private bool _dryRun;
@@ -291,12 +293,18 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         var tweaks = await _catalogService.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
         MergeRequestedTweaks(tweaks);
         DeduplicateTweaksByPurpose(tweaks);
+        (_isBraveInstalled, _isEdgeInstalled) = await DetectBrowserAvailabilityAsync(cancellationToken).ConfigureAwait(false);
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             Tweaks.Clear();
             foreach (var tweak in tweaks)
             {
                 if (tweak.Destructive && !_settingsAccessor().EnableDestructiveOperations)
+                {
+                    continue;
+                }
+
+                if (!IsTweakVisibleForCurrentSystem(tweak))
                 {
                     continue;
                 }
@@ -310,6 +318,140 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         RefreshTweaksView();
         await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool IsTweakVisibleForCurrentSystem(TweakDefinition tweak)
+    {
+        if (string.Equals(tweak.Id, "brave-debloat", StringComparison.OrdinalIgnoreCase))
+        {
+            return _isBraveInstalled;
+        }
+
+        if (string.Equals(tweak.Id, "edge-debloat", StringComparison.OrdinalIgnoreCase))
+        {
+            return _isEdgeInstalled;
+        }
+
+        return true;
+    }
+
+    private static async Task<(bool BraveInstalled, bool EdgeInstalled)> DetectBrowserAvailabilityAsync(CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            var braveInstalled = IsBrowserInstalled(
+                "Brave",
+                "Brave",
+                "brave.exe",
+                [
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+                ]);
+
+            var edgeInstalled = IsBrowserInstalled(
+                "Edge",
+                "Microsoft Edge",
+                "msedge.exe",
+                [
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Edge", "Application", "msedge.exe")
+                ]);
+
+            return (braveInstalled, edgeInstalled);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsBrowserInstalled(string uninstallContainsA, string uninstallContainsB, string appPathExeName, IReadOnlyList<string> knownExecutablePaths)
+    {
+        if (knownExecutablePaths.Any(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path)))
+        {
+            return true;
+        }
+
+        if (HasAppPath(appPathExeName))
+        {
+            return true;
+        }
+
+        return HasUninstallEntry(uninstallContainsA, uninstallContainsB);
+    }
+
+    private static bool HasAppPath(string executableName)
+    {
+        try
+        {
+            var appPathSubkey = $@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{executableName}";
+            foreach (var view in GetRegistryViewsToScan())
+            {
+                using var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                using var key = hklm.OpenSubKey(appPathSubkey, writable: false);
+                var value = key?.GetValue(string.Empty)?.ToString();
+                if (!string.IsNullOrWhiteSpace(value) && File.Exists(value))
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
+
+    private static bool HasUninstallEntry(string nameTokenA, string nameTokenB)
+    {
+        const string uninstallSubKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            foreach (var view in GetRegistryViewsToScan())
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    using var uninstallRoot = baseKey.OpenSubKey(uninstallSubKey, writable: false);
+                    if (uninstallRoot is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var subKeyName in uninstallRoot.GetSubKeyNames())
+                    {
+                        using var appKey = uninstallRoot.OpenSubKey(subKeyName, writable: false);
+                        var displayName = appKey?.GetValue("DisplayName")?.ToString();
+                        if (string.IsNullOrWhiteSpace(displayName))
+                        {
+                            continue;
+                        }
+
+                        if (displayName.Contains(nameTokenA, StringComparison.OrdinalIgnoreCase) ||
+                            displayName.Contains(nameTokenB, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<RegistryView> GetRegistryViewsToScan()
+    {
+        if (Environment.Is64BitOperatingSystem)
+        {
+            yield return RegistryView.Registry64;
+            yield return RegistryView.Registry32;
+            yield break;
+        }
+
+        yield return RegistryView.Registry32;
     }
 
     private static void MergeRequestedTweaks(List<TweakDefinition> tweaks)

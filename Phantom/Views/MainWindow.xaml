@@ -166,7 +166,7 @@
                                      Height="6"
                                      Margin="8,12,0,0"
                                      IsIndeterminate="True"
-                                     Foreground="#73C8FF"
+                                     Foreground="{DynamicResource ConsoleAccentBlueBrush}"
                                      Background="{DynamicResource DarkCard2Brush}">
                             <ProgressBar.Style>
                                 <Style TargetType="ProgressBar">
