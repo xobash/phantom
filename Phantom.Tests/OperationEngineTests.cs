@@ -153,6 +153,57 @@ public sealed class OperationEngineTests
         Assert.Contains("Detect script failed", capturedPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExecuteBatchAsync_DoesNotBypassRestorePoint_WhenForceDangerousEnabled()
+    {
+        var settings = new AppSettings
+        {
+            EnableDestructiveOperations = true,
+            CreateRestorePointBeforeDangerousOperations = true
+        };
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var undoStore = new UndoStateStore(new JsonFileStore(), paths);
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new StubRunner(request =>
+        {
+            if (request.OperationId == "safety.restore-point")
+            {
+                return new PowerShellExecutionResult { Success = false, ExitCode = 1, CombinedOutput = "restore point unavailable" };
+            }
+
+            return new PowerShellExecutionResult { Success = true, ExitCode = 0 };
+        });
+        var engine = new OperationEngine(runner, undoStore, new NetworkGuardService(), console, log, () => settings);
+
+        var result = await engine.ExecuteBatchAsync(new OperationRequest
+        {
+            Operations =
+            [
+                new OperationDefinition
+                {
+                    Id = "op.dangerous.restorepoint",
+                    Title = "Dangerous op",
+                    Description = "test",
+                    RiskTier = RiskTier.Dangerous,
+                    Reversible = false,
+                    RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'apply'" }]
+                }
+            ],
+            Undo = false,
+            DryRun = false,
+            EnableDestructiveOperations = settings.EnableDestructiveOperations,
+            ForceDangerous = true,
+            ConfirmDangerousAsync = _ => Task.FromResult(true)
+        }, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("restore point creation failed", result.Results[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(runner.Requests, r => r.OperationId == "op.dangerous.restorepoint");
+    }
+
     private sealed class StubRunner : IPowerShellRunner
     {
         private readonly Func<PowerShellExecutionRequest, PowerShellExecutionResult> _handler;

@@ -78,13 +78,6 @@
                 </StackPanel>
             </Border>
 
-            <Button Content="Save settings"
-                    Width="170"
-                    Margin="8"
-                    Command="{Binding SaveCommand}"
-                    HorizontalAlignment="Left"
-                    Style="{StaticResource DarkButtonStyle}"/>
-
             <Border Style="{StaticResource DarkCardStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -182,6 +175,14 @@
                     </Grid>
                 </Grid>
             </Border>
+
+            <Button Content="Save settings"
+                    Width="170"
+                    Margin="8,10,8,14"
+                    Command="{Binding SaveCommand}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Style="{StaticResource DarkButtonStyle}"/>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

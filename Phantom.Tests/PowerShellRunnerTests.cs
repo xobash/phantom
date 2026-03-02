@@ -24,7 +24,7 @@ public sealed class PowerShellRunnerTests
         }, CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.Contains("Blocked dynamic script execution pattern", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Blocked dynamic script execution", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -116,6 +116,30 @@ public sealed class PowerShellRunnerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_AllowsCatalogRegisteredTweakScript_WhenHashIsTrusted()
+    {
+        var settings = new AppSettings();
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var definitions = new DefinitionCatalogService(paths);
+        var tweak = (await definitions.LoadTweaksAsync(CancellationToken.None)).First();
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = $"tweak.{tweak.Id}",
+            StepName = "detect",
+            Script = tweak.DetectScript,
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_FailsRunspaceStep_WhenWingetReportsNoPackageFound()
     {
         var settings = new AppSettings();
@@ -161,5 +185,30 @@ public sealed class PowerShellRunnerTests
         Assert.True(result.Success);
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("simulated non-terminating warning", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsTimeoutFailure_WhenExecutionExceedsTimeout()
+    {
+        var settings = new AppSettings();
+
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.timeout",
+            StepName = "apply",
+            Script = "Start-Sleep -Seconds 5; Write-Output 'done'",
+            DryRun = false,
+            SkipSafetyBackup = true,
+            Timeout = TimeSpan.FromMilliseconds(250)
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(124, result.ExitCode);
+        Assert.Contains("timed out", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
 }

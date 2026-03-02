@@ -371,11 +371,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     private void UpsertKpiTile(string title, string value, string secondaryValue = "")
     {
         var index = KpiTiles.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
+        var cleanSecondary = secondaryValue?.Trim() ?? string.Empty;
         var next = new KpiTile
         {
             Title = title,
             Value = value,
-            SecondaryValue = secondaryValue
+            SecondaryValue = cleanSecondary,
+            HasSecondaryValue = !string.IsNullOrWhiteSpace(cleanSecondary),
+            IconGlyph = ResolveKpiIcon(title)
         };
 
         if (index >= 0)
@@ -385,6 +388,22 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         }
 
         KpiTiles.Add(next);
+    }
+
+    private static string ResolveKpiIcon(string title)
+    {
+        return title.ToLowerInvariant() switch
+        {
+            "apps" => "\uE71D",
+            "processes" => "\uE9F5",
+            "services" => "\uE895",
+            "space cleaned" => "\uE74D",
+            "cpu %" => "\uEA80",
+            "memory %" => "\uE950",
+            "gpu %" => "\uE7FC",
+            "network" => "\uE968",
+            _ => "\uE9D9"
+        };
     }
 
     private static string FormatBytes(long bytes)
@@ -411,7 +430,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     {
         if (string.IsNullOrWhiteSpace(networkText))
         {
-            return ("↑0B/s ↓0B/s •0B", string.Empty);
+            return ("↑0 B/s ↓0 B/s", "0 B");
         }
 
         var lines = networkText
@@ -421,14 +440,23 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
         if (lines.Count == 0)
         {
-            return ("↑0B/s ↓0B/s •0B", string.Empty);
+            return ("↑0 B/s ↓0 B/s", "0 B");
         }
 
         if (lines[0].Contains('↑') || lines[0].Contains('↓'))
         {
-            var total = lines.Count > 1 ? lines[1] : "0 B";
-            var compactRates = CompactNetworkRates(lines[0]);
-            return ($"{compactRates} •{CompactNetworkValue(total)}", string.Empty);
+            var compactLine = CompactNetworkRates(lines[0]);
+            var bulletIndex = compactLine.IndexOf('•');
+            if (bulletIndex >= 0)
+            {
+                var rates = compactLine[..bulletIndex].Trim();
+                var totalFromInline = compactLine[(bulletIndex + 1)..].Trim();
+                var totalInline = totalFromInline.Length == 0 ? "0 B" : totalFromInline;
+                return (rates.Length == 0 ? "↑0 B/s ↓0 B/s" : rates, totalInline);
+            }
+
+            var total = lines.Count > 1 ? CompactNetworkValue(lines[1]) : "0 B";
+            return (compactLine, total);
         }
 
         var upload = ExtractNetworkValue(lines, "Upload:");
@@ -439,7 +467,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             session = lines.Count > 2 ? lines[2] : "0 B";
         }
 
-        return ($"↑{CompactNetworkValue(upload)} ↓{CompactNetworkValue(download)} •{CompactNetworkValue(session)}", string.Empty);
+        return ($"↑{CompactNetworkValue(upload)} ↓{CompactNetworkValue(download)}", CompactNetworkValue(session));
     }
 
     private static string ExtractNetworkValue(IReadOnlyList<string> lines, string key)
@@ -470,26 +498,27 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             .Trim();
 
         return CompactNetworkValue(raw)
-            .Replace("↑ ", "↑", StringComparison.Ordinal)
-            .Replace("↓ ", "↓", StringComparison.Ordinal)
-            .Replace(" /s", "/s", StringComparison.OrdinalIgnoreCase)
-            .Replace(" • ", " •", StringComparison.Ordinal);
+            .Replace(" • ", " • ", StringComparison.Ordinal);
     }
 
     private static string CompactNetworkValue(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "0B";
+            return "0 B";
         }
 
-        return value
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
+        var normalized = value
             .Replace("Bytes", "B", StringComparison.OrdinalIgnoreCase)
-            .Replace("KB", "K", StringComparison.OrdinalIgnoreCase)
-            .Replace("MB", "M", StringComparison.OrdinalIgnoreCase)
-            .Replace("GB", "G", StringComparison.OrdinalIgnoreCase)
-            .Replace("TB", "T", StringComparison.OrdinalIgnoreCase);
+            .Replace("Byte", "B", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        while (normalized.Contains("  ", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        return normalized;
     }
 
     private static long? TryParseUptimeSeconds(string uptime)

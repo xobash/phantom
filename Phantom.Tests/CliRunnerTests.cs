@@ -35,7 +35,7 @@ public sealed class CliRunnerTests
             query,
             settingsStore);
 
-        var exitCode = await cli.RunAsync(@"..\..\outside.json", forceDangerous: false, CancellationToken.None);
+        var exitCode = await cli.RunAsync(@"..\..\outside.json", forceDangerous: false, dangerousAcknowledgement: null, CancellationToken.None);
 
         Assert.Equal(2, exitCode);
         Assert.Contains(console.Snapshot, e =>
@@ -72,6 +72,25 @@ public sealed class CliRunnerTests
         var securityUndo = Assert.Single(security.UndoScripts).Script;
         Assert.DoesNotContain("Remove-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' -Recurse -Force", securityUndo, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Remove-RegistrySubKeyIfEmpty64", securityUndo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_BlocksDangerousAutomationWithoutExplicitAcknowledgementToken()
+    {
+        var cli = await CreateCliRunnerAsync();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var configPath = Path.Combine(paths.RuntimeDirectory, "dangerous-config.json");
+
+        var config = new AutomationConfig
+        {
+            ConfirmDangerous = true,
+            Tweaks = ["remove-edge"]
+        };
+        await File.WriteAllTextAsync(configPath, System.Text.Json.JsonSerializer.Serialize(config));
+
+        var exitCode = await cli.RunAsync(configPath, forceDangerous: true, dangerousAcknowledgement: null, CancellationToken.None);
+
+        Assert.Equal(3, exitCode);
     }
 
     private static async Task<CliRunner> CreateCliRunnerAsync()

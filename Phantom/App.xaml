@@ -31,6 +31,7 @@
         <SolidColorBrush x:Key="MutedTextBrush" po:Freeze="False" Color="#CECECE"/>
         <SolidColorBrush x:Key="AccentBrush" po:Freeze="False" Color="#6C6C6C"/>
         <SolidColorBrush x:Key="AccentBorderBrush" po:Freeze="False" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="ConsoleAccentBlueBrush" po:Freeze="False" Color="#73C8FF"/>
 
         <SolidColorBrush x:Key="NavItemBackgroundBrush" po:Freeze="False" Color="#262626"/>
         <SolidColorBrush x:Key="NavItemHoverBrush" po:Freeze="False" Color="#2E2E2E"/>
