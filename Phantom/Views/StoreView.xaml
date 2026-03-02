@@ -139,6 +139,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="190"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

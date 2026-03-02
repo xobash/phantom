@@ -27,6 +27,9 @@ public sealed class AppBootstrap : IDisposable
         Network = new NetworkGuardService();
         Query = new PowerShellQueryService(Console, Log);
         Runner = new PowerShellRunner(Console, Log, Paths, () => SettingsProvider.Current);
+        ProcessRunner = new ExternalProcessRunner(Console, Log);
+        PackageManagers = new PackageManagerResolver();
+        StoreInstaller = new StoreInstallService(PackageManagers, ProcessRunner, Console);
         Operations = new OperationEngine(Runner, UndoStore, Network, Console, Log, () => SettingsProvider.Current);
         Definitions = new DefinitionCatalogService(Paths);
         Prompt = new UserPromptService();
@@ -38,7 +41,7 @@ public sealed class AppBootstrap : IDisposable
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
         Apps = new AppsViewModel(HomeData, Console, Runner);
         Services = new ServicesViewModel(HomeData, Console, Runner);
-        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, Query, () => SettingsProvider.Current);
+        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
         Fixes = new FixesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Runner, () => SettingsProvider.Current);
@@ -62,6 +65,9 @@ public sealed class AppBootstrap : IDisposable
     public NetworkGuardService Network { get; }
     public PowerShellQueryService Query { get; }
     public IPowerShellRunner Runner { get; }
+    public ExternalProcessRunner ProcessRunner { get; }
+    public PackageManagerResolver PackageManagers { get; }
+    public StoreInstallService StoreInstaller { get; }
     public OperationEngine Operations { get; }
     public DefinitionCatalogService Definitions { get; }
     public IUserPromptService Prompt { get; }

@@ -10,8 +10,6 @@ namespace Phantom.ViewModels;
 
 public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 {
-    private const string WingetPresenceProbeScript = "$ok = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); if ($ok) { '1' }";
-    private const string ChocoPresenceProbeScript = "$ok = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $ok) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $ok = $true; break } } }; if ($ok) { '1' }";
     private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $hasChoco = $true; break } } }; ";
 
     private readonly DefinitionCatalogService _catalogService;
@@ -20,7 +18,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private readonly IUserPromptService _promptService;
     private readonly ConsoleStreamService _console;
     private readonly NetworkGuardService _networkGuard;
-    private readonly PowerShellQueryService _queryService;
+    private readonly StoreInstallService _storeInstallService;
     private readonly Func<AppSettings> _settingsAccessor;
 
     private bool _wingetInstalled;
@@ -34,7 +32,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         IUserPromptService promptService,
         ConsoleStreamService console,
         NetworkGuardService networkGuard,
-        PowerShellQueryService queryService,
+        StoreInstallService storeInstallService,
         Func<AppSettings> settingsAccessor)
     {
         _catalogService = catalogService;
@@ -43,7 +41,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         _promptService = promptService;
         _console = console;
         _networkGuard = networkGuard;
-        _queryService = queryService;
+        _storeInstallService = storeInstallService;
         _settingsAccessor = settingsAccessor;
 
         Catalog = new ObservableCollection<CatalogApp>();
@@ -148,11 +146,14 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
     private async Task RefreshManagersAsync(CancellationToken cancellationToken, bool echoToConsole = true)
     {
-        var winget = await _queryService.InvokeAsync(WingetPresenceProbeScript, cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
-        var choco = await _queryService.InvokeAsync(ChocoPresenceProbeScript, cancellationToken, echoToConsole: echoToConsole).ConfigureAwait(false);
-
-        WingetInstalled = winget.Stdout.Trim() == "1";
-        ChocoInstalled = choco.Stdout.Trim() == "1";
+        var availability = await _storeInstallService.GetManagerAvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        WingetInstalled = availability.Winget.IsAvailable;
+        ChocoInstalled = availability.Chocolatey.IsAvailable;
+        if (echoToConsole)
+        {
+            _console.Publish("Trace", $"winget resolver: {(WingetInstalled ? availability.Winget.ExecutablePath : availability.Winget.Message)}");
+            _console.Publish("Trace", $"choco resolver: {(ChocoInstalled ? availability.Chocolatey.ExecutablePath : availability.Chocolatey.Message)}");
+        }
 
         _console.Publish("Info", $"Package managers: winget={(WingetInstalled ? "present" : "missing")}, choco={(ChocoInstalled ? "present" : "missing")}");
     }
@@ -228,8 +229,64 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
     {
         var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = BuildOperationsForSelected(selected, BuildInstallOperation);
-        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+        if (selected.Count == 0)
+        {
+            _console.Publish("Info", "No items selected.");
+            return;
+        }
+
+        if (!_networkGuard.IsOnline())
+        {
+            _console.Publish("Error", "Offline detected. Store install blocked before execution.");
+            return;
+        }
+
+        CancellationToken token;
+        try
+        {
+            token = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken);
+        try
+        {
+            foreach (var app in selected)
+            {
+                await UpdateAppStatusAsync(app, "Running").ConfigureAwait(false);
+                _console.Publish("Info", $"Store install started: {app.DisplayName}");
+                var result = await _storeInstallService.InstallAsync(app, linked.Token).ConfigureAwait(false);
+                if (result.Success)
+                {
+                    await UpdateAppStatusAsync(app, "Succeeded").ConfigureAwait(false);
+                    _console.Publish("Info", $"{app.DisplayName}: {result.Message}");
+                }
+                else
+                {
+                    await UpdateAppStatusAsync(app, "Failed").ConfigureAwait(false);
+                    PublishInstallFailure(app, result);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", "Store install cancelled.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Store install failed: {ex}");
+            throw;
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+            await RefreshManagersAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task UninstallSelectedAsync(CancellationToken cancellationToken)
@@ -635,6 +692,72 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private static string NormalizeSilentArgs(string? raw, string context)
     {
         return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
+    }
+
+    private async Task UpdateAppStatusAsync(CatalogApp app, string status)
+    {
+        if (Application.Current?.Dispatcher is { } dispatcher)
+        {
+            if (dispatcher.CheckAccess())
+            {
+                app.Status = status;
+                CatalogView.Refresh();
+                return;
+            }
+
+            await dispatcher.InvokeAsync(() =>
+            {
+                app.Status = status;
+                CatalogView.Refresh();
+            });
+            return;
+        }
+
+        app.Status = status;
+        CatalogView.Refresh();
+    }
+
+    private void PublishInstallFailure(CatalogApp app, StoreInstallResult result)
+    {
+        var managerText = result.Manager?.ToString() ?? "unknown";
+        if (result.InstallExecution is { } install)
+        {
+            _console.Publish("Error", $"{app.DisplayName}: manager={managerText}, exitCode={install.ExitCode}, durationMs={install.DurationMs}, exe={install.FilePath}, args={install.Arguments}");
+            var stderrTail = GetLastLines(install.Stderr, 6);
+            if (!string.IsNullOrWhiteSpace(stderrTail))
+            {
+                _console.Publish("Error", $"{app.DisplayName} stderr: {stderrTail}");
+            }
+        }
+
+        if (result.VerificationExecution is { } verify)
+        {
+            _console.Publish("Error", $"{app.DisplayName}: verificationExitCode={verify.ExitCode}, verificationDurationMs={verify.DurationMs}");
+            var verificationTail = GetLastLines(string.Concat(verify.Stderr, Environment.NewLine, verify.Stdout), 6);
+            if (!string.IsNullOrWhiteSpace(verificationTail))
+            {
+                _console.Publish("Error", $"{app.DisplayName} verification output: {verificationTail}");
+            }
+        }
+
+        _console.Publish("Error", $"{app.DisplayName}: {result.Message}");
+        if (!string.IsNullOrWhiteSpace(result.Suggestion))
+        {
+            _console.Publish("Warning", $"{app.DisplayName}: {result.Suggestion}");
+        }
+    }
+
+    private static string GetLastLines(string text, int maxLines)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            " | ",
+            text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .TakeLast(Math.Max(1, maxLines)));
     }
 
     private bool FilterCatalog(object obj)
