@@ -312,16 +312,10 @@
                                               VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled"
                                               Padding="12,10,12,6">
-                                    <RichTextBox Document="{Binding ReadmeDocument}"
-                                                 IsReadOnly="True"
-                                                 IsDocumentEnabled="True"
-                                                 Background="Transparent"
-                                                 BorderThickness="0"
-                                                 Padding="0"
-                                                 Margin="0"
-                                                 Focusable="False"
-                                                 VerticalScrollBarVisibility="Disabled"
-                                                 HorizontalScrollBarVisibility="Disabled"/>
+                                    <TextBlock Text="{Binding ReadmeMarkdown}"
+                                               TextWrapping="Wrap"
+                                               FontSize="13"
+                                               Foreground="{DynamicResource DarkTextBrush}"/>
                                 </ScrollViewer>
                             </Border>
                         </Grid>
