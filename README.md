@@ -24,6 +24,15 @@ Run the following in an **elevated** PowerShell window — no setup required:
 irm https://raw.githubusercontent.com/xobash/phantom/main/launch.ps1 | iex
 ```
 
+Safer alternative (recommended for bare-metal): download first, inspect, then execute.
+
+```powershell
+$scriptPath = Join-Path $env:TEMP "phantom-launch.ps1"
+irm https://raw.githubusercontent.com/xobash/phantom/main/launch.ps1 -OutFile $scriptPath
+Get-Content $scriptPath
+& $scriptPath
+```
+
 The launcher will:
 
 - Check for the .NET 8 SDK and install it via winget if missing

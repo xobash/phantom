@@ -24,11 +24,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly HashSet<string> TrustedDownloadHosts =
     [
         "community.chocolatey.org",
-        "github.com",
-        "raw.githubusercontent.com",
+        "aka.ms",
         "www.oo-software.com",
         "dl5.oo-software.com"
     ];
+    private static readonly string[] TrustedGitHubRepositoryPrefixes =
+    [
+        "/xobash/phantom/",
+        "/microsoft/winget-cli/"
+    ];
+    private const string TrustedDownloadHostsMessage =
+        "Allowed hosts: aka.ms, community.chocolatey.org, www.oo-software.com, dl5.oo-software.com, github.com/xobash/phantom/*, github.com/microsoft/winget-cli/*, raw.githubusercontent.com/xobash/phantom/*.";
     private static readonly HashSet<string> AllowedStartProcessTargets = new(StringComparer.OrdinalIgnoreCase)
     {
         "explorer.exe",
@@ -45,13 +51,13 @@ public sealed class PowerShellRunner : IPowerShellRunner
         "gpedit.msc",
         "sysdm.cpl",
         "wf.msc",
-        "onedrivesetup.exe"
+        "onedrivesetup.exe",
+        "oosu10.exe"
     };
     private static readonly Regex DownloadCommandRegex = new(@"\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm|curl|wget|Start-BitsTransfer|DownloadString)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex EncodedCommandRegex = new(@"\B-(?:e|en|enc|enco|encodedcommand)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex UnsafeLanguageFeatureRegex = new(@"\b(?:Add-Type|Invoke-Command|Start-Job|Register-ScheduledJob)\b|FromBase64String\s*\(|System\.Reflection\.Assembly\s*::\s*Load", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex AlternateDataStreamRegex = new(@"[A-Za-z]:\\[^|;\r\n]*:[^\\/\r\n]+", RegexOptions.Compiled);
-    private static readonly Regex StartProcessLiteralRegex = new(@"Start-Process(?:\s+-FilePath)?\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex RegistryPathRegex = new(@"(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC):?\\[^'"";\r\n\)\]\}]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ServiceNameRegex = new(@"(?:Set|Stop|Start|Restart)-Service\b[^;\r\n]*?\b-Name\s+['""]?([A-Za-z0-9_.\-]+)['""]?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ScheduledTaskCmdletRegex = new(@"(?:Get|Enable|Disable|Start|Stop)-ScheduledTask\b[^;\r\n]*?\b-TaskPath\s+['""]([^'""]+)['""][^;\r\n]*?\b-TaskName\s+['""]([^'""]+)['""]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -228,26 +234,52 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
             catch (PSInvalidOperationException ex) when (!effectiveToken.IsCancellationRequested)
             {
-                _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                if (!ShouldAllowExternalFallback(request.StepName))
+                {
+                    var failure = $"Runspace execution failed for mutating step '{request.StepName}'. External fallback was blocked to avoid changing execution engine/security boundaries. {ex.Message}";
+                    _console.Publish("Error", failure);
+                    await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {ex}", effectiveToken).ConfigureAwait(false);
+                    return new PowerShellExecutionResult
+                    {
+                        Success = false,
+                        ExitCode = 1,
+                        CombinedOutput = failure
+                    };
+                }
+
+                _console.Publish("Security", $"Runspace unavailable for verification step, falling back to external PowerShell host. {ex.Message}");
+                await _log.WriteAsync("Security", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
                 var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
                 _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
                 return processResult;
             }
             catch (InvalidOperationException ex) when (!effectiveToken.IsCancellationRequested)
             {
-                _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-                await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                if (!ShouldAllowExternalFallback(request.StepName))
+                {
+                    var failure = $"Runspace execution failed for mutating step '{request.StepName}'. External fallback was blocked to avoid changing execution engine/security boundaries. {ex.Message}";
+                    _console.Publish("Error", failure);
+                    await _log.WriteAsync("Error", $"{request.OperationId}/{request.StepName}: {ex}", effectiveToken).ConfigureAwait(false);
+                    return new PowerShellExecutionResult
+                    {
+                        Success = false,
+                        ExitCode = 1,
+                        CombinedOutput = failure
+                    };
+                }
+
+                _console.Publish("Security", $"Runspace unavailable for verification step, falling back to external PowerShell host. {ex.Message}");
+                await _log.WriteAsync("Security", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
                 var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
                 _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
                 return processResult;
             }
             catch (RuntimeException ex) when (!effectiveToken.IsCancellationRequested)
             {
-                if (ShouldFallbackOnRuntimeException(request.StepName, ex))
+                if (ShouldAllowExternalFallback(request.StepName) && ShouldFallbackOnRuntimeException(request.StepName, ex))
                 {
-                    _console.Publish("Warning", $"Runspace unavailable, falling back to powershell.exe. {ex.Message}");
-                    await _log.WriteAsync("Warning", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
+                    _console.Publish("Security", $"Runspace unavailable for verification step, falling back to external PowerShell host. {ex.Message}");
+                    await _log.WriteAsync("Security", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
                     var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
                     _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
                     return processResult;
@@ -282,12 +314,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
     }
 
-    private static bool ShouldFallbackOnRuntimeException(string stepName, RuntimeException exception)
+    private static bool ShouldAllowExternalFallback(string stepName)
     {
         if (stepName.StartsWith("detect", StringComparison.OrdinalIgnoreCase) ||
             stepName.StartsWith("capture:", StringComparison.OrdinalIgnoreCase))
         {
             return true;
+        }
+
+        return false;
+    }
+
+    private static bool ShouldFallbackOnRuntimeException(string stepName, RuntimeException exception)
+    {
+        if (!ShouldAllowExternalFallback(stepName))
+        {
+            return false;
         }
 
         return exception is CommandNotFoundException;
@@ -671,12 +713,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
         var wrapped = "$ProgressPreference='SilentlyContinue';$VerbosePreference='Continue';$DebugPreference='Continue';$InformationPreference='Continue';& { " +
                       request.Script +
                       " } *>&1";
-        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
+        var processHost = ResolveExternalPowerShellHost();
+        var processScriptPath = Path.Combine(
+            _paths.RuntimeDirectory,
+            $"ps-fallback-{SanitizeFileName(request.OperationId)}-{SanitizeFileName(request.StepName)}-{Guid.NewGuid():N}.ps1");
+        Directory.CreateDirectory(Path.GetDirectoryName(processScriptPath)!);
+        await File.WriteAllTextAsync(processScriptPath, wrapped, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken).ConfigureAwait(false);
         _console.Publish("Trace", $"ExecuteViaProcessAsync start. op={request.OperationId}, step={request.StepName}");
 
         var psi = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = processHost,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -687,10 +734,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
         psi.ArgumentList.Add("-NonInteractive");
         psi.ArgumentList.Add("-ExecutionPolicy");
         psi.ArgumentList.Add("RemoteSigned");
-        psi.ArgumentList.Add("-EncodedCommand");
-        psi.ArgumentList.Add(encodedCommand);
+        psi.ArgumentList.Add("-File");
+        psi.ArgumentList.Add(processScriptPath);
 
-        var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -EncodedCommand <sha256:{CatalogTrustService.ComputeScriptHash(wrapped)}>";
+        var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File <sha256:{CatalogTrustService.ComputeScriptHash(wrapped)}>";
         _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
         await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken).ConfigureAwait(false);
 
@@ -783,6 +830,17 @@ public sealed class PowerShellRunner : IPowerShellRunner
         finally
         {
             Interlocked.Exchange(ref processCompleted, 1);
+            try
+            {
+                if (File.Exists(processScriptPath))
+                {
+                    File.Delete(processScriptPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _console.Publish("Warning", $"Failed to delete temporary process script '{processScriptPath}': {ex.Message}");
+            }
         }
     }
 
@@ -811,27 +869,6 @@ public sealed class PowerShellRunner : IPowerShellRunner
         if (!ValidateScriptAstSafety(script, out reason))
         {
             return false;
-        }
-
-        foreach (Match match in StartProcessLiteralRegex.Matches(script))
-        {
-            var literalPath = match.Groups[1].Value.Trim();
-            if (literalPath.Length == 0)
-            {
-                continue;
-            }
-
-            var fileName = Path.GetFileName(literalPath);
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                fileName = literalPath;
-            }
-
-            if (!AllowedStartProcessTargets.Contains(fileName))
-            {
-                reason = $"Blocked Start-Process target '{fileName}'.";
-                return false;
-            }
         }
 
         return ValidateDownloadSafety(script, out reason);
@@ -880,6 +917,39 @@ public sealed class PowerShellRunner : IPowerShellRunner
             }
         }
 
+        foreach (var usingStatement in ast.FindAll(static node => node is UsingStatementAst, searchNestedScriptBlocks: true).OfType<UsingStatementAst>())
+        {
+            if (usingStatement.UsingStatementKind is UsingStatementKind.Assembly or UsingStatementKind.Module)
+            {
+                reason = $"Blocked 'using {usingStatement.UsingStatementKind}' directive.";
+                return false;
+            }
+        }
+
+        foreach (var invokeMember in ast.FindAll(static node => node is InvokeMemberExpressionAst, searchNestedScriptBlocks: true).OfType<InvokeMemberExpressionAst>())
+        {
+            var memberName = TryGetMemberName(invokeMember.Member);
+            if (memberName.Equals("InvokeScript", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "Blocked InvokeScript() dynamic execution.";
+                return false;
+            }
+
+            if (!memberName.Equals("Create", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var expressionText = invokeMember.Expression.Extent.Text;
+            if (!expressionText.Contains("scriptblock", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            reason = "Blocked [scriptblock]::Create() dynamic code generation.";
+            return false;
+        }
+
         foreach (var command in ast.FindAll(static node => node is CommandAst, searchNestedScriptBlocks: true).OfType<CommandAst>())
         {
             var commandName = command.GetCommandName();
@@ -913,7 +983,180 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return false;
         }
 
+        if (!ValidateStartProcessCommands(ast, out reason))
+        {
+            return false;
+        }
+
         return true;
+    }
+
+    private static bool ValidateStartProcessCommands(ScriptBlockAst ast, out string reason)
+    {
+        reason = string.Empty;
+        var startProcessVariableTargets = BuildStartProcessVariableTargetMap(ast);
+
+        foreach (var command in ast.FindAll(static node => node is CommandAst, searchNestedScriptBlocks: true).OfType<CommandAst>())
+        {
+            var commandName = command.GetCommandName();
+            if (!string.Equals(commandName, "Start-Process", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!TryGetStartProcessTargetArgument(command, out var targetAst) || targetAst is null)
+            {
+                reason = "Blocked Start-Process invocation because -FilePath target is missing.";
+                return false;
+            }
+
+            if (!TryResolveStartProcessTargetFileName(targetAst, startProcessVariableTargets, out var fileName))
+            {
+                reason = "Blocked Start-Process invocation because -FilePath could not be resolved to an allowlisted executable.";
+                return false;
+            }
+
+            if (!AllowedStartProcessTargets.Contains(fileName))
+            {
+                reason = $"Blocked Start-Process target '{fileName}'.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, string> BuildStartProcessVariableTargetMap(ScriptBlockAst ast)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var assignment in ast.FindAll(static node => node is AssignmentStatementAst, searchNestedScriptBlocks: true).OfType<AssignmentStatementAst>())
+        {
+            if (assignment.Left is not VariableExpressionAst variable)
+            {
+                continue;
+            }
+
+            if (!TryResolvePathLikeFileName(assignment.Right, out var fileName))
+            {
+                continue;
+            }
+
+            map[variable.VariablePath.UserPath] = fileName;
+        }
+
+        return map;
+    }
+
+    private static bool TryResolveStartProcessTargetFileName(
+        Ast targetAst,
+        IReadOnlyDictionary<string, string> variableTargets,
+        out string fileName)
+    {
+        fileName = string.Empty;
+
+        if (targetAst is VariableExpressionAst variableExpression)
+        {
+            if (variableTargets.TryGetValue(variableExpression.VariablePath.UserPath, out var mapped) &&
+                !string.IsNullOrWhiteSpace(mapped))
+            {
+                fileName = mapped;
+                return true;
+            }
+
+            return false;
+        }
+
+        return TryResolvePathLikeFileName(targetAst, out fileName);
+    }
+
+    private static bool TryResolvePathLikeFileName(Ast ast, out string fileName)
+    {
+        fileName = string.Empty;
+        var text = ast.Extent.Text.Trim();
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        if ((text[0] == '\'' && text[^1] == '\'') || (text[0] == '"' && text[^1] == '"'))
+        {
+            text = text[1..^1];
+        }
+
+        text = text.Replace('/', '\\');
+        var candidate = Path.GetFileName(text);
+        if (TryNormalizeAllowedTarget(candidate, out fileName))
+        {
+            return true;
+        }
+
+        var executableMatch = Regex.Match(text, @"([A-Za-z0-9_.\-]+\.(?:exe|cpl|msc))", RegexOptions.IgnoreCase);
+        if (executableMatch.Success && TryNormalizeAllowedTarget(executableMatch.Groups[1].Value, out fileName))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryNormalizeAllowedTarget(string? raw, out string fileName)
+    {
+        fileName = string.Empty;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        fileName = Path.GetFileName(raw.Trim().Trim('"', '\''));
+        return !string.IsNullOrWhiteSpace(fileName);
+    }
+
+    private static bool TryGetStartProcessTargetArgument(CommandAst command, out Ast? targetAst)
+    {
+        targetAst = null;
+
+        for (var i = 1; i < command.CommandElements.Count; i++)
+        {
+            if (command.CommandElements[i] is not CommandParameterAst parameter ||
+                !parameter.ParameterName.Equals("FilePath", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            targetAst = parameter.Argument;
+            if (targetAst is not null)
+            {
+                return true;
+            }
+
+            if (i + 1 < command.CommandElements.Count)
+            {
+                targetAst = command.CommandElements[i + 1];
+                return true;
+            }
+
+            return false;
+        }
+
+        for (var i = 1; i < command.CommandElements.Count; i++)
+        {
+            if (command.CommandElements[i] is CommandParameterAst parameter)
+            {
+                if (parameter.Argument is null &&
+                    i + 1 < command.CommandElements.Count &&
+                    command.CommandElements[i + 1] is not CommandParameterAst)
+                {
+                    i++;
+                }
+
+                continue;
+            }
+
+            targetAst = command.CommandElements[i];
+            return true;
+        }
+
+        return false;
     }
 
     private static bool ValidateDownloadSafety(string script, out string reason)
@@ -951,9 +1194,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
         foreach (var uri in literalUris)
         {
-            if (!IsTrustedDownloadHost(uri.Host))
+            if (!IsTrustedDownloadUri(uri))
             {
-                reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                reason = $"Blocked download host '{uri.Host}'. {TrustedDownloadHostsMessage}";
                 return false;
             }
         }
@@ -1009,9 +1252,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
                     return false;
                 }
 
-                if (!IsTrustedDownloadHost(uri.Host))
+                if (!IsTrustedDownloadUri(uri))
                 {
-                    reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                    reason = $"Blocked download host '{uri.Host}'. {TrustedDownloadHostsMessage}";
                     return false;
                 }
 
@@ -1024,9 +1267,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 continue;
             }
 
-            if (!IsTrustedDownloadHost(positionalUri.Host))
+            if (!IsTrustedDownloadUri(positionalUri))
             {
-                reason = $"Blocked download host '{positionalUri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                reason = $"Blocked download host '{positionalUri.Host}'. {TrustedDownloadHostsMessage}";
                 return false;
             }
 
@@ -1073,9 +1316,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 return false;
             }
 
-            if (!IsTrustedDownloadHost(uri.Host))
+            if (!IsTrustedDownloadUri(uri))
             {
-                reason = $"Blocked download host '{uri.Host}'. Allowed hosts: {string.Join(", ", TrustedDownloadHosts)}";
+                reason = $"Blocked download host '{uri.Host}'. {TrustedDownloadHostsMessage}";
                 return false;
             }
         }
@@ -1134,9 +1377,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
     }
 
-    private static bool IsTrustedDownloadHost(string host)
+    private static bool IsTrustedDownloadUri(Uri uri)
     {
-        return TrustedDownloadHosts.Contains(host.ToLowerInvariant());
+        if (uri is null)
+        {
+            return false;
+        }
+
+        var host = uri.Host.ToLowerInvariant();
+        if (host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+            host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return TrustedGitHubRepositoryPrefixes.Any(prefix =>
+                uri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return TrustedDownloadHosts.Contains(host);
     }
 
     private static string? TryExtractAssignedStringLiteral(StatementAst rightSideStatement)
@@ -1155,6 +1411,77 @@ public sealed class PowerShellRunner : IPowerShellRunner
         }
 
         return raw[1..^1];
+    }
+
+    private static string ResolveExternalPowerShellHost()
+    {
+        foreach (var candidate in OperatingSystem.IsWindows()
+                     ? new[] { "pwsh.exe", "pwsh", "powershell.exe" }
+                     : new[] { "pwsh", "powershell" })
+        {
+            var resolved = TryResolveExecutableFromPath(candidate);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                return resolved;
+            }
+        }
+
+        return OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+    }
+
+    private static string? TryResolveExecutableFromPath(string commandName)
+    {
+        if (string.IsNullOrWhiteSpace(commandName))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(commandName) && File.Exists(commandName))
+        {
+            return commandName;
+        }
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathValue))
+        {
+            return null;
+        }
+
+        var pathExtensions = OperatingSystem.IsWindows()
+            ? (Environment.GetEnvironmentVariable("PATHEXT")?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+               ?? new[] { ".exe", ".cmd", ".bat", ".com" })
+            : new[] { string.Empty };
+        var hasExtension = Path.HasExtension(commandName);
+
+        foreach (var segment in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.IsNullOrWhiteSpace(segment))
+            {
+                continue;
+            }
+
+            if (hasExtension)
+            {
+                var candidate = Path.Combine(segment, commandName);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                continue;
+            }
+
+            foreach (var extension in pathExtensions)
+            {
+                var candidate = Path.Combine(segment, commandName + extension);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static bool IsPowerShellHostCommand(string commandName)
@@ -1233,13 +1560,12 @@ public sealed class PowerShellRunner : IPowerShellRunner
             return true;
         }
 
-        if (!CatalogTrustService.ValidateCatalogFileIntegrity(_paths, out var integrityReason))
+        if (!TryGetTrustedCatalogScriptHashes(out var trustedHashes, out var integrityReason))
         {
             reason = $"Blocked script for operation '{operationId}' because catalog integrity validation failed. {integrityReason}";
             return false;
         }
 
-        var trustedHashes = GetTrustedCatalogScriptHashes();
         if (trustedHashes.Contains(scriptHash))
         {
             return true;
@@ -1256,8 +1582,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
                operationId.StartsWith("panel.", StringComparison.OrdinalIgnoreCase);
     }
 
-    private HashSet<string> GetTrustedCatalogScriptHashes()
+    private bool TryGetTrustedCatalogScriptHashes(out HashSet<string> hashes, out string reason)
     {
+        reason = string.Empty;
+        hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         lock (_catalogAllowlistSync)
         {
             var tweaksWrite = GetFileWriteTimeUtc(_paths.TweaksFile);
@@ -1272,15 +1601,19 @@ public sealed class PowerShellRunner : IPowerShellRunner
 
             if (needsRefresh)
             {
-                try
-                {
-                    _trustedCatalogScriptHashes = CatalogTrustService.BuildTrustedCatalogScriptHashAllowlist(_paths);
-                }
-                catch (Exception ex)
+                if (!CatalogTrustService.TryValidateCatalogIntegrityAndBuildAllowlist(_paths, out var trustedHashes, out var loadReason))
                 {
                     _trustedCatalogScriptHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    _console.Publish("Error", $"Trusted catalog allowlist refresh failed: {ex.Message}");
+                    reason = loadReason;
+                    _console.Publish("Error", $"Trusted catalog allowlist refresh failed: {loadReason}");
+                    _tweaksLastWriteUtc = tweaksWrite;
+                    _fixesLastWriteUtc = fixesWrite;
+                    _panelsLastWriteUtc = panelsWrite;
+                    hashes = _trustedCatalogScriptHashes;
+                    return false;
                 }
+
+                _trustedCatalogScriptHashes = trustedHashes;
 
                 _tweaksLastWriteUtc = tweaksWrite;
                 _fixesLastWriteUtc = fixesWrite;
@@ -1288,7 +1621,8 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 _console.Publish("Trace", $"Trusted catalog allowlist refreshed. hashCount={_trustedCatalogScriptHashes.Count}");
             }
 
-            return _trustedCatalogScriptHashes ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            hashes = _trustedCatalogScriptHashes ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return true;
         }
     }
 

