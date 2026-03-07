@@ -68,9 +68,10 @@ public sealed class DefinitionCatalogService
             return new List<T>();
         }
 
-        var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        ValidateArraySchema(path, schemaName, json, validateItem);
-        var model = JsonSerializer.Deserialize<List<T>>(json, _options) ?? new List<T>();
+        // Read file as bytes to avoid parsing the same UTF-8 content twice.
+        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        ValidateArraySchema(path, schemaName, bytes, validateItem);
+        var model = JsonSerializer.Deserialize<List<T>>(bytes, _options) ?? new List<T>();
         if (normalize is not null)
         {
             foreach (var item in model)
@@ -104,7 +105,7 @@ public sealed class DefinitionCatalogService
     private static void ValidateArraySchema(
         string path,
         string schemaName,
-        string json,
+        ReadOnlyMemory<byte> json,
         Action<JsonElement, int, List<string>> validateItem)
     {
         JsonDocument doc;

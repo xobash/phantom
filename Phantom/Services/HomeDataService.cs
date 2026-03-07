@@ -8,6 +8,11 @@ namespace Phantom.Services;
 
 public sealed class HomeDataService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly ConsoleStreamService _console;
     private readonly TelemetryStore _telemetryStore;
     private TelemetryState? _telemetry;
@@ -39,10 +44,7 @@ public sealed class HomeDataService
             return new HomeSnapshot();
         }
 
-        var snapshot = JsonSerializer.Deserialize<HomeSnapshot>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        }) ?? new HomeSnapshot();
+        var snapshot = JsonSerializer.Deserialize<HomeSnapshot>(json, JsonOptions) ?? new HomeSnapshot();
 
         snapshot.NetworkUsage = ComputeNetworkUsage(_telemetry);
         await _telemetryStore.SaveAsync(_telemetry, cancellationToken).ConfigureAwait(false);
@@ -231,21 +233,23 @@ catch {
 
     private static string ComputeNetworkUsage(TelemetryState telemetry)
     {
-        var nics = NetworkInterface.GetAllNetworkInterfaces()
-            .Where(x => x.OperationalStatus == OperationalStatus.Up)
-            .Where(x => x.NetworkInterfaceType is not NetworkInterfaceType.Loopback and not NetworkInterfaceType.Tunnel)
-            .ToList();
-
+        // Single pass: enumerate NICs, accumulate totals, and update baselines in one loop.
+        // Avoids .Where().Where().ToList() LINQ chain that allocates intermediate collections.
         long totalSent = 0;
         long totalRecv = 0;
 
-        foreach (var nic in nics)
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
+            if (nic.OperationalStatus != OperationalStatus.Up)
+                continue;
+            if (nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+                continue;
+
             var stats = nic.GetIPv4Statistics();
             totalSent += stats.BytesSent;
             totalRecv += stats.BytesReceived;
 
-            if (!telemetry.NetworkBaselines.TryGetValue(nic.Id, out var baseline))
+            if (!telemetry.NetworkBaselines.ContainsKey(nic.Id))
             {
                 telemetry.NetworkBaselines[nic.Id] = new NetworkBaseline
                 {
@@ -288,19 +292,20 @@ catch {
         return $"↑ {uploadText}/s  ↓ {downloadText}/s  • {sessionText}";
     }
 
+    private static readonly string[] ByteUnits = ["B", "KB", "MB", "GB", "TB"];
+
     private static string FormatBytes(long bytes, int decimals = 2)
     {
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
         double value = bytes;
         var unit = 0;
-        while (value > 1024 && unit < units.Length - 1)
+        while (value > 1024 && unit < ByteUnits.Length - 1)
         {
             value /= 1024;
             unit++;
         }
 
         var safeDecimals = unit == 0 ? 0 : Math.Max(0, decimals);
-        return $"{value.ToString($"F{safeDecimals}")} {units[unit]}";
+        return $"{value.ToString($"F{safeDecimals}")} {ByteUnits[unit]}";
     }
 
     private static string BuildSnapshotScript(bool includeDetails)

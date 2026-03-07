@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Phantom.Services;
 using Phantom.ViewModels;
 
@@ -47,7 +48,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        Dispatcher.Invoke(() =>
+        // BeginInvoke at Background priority keeps the UI thread responsive during
+        // high-frequency console output instead of blocking with synchronous Invoke.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             foreach (var item in e.NewItems.OfType<Phantom.Models.PowerShellOutputEvent>())
             {
@@ -86,18 +89,29 @@ public partial class MainWindow : Window
 
     private bool ShouldDisplay(Phantom.Models.PowerShellOutputEvent item)
     {
-        var stream = (item.Stream ?? string.Empty).ToLowerInvariant();
-        var text = (item.Text ?? string.Empty).ToLowerInvariant();
+        if (_activeConsoleFilter == "All logs")
+        {
+            return true;
+        }
+
+        var stream = item.Stream ?? string.Empty;
         var isErrorLike =
-            stream is "error" or "fatal" or "startuperror" or "dispatcherunhandled" or "unobservedtaskexception" ||
-            text.Contains("exception") ||
-            text.Contains(" error") ||
-            text.StartsWith("error", StringComparison.Ordinal);
-        var isWarningLike = stream == "warning" || text.Contains("warning");
+            stream.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("Fatal", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("StartupError", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("DispatcherUnhandled", StringComparison.OrdinalIgnoreCase) ||
+            stream.Equals("UnobservedTaskException", StringComparison.OrdinalIgnoreCase) ||
+            (item.Text is not null && (
+                item.Text.Contains("exception", StringComparison.OrdinalIgnoreCase) ||
+                item.Text.Contains(" error", StringComparison.OrdinalIgnoreCase) ||
+                item.Text.StartsWith("error", StringComparison.OrdinalIgnoreCase)));
+
+        var isWarningLike = stream.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
+            (item.Text is not null && item.Text.Contains("warning", StringComparison.OrdinalIgnoreCase));
 
         return _activeConsoleFilter switch
         {
-            "No Trace" => stream != "trace",
+            "No Trace" => !stream.Equals("Trace", StringComparison.OrdinalIgnoreCase),
             "Warnings+" => isWarningLike || isErrorLike,
             "Errors only" => isErrorLike,
             _ => true
@@ -120,6 +134,10 @@ public partial class MainWindow : Window
 
     private void AppendLine(Phantom.Models.PowerShellOutputEvent item)
     {
+        // Classify once and pass to both brush methods to avoid redundant work.
+        var classification = ClassifyLine(item);
+        var darkTheme = IsDarkConsoleTheme();
+
         var paragraph = new Paragraph
         {
             Margin = new Thickness(0),
@@ -128,19 +146,19 @@ public partial class MainWindow : Window
 
         paragraph.Inlines.Add(new Run($"[{item.Timestamp:HH:mm:ss}] [{item.Stream}] ")
         {
-            Foreground = GetStreamBrush(item)
+            Foreground = GetStreamBrush(item, classification, darkTheme)
         });
 
         paragraph.Inlines.Add(new Run(item.Text)
         {
-            Foreground = GetMessageBrush(item)
+            Foreground = GetMessageBrush(item, classification, darkTheme)
         });
 
         if (TryExtractProgressPercent(item.Text, out var progressPercent))
         {
             paragraph.Inlines.Add(new Run($"  {BuildProgressBar(progressPercent)}")
             {
-                Foreground = GetProgressBrush()
+                Foreground = darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen
             });
         }
 
@@ -152,55 +170,41 @@ public partial class MainWindow : Window
         }
     }
 
-    private static Brush GetStreamBrush(Phantom.Models.PowerShellOutputEvent item)
+    private static Brush GetStreamBrush(Phantom.Models.PowerShellOutputEvent item, ConsoleLineClassification classification, bool darkTheme)
     {
-        var darkTheme = IsDarkConsoleTheme();
+        switch (classification)
+        {
+            case ConsoleLineClassification.Command:
+                return darkTheme ? Brushes.White : Brushes.Black;
+            case ConsoleLineClassification.Success:
+                return darkTheme ? Brushes.LightGreen : Brushes.ForestGreen;
+            case ConsoleLineClassification.Failure:
+                return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
+            case ConsoleLineClassification.Warning:
+                return darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod;
+        }
+
         var stream = item.Stream ?? string.Empty;
-        var classification = ClassifyLine(item);
-
-        if (classification == ConsoleLineClassification.Command)
-        {
-            return darkTheme ? Brushes.White : Brushes.Black;
-        }
-
-        if (classification == ConsoleLineClassification.Success)
-        {
-            return darkTheme ? Brushes.LightGreen : Brushes.ForestGreen;
-        }
-
-        if (classification == ConsoleLineClassification.Failure)
-        {
-            return darkTheme ? Brushes.OrangeRed : Brushes.Firebrick;
-        }
-
-        if (classification == ConsoleLineClassification.Warning)
-        {
-            return darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod;
-        }
-
         if (string.IsNullOrWhiteSpace(stream))
         {
             return darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray;
         }
 
-        return stream.ToLowerInvariant() switch
-        {
-            "error" or "fatal" or "startuperror" or "dispatcherunhandled" or "unobservedtaskexception" => darkTheme ? Brushes.OrangeRed : Brushes.Firebrick,
-            "warning" => darkTheme ? Brushes.Gold : Brushes.DarkGoldenrod,
-            "info" => darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue,
-            "query" => darkTheme ? Brushes.DeepSkyBlue : Brushes.Teal,
-            "command" => darkTheme ? Brushes.White : Brushes.Black,
-            "progress" => darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen,
-            "output" => darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray,
-            "trace" => darkTheme ? Brushes.SlateGray : Brushes.Gray,
-            _ => darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray,
-        };
+        if (stream.Equals("Info", StringComparison.OrdinalIgnoreCase))
+            return darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue;
+        if (stream.Equals("Query", StringComparison.OrdinalIgnoreCase))
+            return darkTheme ? Brushes.DeepSkyBlue : Brushes.Teal;
+        if (stream.Equals("Progress", StringComparison.OrdinalIgnoreCase))
+            return darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen;
+        if (stream.Equals("Trace", StringComparison.OrdinalIgnoreCase))
+            return darkTheme ? Brushes.SlateGray : Brushes.Gray;
+
+        return darkTheme ? Brushes.LightSteelBlue : Brushes.SlateGray;
     }
 
-    private static Brush GetMessageBrush(Phantom.Models.PowerShellOutputEvent item)
+    private static Brush GetMessageBrush(Phantom.Models.PowerShellOutputEvent item, ConsoleLineClassification classification, bool darkTheme)
     {
-        var darkTheme = IsDarkConsoleTheme();
-        switch (ClassifyLine(item))
+        switch (classification)
         {
             case ConsoleLineClassification.Command:
                 return darkTheme ? Brushes.White : Brushes.Black;
@@ -214,28 +218,15 @@ public partial class MainWindow : Window
             {
                 var stream = item.Stream ?? string.Empty;
                 if (stream.Equals("Query", StringComparison.OrdinalIgnoreCase))
-                {
                     return darkTheme ? Brushes.LightSkyBlue : Brushes.SteelBlue;
-                }
-
                 if (stream.Equals("Progress", StringComparison.OrdinalIgnoreCase))
-                {
                     return darkTheme ? Brushes.MediumAquamarine : Brushes.SeaGreen;
-                }
-
                 if (stream.Equals("Trace", StringComparison.OrdinalIgnoreCase))
-                {
                     return darkTheme ? Brushes.Gainsboro : Brushes.DimGray;
-                }
 
                 return darkTheme ? Brushes.WhiteSmoke : Brushes.Black;
             }
         }
-    }
-
-    private static Brush GetProgressBrush()
-    {
-        return IsDarkConsoleTheme() ? Brushes.MediumAquamarine : Brushes.SeaGreen;
     }
 
     private static ConsoleLineClassification ClassifyLine(Phantom.Models.PowerShellOutputEvent item)

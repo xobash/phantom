@@ -126,10 +126,17 @@ public static class CardTiltBehavior
         var nx = ((point.X / element.ActualWidth) - 0.5) * 2;
         var ny = ((point.Y / element.ActualHeight) - 0.5) * 2;
 
-        state.Skew.BeginAnimation(SkewTransform.AngleXProperty, null);
-        state.Skew.BeginAnimation(SkewTransform.AngleYProperty, null);
-        state.Translate.BeginAnimation(TranslateTransform.XProperty, null);
-        state.Translate.BeginAnimation(TranslateTransform.YProperty, null);
+        // Cancel running animations only if they exist, then set properties directly.
+        // This avoids 4 × BeginAnimation(null) per MouseMove event which causes
+        // unnecessary GPU composition overhead and dropped frames.
+        if (state.IsAnimating)
+        {
+            state.Skew.BeginAnimation(SkewTransform.AngleXProperty, null);
+            state.Skew.BeginAnimation(SkewTransform.AngleYProperty, null);
+            state.Translate.BeginAnimation(TranslateTransform.XProperty, null);
+            state.Translate.BeginAnimation(TranslateTransform.YProperty, null);
+            state.IsAnimating = false;
+        }
 
         state.Skew.AngleX = Math.Clamp(-ny * MaxSkew, -MaxSkew, MaxSkew);
         state.Skew.AngleY = Math.Clamp(nx * MaxSkew, -MaxSkew, MaxSkew);
@@ -162,6 +169,7 @@ public static class CardTiltBehavior
         state.Skew.BeginAnimation(SkewTransform.AngleYProperty, new DoubleAnimation(0, duration) { EasingFunction = easing });
         state.Translate.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, duration) { EasingFunction = easing });
         state.Translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, duration) { EasingFunction = easing });
+        state.IsAnimating = true;
     }
 
     private static TiltState EnsureTiltState(FrameworkElement element)
@@ -230,5 +238,6 @@ public static class CardTiltBehavior
 
         public SkewTransform Skew { get; }
         public TranslateTransform Translate { get; }
+        public bool IsAnimating { get; set; }
     }
 }

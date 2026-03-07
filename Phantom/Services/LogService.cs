@@ -107,7 +107,7 @@ public sealed class LogService
         }
     }
 
-    public async Task EnforceRetentionAsync(CancellationToken cancellationToken = default)
+    public Task EnforceRetentionAsync(CancellationToken cancellationToken = default)
     {
         var settings = _settingsAccessor();
         var files = new DirectoryInfo(_paths.LogsDirectory)
@@ -122,6 +122,7 @@ public sealed class LogService
             files[i].Delete();
         }
 
+        // Re-enumerate after count-based deletion, ordered oldest-first for size-based pruning.
         files = new DirectoryInfo(_paths.LogsDirectory)
             .EnumerateFiles("*.log", SearchOption.TopDirectoryOnly)
             .OrderBy(x => x.CreationTimeUtc)
@@ -144,6 +145,6 @@ public sealed class LogService
             file.Delete();
         }
 
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 }

@@ -358,14 +358,11 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         await RefreshCpuMemoryTilesAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    private bool ContainsKpiTile(string title)
-    {
-        return KpiTiles.Any(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
-    }
+    private bool ContainsKpiTile(string title) => IndexOfKpiTile(title) >= 0;
 
     private void UpsertTopCard(string title, string value, string? tooltip = null)
     {
-        var index = TopCards.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
+        var index = IndexOfTopCard(title);
         var next = new HomeCard
         {
             Title = title,
@@ -385,7 +382,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
     private void UpsertKpiTile(string title, string value, string secondaryValue = "")
     {
-        var index = KpiTiles.ToList().FindIndex(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
+        var index = IndexOfKpiTile(title);
         var cleanSecondary = secondaryValue?.Trim() ?? string.Empty;
         var next = new KpiTile
         {
@@ -403,6 +400,27 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         }
 
         KpiTiles.Add(next);
+    }
+
+    // Direct index lookups avoid allocating a new List<T> via ToList() on every call.
+    private int IndexOfTopCard(string title)
+    {
+        for (var i = 0; i < TopCards.Count; i++)
+        {
+            if (string.Equals(TopCards[i].Title, title, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return -1;
+    }
+
+    private int IndexOfKpiTile(string title)
+    {
+        for (var i = 0; i < KpiTiles.Count; i++)
+        {
+            if (string.Equals(KpiTiles[i].Title, title, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return -1;
     }
 
     private static string FormatBytes(long bytes)
@@ -616,7 +634,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     {
         var safeSeconds = Math.Max(0, uptimeSeconds);
         _uptimeSeconds = safeSeconds;
-        var uptimeIndex = TopCards.ToList().FindIndex(t => string.Equals(t.Title, "Uptime", StringComparison.OrdinalIgnoreCase));
+        var uptimeIndex = IndexOfTopCard("Uptime");
         if (uptimeIndex < 0)
         {
             return;

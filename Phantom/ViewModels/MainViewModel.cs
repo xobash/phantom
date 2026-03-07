@@ -91,11 +91,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            dispatcher.BeginInvoke(new Action(() =>
+            dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
             {
                 Interlocked.Decrement(ref _pendingConsoleDispatches);
                 AppendConsoleMessage(evt);
-            }));
+            });
         };
         console.MessageReceived += _consoleMessageReceivedHandler;
 
@@ -108,7 +108,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            dispatcher.BeginInvoke(new Action(() => IsOperationRunning = running));
+            dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => IsOperationRunning = running);
         };
         _executionCoordinator.RunningChanged += _runningChangedHandler;
 
@@ -187,24 +187,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         _console.Publish("Trace", "Main initialization started.");
+
+        // Settings must load first (other VMs depend on it), then Home (visible tab).
         _console.Publish("Trace", "Initializing Settings view model.");
         await Settings.InitializeAsync(cancellationToken).ConfigureAwait(false);
         _console.Publish("Trace", "Initializing Home view model.");
         await Home.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Apps view model.");
-        await Apps.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Services view model.");
-        await Services.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Store view model.");
-        await Store.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Tweaks view model.");
-        await Tweaks.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Features view model.");
-        await Features.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Fixes view model.");
-        await Fixes.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Updates view model.");
-        await Updates.InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+        // Remaining tabs are independent — initialize concurrently for faster startup.
+        _console.Publish("Trace", "Initializing remaining view models in parallel.");
+        await Task.WhenAll(
+            Apps.InitializeAsync(cancellationToken),
+            Services.InitializeAsync(cancellationToken),
+            Store.InitializeAsync(cancellationToken),
+            Tweaks.InitializeAsync(cancellationToken),
+            Features.InitializeAsync(cancellationToken),
+            Fixes.InitializeAsync(cancellationToken),
+            Updates.InitializeAsync(cancellationToken)
+        ).ConfigureAwait(false);
+
         _console.Publish("Trace", "Main initialization completed.");
     }
 
