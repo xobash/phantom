@@ -18,10 +18,10 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                    <Setter Property="BorderBrush" Value="#5088CCFF"/>
+                    <Setter Property="BorderBrush" Value="#6898D0FF"/>
                     <Setter Property="Effect">
                         <Setter.Value>
-                            <DropShadowEffect Color="#3070A0E8" BlurRadius="14" ShadowDepth="0" Opacity="0.30"/>
+                            <DropShadowEffect Color="#4878B0F0" BlurRadius="20" ShadowDepth="0" Opacity="0.45"/>
                         </Setter.Value>
                     </Setter>
                 </Trigger>

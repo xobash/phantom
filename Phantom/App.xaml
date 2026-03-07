@@ -90,24 +90,24 @@
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#30000000" BlurRadius="11" ShadowDepth="0" Opacity="0.26"/>
+                    <DropShadowEffect Color="#28406090" BlurRadius="14" ShadowDepth="0" Opacity="0.32"/>
                 </Setter.Value>
             </Setter>
             <Setter Property="behaviors:CardTiltBehavior.IsEnabled" Value="True"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#5588CCFF"/>
+                    <Setter Property="BorderBrush" Value="#6898D0FF"/>
                     <Setter Property="Effect">
                         <Setter.Value>
-                            <DropShadowEffect Color="#4080C8FF" BlurRadius="22" ShadowDepth="0" Opacity="0.42"/>
+                            <DropShadowEffect Color="#5580C8FF" BlurRadius="28" ShadowDepth="0" Opacity="0.55"/>
                         </Setter.Value>
                     </Setter>
                 </Trigger>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                    <Setter Property="BorderBrush" Value="#7EA6FF"/>
+                    <Setter Property="BorderBrush" Value="#88AAFF"/>
                     <Setter Property="Effect">
                         <Setter.Value>
-                            <DropShadowEffect Color="#6689C8FF" BlurRadius="20" ShadowDepth="0" Opacity="0.45"/>
+                            <DropShadowEffect Color="#7089C8FF" BlurRadius="26" ShadowDepth="0" Opacity="0.55"/>
                         </Setter.Value>
                     </Setter>
                 </Trigger>
@@ -139,10 +139,10 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#6090C8FF"/>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#7098D0FF"/>
                                 <Setter TargetName="BtnBorder" Property="Effect">
                                     <Setter.Value>
-                                        <DropShadowEffect Color="#3570A0E8" BlurRadius="14" ShadowDepth="0" Opacity="0.35"/>
+                                        <DropShadowEffect Color="#4878B0F0" BlurRadius="18" ShadowDepth="0" Opacity="0.48"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
@@ -601,7 +601,7 @@
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
                                 <Setter TargetName="Track" Property="Effect">
                                     <Setter.Value>
-                                        <DropShadowEffect Color="#501FA3E2" BlurRadius="10" ShadowDepth="0" Opacity="0.45"/>
+                                        <DropShadowEffect Color="#601FA3E2" BlurRadius="16" ShadowDepth="0" Opacity="0.6"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
@@ -644,7 +644,7 @@
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
                                 <Setter TargetName="Track" Property="Effect">
                                     <Setter.Value>
-                                        <DropShadowEffect Color="#501FA3E2" BlurRadius="10" ShadowDepth="0" Opacity="0.45"/>
+                                        <DropShadowEffect Color="#601FA3E2" BlurRadius="16" ShadowDepth="0" Opacity="0.6"/>
                                     </Setter.Value>
                                 </Setter>
                             </Trigger>
@@ -695,7 +695,7 @@
                     <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
                     <Setter Property="Effect">
                         <Setter.Value>
-                            <DropShadowEffect Color="#2060A0E8" BlurRadius="8" ShadowDepth="0" Opacity="0.22"/>
+                            <DropShadowEffect Color="#3568B0F0" BlurRadius="12" ShadowDepth="0" Opacity="0.35"/>
                         </Setter.Value>
                     </Setter>
                 </Trigger>
