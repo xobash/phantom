@@ -15,7 +15,107 @@
             <ColumnDefinition Width="430"/>
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="0" Background="{DynamicResource ShellBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,0,1,0">
+        <!-- ═══ Ambient light layer: drifting radial glows ═══ -->
+        <Rectangle Grid.ColumnSpan="3" IsHitTestVisible="False">
+            <Rectangle.Fill>
+                <RadialGradientBrush x:Name="AmbientBrush1"
+                                     Center="0.3,0.3" GradientOrigin="0.3,0.3"
+                                     RadiusX="0.85" RadiusY="0.85">
+                    <GradientStop x:Name="Amb1Stop0" Color="#1E508CFF" Offset="0"/>
+                    <GradientStop Color="#0C6040C8" Offset="0.5"/>
+                    <GradientStop Color="#00000000" Offset="1"/>
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+            <Rectangle.Triggers>
+                <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <PointAnimation Storyboard.TargetName="AmbientBrush1"
+                                            Storyboard.TargetProperty="Center"
+                                            From="0.2,0.2" To="0.7,0.65"
+                                            Duration="0:0:12" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <PointAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </PointAnimation.EasingFunction>
+                            </PointAnimation>
+                            <PointAnimation Storyboard.TargetName="AmbientBrush1"
+                                            Storyboard.TargetProperty="GradientOrigin"
+                                            From="0.2,0.2" To="0.7,0.65"
+                                            Duration="0:0:12" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <PointAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </PointAnimation.EasingFunction>
+                            </PointAnimation>
+                            <ColorAnimation Storyboard.TargetName="Amb1Stop0"
+                                            Storyboard.TargetProperty="Color"
+                                            From="#1E508CFF" To="#1E2090D8"
+                                            Duration="0:0:8" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <ColorAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </ColorAnimation.EasingFunction>
+                            </ColorAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Rectangle.Triggers>
+        </Rectangle>
+
+        <Rectangle Grid.ColumnSpan="3" IsHitTestVisible="False">
+            <Rectangle.Fill>
+                <RadialGradientBrush x:Name="AmbientBrush2"
+                                     Center="0.7,0.7" GradientOrigin="0.7,0.7"
+                                     RadiusX="0.7" RadiusY="0.7">
+                    <GradientStop x:Name="Amb2Stop0" Color="#16A050E0" Offset="0"/>
+                    <GradientStop Color="#00000000" Offset="1"/>
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+            <Rectangle.Triggers>
+                <EventTrigger RoutedEvent="Loaded">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <PointAnimation Storyboard.TargetName="AmbientBrush2"
+                                            Storyboard.TargetProperty="Center"
+                                            From="0.75,0.7" To="0.3,0.35"
+                                            Duration="0:0:15" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <PointAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </PointAnimation.EasingFunction>
+                            </PointAnimation>
+                            <PointAnimation Storyboard.TargetName="AmbientBrush2"
+                                            Storyboard.TargetProperty="GradientOrigin"
+                                            From="0.75,0.7" To="0.3,0.35"
+                                            Duration="0:0:15" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <PointAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </PointAnimation.EasingFunction>
+                            </PointAnimation>
+                            <ColorAnimation Storyboard.TargetName="Amb2Stop0"
+                                            Storyboard.TargetProperty="Color"
+                                            From="#16A050E0" To="#16E06080"
+                                            Duration="0:0:10" AutoReverse="True"
+                                            RepeatBehavior="Forever">
+                                <ColorAnimation.EasingFunction>
+                                    <SineEase EasingMode="EaseInOut"/>
+                                </ColorAnimation.EasingFunction>
+                            </ColorAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Rectangle.Triggers>
+        </Rectangle>
+
+        <Border Grid.Column="0" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="0,0,1,0">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#D81B1B1B" Offset="0"/>
+                    <GradientStop Color="#DC181820" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <Border.Resources>
                 <Style x:Key="NavigationListItemStyle" TargetType="ListBoxItem">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -23,16 +123,44 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="ListBoxItem">
-                                <Border x:Name="ItemBorder" CornerRadius="10" Padding="10" Background="{DynamicResource NavItemBackgroundBrush}" BorderBrush="{DynamicResource NavItemBorderBrush}" BorderThickness="1">
-                                    <ContentPresenter/>
-                                </Border>
+                                <Grid>
+                                    <Border x:Name="ItemBorder" CornerRadius="10" Padding="10"
+                                            Background="{DynamicResource NavItemBackgroundBrush}"
+                                            BorderBrush="{DynamicResource NavItemBorderBrush}"
+                                            BorderThickness="1">
+                                        <ContentPresenter/>
+                                    </Border>
+                                    <Rectangle x:Name="AccentBar" Width="3"
+                                               HorizontalAlignment="Left"
+                                               RadiusX="1.5" RadiusY="1.5"
+                                               Margin="1,6,0,6"
+                                               Visibility="Collapsed">
+                                        <Rectangle.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="#1FA3E2" Offset="0"/>
+                                                <GradientStop Color="#7C5CE0" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Rectangle.Fill>
+                                    </Rectangle>
+                                </Grid>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemHoverBrush}"/>
+                                        <Setter TargetName="ItemBorder" Property="Effect">
+                                            <Setter.Value>
+                                                <DropShadowEffect Color="#2050A0E0" BlurRadius="12" ShadowDepth="0" Opacity="0.28"/>
+                                            </Setter.Value>
+                                        </Setter>
                                     </Trigger>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
-                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#4088CCFF"/>
+                                        <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="ItemBorder" Property="Effect">
+                                            <Setter.Value>
+                                                <DropShadowEffect Color="#3060A0E8" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
+                                            </Setter.Value>
+                                        </Setter>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -87,7 +215,12 @@
                                             </Trigger>
                                             <DataTrigger Binding="{Binding IsSettingsSelected}" Value="True">
                                                 <Setter TargetName="SettingsBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
-                                                <Setter TargetName="SettingsBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                                <Setter TargetName="SettingsBorder" Property="BorderBrush" Value="#4088CCFF"/>
+                                                <Setter TargetName="SettingsBorder" Property="Effect">
+                                                    <Setter.Value>
+                                                        <DropShadowEffect Color="#3060A0E8" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
+                                                    </Setter.Value>
+                                                </Setter>
                                             </DataTrigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -103,7 +236,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Column="1" Margin="12" Style="{StaticResource DarkCardStyle}" Background="{DynamicResource ShellAltBrush}">
+        <Border Grid.Column="1" Margin="12" Style="{StaticResource DarkCardStyle}" Background="#D5202025">
             <ContentControl Content="{Binding CurrentSectionViewModel}"/>
         </Border>
 
@@ -140,6 +273,11 @@
                                             <DataTrigger Binding="{Binding IsOperationRunning}" Value="True">
                                                 <Setter Property="Text" Value="Running"/>
                                                 <Setter Property="Foreground" Value="#87E0A2"/>
+                                                <Setter Property="Effect">
+                                                    <Setter.Value>
+                                                        <DropShadowEffect Color="#6087E0A2" BlurRadius="8" ShadowDepth="0" Opacity="0.55"/>
+                                                    </Setter.Value>
+                                                </Setter>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>

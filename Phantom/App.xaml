@@ -19,8 +19,10 @@
                              po:Freeze="False"
                              StartPoint="0,0"
                              EndPoint="1,1">
-            <GradientStop Color="#131417" Offset="0"/>
-            <GradientStop Color="#1A1B23" Offset="1"/>
+            <GradientStop Color="#0F1014" Offset="0"/>
+            <GradientStop Color="#131520" Offset="0.35"/>
+            <GradientStop Color="#181A26" Offset="0.65"/>
+            <GradientStop Color="#1C1B28" Offset="1"/>
         </LinearGradientBrush>
         <SolidColorBrush x:Key="ShellBrush" po:Freeze="False" Color="#1B1B1B"/>
         <SolidColorBrush x:Key="ShellAltBrush" po:Freeze="False" Color="#202020"/>
@@ -51,6 +53,11 @@
 
         <SolidColorBrush x:Key="TerminalBackgroundBrush" po:Freeze="False" Color="#000000"/>
         <SolidColorBrush x:Key="TerminalForegroundBrush" po:Freeze="False" Color="#E6E6E6"/>
+
+        <!-- Glow accent palette -->
+        <SolidColorBrush x:Key="GlowBlueBrush" po:Freeze="False" Color="#4080C8FF"/>
+        <SolidColorBrush x:Key="GlowPurpleBrush" po:Freeze="False" Color="#30A060E0"/>
+        <SolidColorBrush x:Key="NavAccentBrush" po:Freeze="False" Color="#1FA3E2"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
@@ -89,13 +96,18 @@
             <Setter Property="behaviors:CardTiltBehavior.IsEnabled" Value="True"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                    <Setter Property="BorderBrush" Value="#5588CCFF"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#4080C8FF" BlurRadius="22" ShadowDepth="0" Opacity="0.42"/>
+                        </Setter.Value>
+                    </Setter>
                 </Trigger>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
                     <Setter Property="BorderBrush" Value="#7EA6FF"/>
                     <Setter Property="Effect">
                         <Setter.Value>
-                            <DropShadowEffect Color="#6689C8FF" BlurRadius="16" ShadowDepth="0" Opacity="0.38"/>
+                            <DropShadowEffect Color="#6689C8FF" BlurRadius="20" ShadowDepth="0" Opacity="0.45"/>
                         </Setter.Value>
                     </Setter>
                 </Trigger>
@@ -127,7 +139,12 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#6090C8FF"/>
+                                <Setter TargetName="BtnBorder" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#3570A0E8" BlurRadius="14" ShadowDepth="0" Opacity="0.35"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
@@ -582,6 +599,11 @@
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                                 <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
+                                <Setter TargetName="Track" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#501FA3E2" BlurRadius="10" ShadowDepth="0" Opacity="0.45"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -620,6 +642,11 @@
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                                 <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
+                                <Setter TargetName="Track" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#501FA3E2" BlurRadius="10" ShadowDepth="0" Opacity="0.45"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Track" Property="Opacity" Value="0.45"/>
@@ -666,6 +693,11 @@
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#2060A0E8" BlurRadius="8" ShadowDepth="0" Opacity="0.22"/>
+                        </Setter.Value>
+                    </Setter>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="{DynamicResource RowSelectedBackgroundBrush}"/>
