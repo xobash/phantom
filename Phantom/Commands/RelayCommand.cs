@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Windows;
 using System.Windows.Input;
 
@@ -74,7 +75,7 @@ public sealed class AsyncRelayCommand : ICommand
     private readonly Func<CancellationToken, Task> _execute;
     private readonly Func<bool>? _canExecute;
     private CancellationTokenSource? _cts;
-    private bool _isRunning;
+    private int _isRunning;
 
     public AsyncRelayCommand(Func<CancellationToken, Task> execute, Func<bool>? canExecute = null)
     {
@@ -84,21 +85,26 @@ public sealed class AsyncRelayCommand : ICommand
 
     public event EventHandler? CanExecuteChanged;
 
-    public bool IsRunning => _isRunning;
+    public bool IsRunning => Volatile.Read(ref _isRunning) != 0;
 
     public bool CanExecute(object? parameter)
     {
-        return !_isRunning && (_canExecute?.Invoke() ?? true);
+        return !IsRunning && (_canExecute?.Invoke() ?? true);
     }
 
     public async void Execute(object? parameter)
     {
-        if (!CanExecute(parameter))
+        if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
         {
             return;
         }
 
-        _isRunning = true;
+        if (!(_canExecute?.Invoke() ?? true))
+        {
+            Volatile.Write(ref _isRunning, 0);
+            return;
+        }
+
         RaiseCanExecuteChanged();
         _cts = new CancellationTokenSource();
 
@@ -117,7 +123,7 @@ public sealed class AsyncRelayCommand : ICommand
         {
             _cts.Dispose();
             _cts = null;
-            _isRunning = false;
+            Volatile.Write(ref _isRunning, 0);
             RaiseCanExecuteChanged();
         }
     }
@@ -158,7 +164,7 @@ public sealed class AsyncRelayCommand<T> : ICommand
     private readonly Func<T?, CancellationToken, Task> _execute;
     private readonly Func<T?, bool>? _canExecute;
     private CancellationTokenSource? _cts;
-    private bool _isRunning;
+    private int _isRunning;
 
     public AsyncRelayCommand(Func<T?, CancellationToken, Task> execute, Func<T?, bool>? canExecute = null)
     {
@@ -170,17 +176,22 @@ public sealed class AsyncRelayCommand<T> : ICommand
 
     public bool CanExecute(object? parameter)
     {
-        return !_isRunning && (_canExecute?.Invoke((T?)parameter) ?? true);
+        return Volatile.Read(ref _isRunning) == 0 && (_canExecute?.Invoke((T?)parameter) ?? true);
     }
 
     public async void Execute(object? parameter)
     {
-        if (!CanExecute(parameter))
+        if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0)
         {
             return;
         }
 
-        _isRunning = true;
+        if (!(_canExecute?.Invoke((T?)parameter) ?? true))
+        {
+            Volatile.Write(ref _isRunning, 0);
+            return;
+        }
+
         RaiseCanExecuteChanged();
         _cts = new CancellationTokenSource();
 
@@ -199,7 +210,7 @@ public sealed class AsyncRelayCommand<T> : ICommand
         {
             _cts.Dispose();
             _cts = null;
-            _isRunning = false;
+            Volatile.Write(ref _isRunning, 0);
             RaiseCanExecuteChanged();
         }
     }

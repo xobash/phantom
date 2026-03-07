@@ -168,7 +168,7 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
                 psi.Arguments = arguments;
             }
 
-            var process = Process.Start(psi);
+            using var process = Process.Start(psi);
             if (process is null)
             {
                 _console.Publish("Error", $"apps.uninstall failed for {app.Name}: process could not be started.");

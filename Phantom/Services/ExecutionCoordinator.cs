@@ -65,7 +65,7 @@ public sealed class ExecutionCoordinator
 
         lock (_gate)
         {
-            if (!_isRunning && _cts is null)
+            if (!_isRunning)
             {
                 return;
             }

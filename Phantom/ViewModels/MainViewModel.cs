@@ -23,6 +23,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private object? _currentSectionViewModel;
     private bool _isOperationRunning;
     private bool _disposed;
+    private int _pendingConsoleDispatches;
 
     public MainViewModel(
         HomeViewModel home,
@@ -83,7 +84,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            dispatcher.BeginInvoke(new Action(() => AppendConsoleMessage(evt)));
+            // Drop messages if dispatcher queue backlog exceeds threshold
+            if (Interlocked.Increment(ref _pendingConsoleDispatches) > 500)
+            {
+                Interlocked.Decrement(ref _pendingConsoleDispatches);
+                return;
+            }
+
+            dispatcher.BeginInvoke(new Action(() =>
+            {
+                Interlocked.Decrement(ref _pendingConsoleDispatches);
+                AppendConsoleMessage(evt);
+            }));
         };
         console.MessageReceived += _consoleMessageReceivedHandler;
 

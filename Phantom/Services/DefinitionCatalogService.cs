@@ -6,6 +6,9 @@ namespace Phantom.Services;
 
 public sealed class DefinitionCatalogService
 {
+    private const int MaxCatalogArraySize = 10_000;
+    private const int MaxValidationErrorsToReport = 8;
+
     private readonly AppPaths _paths;
     private readonly JsonSerializerOptions _options = new()
     {
@@ -125,6 +128,11 @@ public sealed class DefinitionCatalogService
             var index = 0;
             foreach (var item in doc.RootElement.EnumerateArray())
             {
+                if (index >= MaxCatalogArraySize)
+                {
+                    throw new InvalidDataException($"Schema validation failed for {schemaName} ({path}): array exceeds maximum size of {MaxCatalogArraySize}.");
+                }
+
                 validateItem(item, index, errors);
                 index++;
             }
@@ -134,7 +142,7 @@ public sealed class DefinitionCatalogService
                 return;
             }
 
-            var summary = string.Join(" | ", errors.Take(8));
+            var summary = string.Join(" | ", errors.Take(MaxValidationErrorsToReport));
             throw new InvalidDataException($"Schema validation failed for {schemaName} ({path}). {summary}");
         }
     }
@@ -170,7 +178,7 @@ public sealed class DefinitionCatalogService
 
             if (errors.Count > 0)
             {
-                throw new InvalidDataException($"Schema validation failed for selection config ({path}). {string.Join(" | ", errors.Take(8))}");
+                throw new InvalidDataException($"Schema validation failed for selection config ({path}). {string.Join(" | ", errors.Take(MaxValidationErrorsToReport))}");
             }
         }
     }

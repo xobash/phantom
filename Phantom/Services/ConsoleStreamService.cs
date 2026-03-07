@@ -4,8 +4,9 @@ using System.Diagnostics;
 
 namespace Phantom.Services;
 
-public sealed class ConsoleStreamService
+public sealed class ConsoleStreamService : IDisposable
 {
+    private bool _disposed;
     private const int MaxEvents = 10_000;
     private const int TrimEvents = 1_000;
     private const int MaxRetainedCharacters = 2_000_000;
@@ -145,5 +146,17 @@ public sealed class ConsoleStreamService
         }
 
         handler.Invoke(this, evt);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        MessageReceived = null;
+        _persistentSink = null;
     }
 }

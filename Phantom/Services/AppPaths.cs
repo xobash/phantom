@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Phantom.Services;
 
 public sealed class AppPaths
@@ -11,9 +13,9 @@ public sealed class AppPaths
         LogsDirectory = Path.Combine(BaseDirectory, "logs");
         RuntimeDirectory = Path.Combine(BaseDirectory, "runtime");
 
-        Directory.CreateDirectory(DataDirectory);
-        Directory.CreateDirectory(LogsDirectory);
-        Directory.CreateDirectory(RuntimeDirectory);
+        EnsureDirectory(DataDirectory);
+        EnsureDirectory(LogsDirectory);
+        EnsureDirectory(RuntimeDirectory);
     }
 
     public string BaseDirectory { get; }
@@ -30,4 +32,16 @@ public sealed class AppPaths
     public string FeaturesFile => Path.Combine(BaseDirectory, "Data", "features.json");
     public string FixesFile => Path.Combine(BaseDirectory, "Data", "fixes.json");
     public string LegacyPanelsFile => Path.Combine(BaseDirectory, "Data", "legacy-panels.json");
+
+    private static void EnsureDirectory(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"AppPaths failed to create directory '{path}': {ex.Message}");
+        }
+    }
 }

@@ -125,7 +125,8 @@ function Set-RegistryDword64([string]$subKey,[string]$name,[int]$value) {
 }
 
 function Get-ServiceStartMode([string]$serviceName) {
-  return (Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop).StartMode
+  $safeName=$serviceName.Replace("'","''")
+  return (Get-CimInstance Win32_Service -Filter "Name='$safeName'" -ErrorAction Stop).StartMode
 }
 
 New-Item -Path $stateDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
@@ -184,7 +185,10 @@ function Remove-RegistrySubKeyIfEmpty64([string]$subKey) {
 }
 
 function Resolve-ServiceStartupType([string]$mode) {
-  switch ($mode.ToLowerInvariant()) {
+  $allowed=@('auto','automatic','manual','disabled')
+  $lower=$mode.ToLowerInvariant()
+  if($lower -notin $allowed){ Write-Warning "Unknown service mode '$mode', defaulting to Manual" }
+  switch ($lower) {
     'auto' { return 'Automatic' }
     'automatic' { return 'Automatic' }
     'manual' { return 'Manual' }

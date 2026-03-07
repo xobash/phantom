@@ -76,9 +76,25 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             }
 
             TickUptimeDisplay();
-            _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
+            _ = SafeFireAndForgetAsync(RefreshCpuMemoryTilesAsync(CancellationToken.None));
         };
         _fastMetricsTimer.Tick += _fastMetricsTickHandler;
+    }
+
+    private async Task SafeFireAndForgetAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown or refresh supersession.
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Background task failed: {ex.Message}");
+        }
     }
 
     public string Title => "Home";
@@ -132,7 +148,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             _refreshCts?.Cancel();
         }
 
-        _ = RefreshAsync(CancellationToken.None, queueIfBusy: forceIfBusy);
+        _ = SafeFireAndForgetAsync(RefreshAsync(CancellationToken.None, queueIfBusy: forceIfBusy));
     }
 
     private void RequestCardRefresh(string? cardTitle)
@@ -148,7 +164,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             string.Equals(normalized, "GPU %", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalized, "Network", StringComparison.OrdinalIgnoreCase))
         {
-            _ = ForceFastMetricsRefreshAsync();
+            _ = SafeFireAndForgetAsync(ForceFastMetricsRefreshAsync());
             return;
         }
 
@@ -252,7 +268,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
             if (Interlocked.Exchange(ref _refreshQueued, 0) == 1)
             {
-                _ = RefreshAsync(CancellationToken.None, queueIfBusy: true);
+                _ = SafeFireAndForgetAsync(RefreshAsync(CancellationToken.None, queueIfBusy: true));
             }
         }
     }
@@ -322,7 +338,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             _isFastMetricsRefreshing = false;
             if (Interlocked.Exchange(ref _fastRefreshQueued, 0) == 1)
             {
-                _ = RefreshCpuMemoryTilesAsync(CancellationToken.None);
+                _ = SafeFireAndForgetAsync(RefreshCpuMemoryTilesAsync(CancellationToken.None));
             }
         }
     }

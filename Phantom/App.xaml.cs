@@ -101,15 +101,12 @@ public partial class App : Application
             {
                 try
                 {
+                    var fatal = args.ExceptionObject?.ToString() ?? "Unknown fatal error";
+                    WriteEmergencyStartupTrace($"Fatal: {fatal}");
                     if (_bootstrap is not null)
                     {
-                        var fatal = args.ExceptionObject?.ToString() ?? "Unknown fatal error";
                         _bootstrap.Console.Publish("Fatal", fatal);
-                        _bootstrap.Log.WriteAsync("Fatal", fatal).GetAwaiter().GetResult();
-                    }
-                    else
-                    {
-                        WriteEmergencyStartupTrace($"Fatal before bootstrap: {args.ExceptionObject}");
+                        _bootstrap.Log.WriteCrashEntry("Fatal", fatal);
                     }
                 }
                 catch (Exception ex)

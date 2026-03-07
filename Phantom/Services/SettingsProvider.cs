@@ -4,10 +4,12 @@ namespace Phantom.Services;
 
 public sealed class SettingsProvider
 {
-    public AppSettings Current { get; private set; } = new();
+    private volatile AppSettings _current = new();
+
+    public AppSettings Current => _current;
 
     public void Update(AppSettings settings)
     {
-        Current = settings;
+        Interlocked.Exchange(ref _current, settings);
     }
 }

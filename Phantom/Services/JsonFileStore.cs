@@ -25,15 +25,18 @@ public sealed class JsonFileStore
             var value = await JsonSerializer.DeserializeAsync<T>(stream, _options, cancellationToken).ConfigureAwait(false);
             return value ?? fallback();
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Trace.TraceWarning($"JsonFileStore failed to load {path}: {ex.Message}");
             try
             {
                 var backupPath = $"{path}.corrupt.{DateTime.UtcNow:yyyyMMddHHmmss}";
                 File.Copy(path, backupPath, overwrite: true);
+                System.Diagnostics.Trace.TraceWarning($"JsonFileStore saved corrupt copy to {backupPath}");
             }
-            catch
+            catch (Exception backupEx)
             {
+                System.Diagnostics.Trace.TraceWarning($"JsonFileStore failed to backup corrupt file: {backupEx.Message}");
             }
 
             return fallback();

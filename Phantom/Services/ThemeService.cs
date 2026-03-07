@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Win32;
 using Phantom.Models;
 using System.Runtime.InteropServices;
@@ -52,8 +53,9 @@ public sealed class ThemeService
                 return appModeInt == 0;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning($"ThemeService.IsSystemDarkModePreferred registry read failed: {ex.Message}");
         }
 
         return true;

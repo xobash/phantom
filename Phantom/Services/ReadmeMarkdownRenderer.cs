@@ -10,9 +10,10 @@ namespace Phantom.Services;
 
 public static class ReadmeMarkdownRenderer
 {
-    private static readonly Regex HeadingRegex = new(@"^\s{0,3}(#{1,6})\s+(.*)$", RegexOptions.Compiled);
-    private static readonly Regex OrderedListRegex = new(@"^\s*\d+(?:\.|\))\s+(.*)$", RegexOptions.Compiled);
-    private static readonly Regex UnorderedListRegex = new(@"^\s*[-\*\+]\s+(.*)$", RegexOptions.Compiled);
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+    private static readonly Regex HeadingRegex = new(@"^\s{0,3}(#{1,6})\s+(.{0,1000})$", RegexOptions.Compiled, RegexTimeout);
+    private static readonly Regex OrderedListRegex = new(@"^\s*\d+(?:\.|\))\s+(.{0,1000})$", RegexOptions.Compiled, RegexTimeout);
+    private static readonly Regex UnorderedListRegex = new(@"^\s*[-\*\+]\s+(.{0,1000})$", RegexOptions.Compiled, RegexTimeout);
 
     private static readonly Brush DocumentForeground = BrushFromHex("#F2F2F2");
     private static readonly Brush MutedForeground = BrushFromHex("#CECECE");

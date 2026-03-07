@@ -26,28 +26,74 @@ public sealed class LogService
 
     public void OpenSessionLog()
     {
-        Directory.CreateDirectory(_paths.LogsDirectory);
-        CurrentLogPath = Path.Combine(_paths.LogsDirectory, $"phantom-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-        File.WriteAllText(CurrentLogPath, $"Phantom session started {DateTimeOffset.Now:O}{Environment.NewLine}", Encoding.UTF8);
+        try
+        {
+            Directory.CreateDirectory(_paths.LogsDirectory);
+            CurrentLogPath = Path.Combine(_paths.LogsDirectory, $"phantom-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            File.WriteAllText(CurrentLogPath, $"Phantom session started {DateTimeOffset.Now:O}{Environment.NewLine}", Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"LogService.OpenSessionLog failed: {ex.Message}");
+            try
+            {
+                var fallbackDir = Path.Combine(Path.GetTempPath(), "Phantom", "logs");
+                Directory.CreateDirectory(fallbackDir);
+                CurrentLogPath = Path.Combine(fallbackDir, $"phantom-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+                File.WriteAllText(CurrentLogPath, $"Phantom session started (fallback) {DateTimeOffset.Now:O}{Environment.NewLine}", Encoding.UTF8);
+            }
+            catch
+            {
+                // Last resort: logging is unavailable. App continues without file logging.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Synchronous, non-blocking crash log entry for use in AppDomain.UnhandledException
+    /// where async calls risk deadlocking. Bypasses the semaphore — acceptable because
+    /// the process is about to terminate.
+    /// </summary>
+    public void WriteCrashEntry(string level, string message)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(CurrentLogPath))
+            {
+                OpenSessionLog();
+            }
+
+            var line = JsonSerializer.Serialize(new LogEnvelope
+            {
+                Level = level,
+                Message = message,
+                Timestamp = DateTimeOffset.Now
+            });
+            File.AppendAllText(CurrentLogPath, line + Environment.NewLine, Encoding.UTF8);
+        }
+        catch
+        {
+            // Crash path — swallowing is acceptable; emergency trace already logged by caller.
+        }
     }
 
     public async Task WriteAsync(string level, string message, CancellationToken cancellationToken = default, bool echoToConsole = true)
     {
-        if (string.IsNullOrWhiteSpace(CurrentLogPath))
-        {
-            OpenSessionLog();
-        }
-
-        var line = JsonSerializer.Serialize(new LogEnvelope
-        {
-            Level = level,
-            Message = message,
-            Timestamp = DateTimeOffset.Now
-        });
-
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (string.IsNullOrWhiteSpace(CurrentLogPath))
+            {
+                OpenSessionLog();
+            }
+
+            var line = JsonSerializer.Serialize(new LogEnvelope
+            {
+                Level = level,
+                Message = message,
+                Timestamp = DateTimeOffset.Now
+            });
+
             await File.AppendAllTextAsync(CurrentLogPath, line + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         }
         finally
