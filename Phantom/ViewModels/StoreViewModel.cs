@@ -1,0 +1,779 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Data;
+using Phantom.Commands;
+using Phantom.Models;
+using Phantom.Services;
+
+namespace Phantom.ViewModels;
+
+public sealed class StoreViewModel : ObservableObject, ISectionViewModel
+{
+    private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $hasChoco = $true; break } } }; ";
+
+    private readonly DefinitionCatalogService _catalogService;
+    private readonly OperationEngine _operationEngine;
+    private readonly ExecutionCoordinator _executionCoordinator;
+    private readonly IUserPromptService _promptService;
+    private readonly ConsoleStreamService _console;
+    private readonly NetworkGuardService _networkGuard;
+    private readonly StoreInstallService _storeInstallService;
+    private readonly Func<AppSettings> _settingsAccessor;
+
+    private bool _wingetInstalled;
+    private bool _chocoInstalled;
+    private string _search = string.Empty;
+
+    public StoreViewModel(
+        DefinitionCatalogService catalogService,
+        OperationEngine operationEngine,
+        ExecutionCoordinator executionCoordinator,
+        IUserPromptService promptService,
+        ConsoleStreamService console,
+        NetworkGuardService networkGuard,
+        StoreInstallService storeInstallService,
+        Func<AppSettings> settingsAccessor)
+    {
+        _catalogService = catalogService;
+        _operationEngine = operationEngine;
+        _executionCoordinator = executionCoordinator;
+        _promptService = promptService;
+        _console = console;
+        _networkGuard = networkGuard;
+        _storeInstallService = storeInstallService;
+        _settingsAccessor = settingsAccessor;
+
+        Catalog = new ObservableCollection<CatalogApp>();
+        CatalogView = CollectionViewSource.GetDefaultView(Catalog);
+        CatalogView.Filter = FilterCatalog;
+        using (CatalogView.DeferRefresh())
+        {
+            CatalogView.SortDescriptions.Add(new SortDescription(nameof(CatalogApp.Category), ListSortDirection.Ascending));
+            CatalogView.SortDescriptions.Add(new SortDescription(nameof(CatalogApp.DisplayName), ListSortDirection.Ascending));
+            CatalogView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(CatalogApp.Category)));
+        }
+
+        RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true), CanRunStoreOperation);
+        InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync, CanRunStoreOperation);
+        InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync, CanRunStoreOperation);
+        UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync, CanRunStoreOperation);
+        InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync, CanRunStoreOperation);
+        UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync, CanRunStoreOperation);
+        ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync, CanRunStoreOperation);
+        ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync, CanRunStoreOperation);
+        InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync, CanRunStoreOperation);
+        UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync, CanRunStoreOperation);
+        UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync, CanRunStoreOperation);
+
+        _executionCoordinator.RunningChanged += OnExecutionCoordinatorRunningChanged;
+    }
+
+    public string Title => "Store";
+
+    public ObservableCollection<CatalogApp> Catalog { get; }
+    public ICollectionView CatalogView { get; }
+
+    public AsyncRelayCommand RefreshManagersCommand { get; }
+    public AsyncRelayCommand InstallMissingManagersCommand { get; }
+    public AsyncRelayCommand InstallWingetCommand { get; }
+    public AsyncRelayCommand UninstallWingetCommand { get; }
+    public AsyncRelayCommand InstallChocoCommand { get; }
+    public AsyncRelayCommand UninstallChocoCommand { get; }
+    public AsyncRelayCommand ToggleWingetCommand { get; }
+    public AsyncRelayCommand ToggleChocoCommand { get; }
+    public AsyncRelayCommand InstallSelectedCommand { get; }
+    public AsyncRelayCommand UninstallSelectedCommand { get; }
+    public AsyncRelayCommand UpgradeSelectedCommand { get; }
+
+    public bool WingetInstalled
+    {
+        get => _wingetInstalled;
+        set
+        {
+            if (!SetProperty(ref _wingetInstalled, value))
+            {
+                return;
+            }
+
+            Notify(nameof(WingetToggleLabel));
+        }
+    }
+
+    public bool ChocoInstalled
+    {
+        get => _chocoInstalled;
+        set
+        {
+            if (!SetProperty(ref _chocoInstalled, value))
+            {
+                return;
+            }
+
+            Notify(nameof(ChocoToggleLabel));
+        }
+    }
+
+    public string WingetToggleLabel => WingetInstalled ? "Uninstall winget" : "Install winget";
+    public string ChocoToggleLabel => ChocoInstalled ? "Uninstall choco" : "Install choco";
+
+    public string Search
+    {
+        get => _search;
+        set
+        {
+            if (SetProperty(ref _search, value))
+            {
+                CatalogView.Refresh();
+            }
+        }
+    }
+
+    public async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        var apps = await _catalogService.LoadCatalogAsync(cancellationToken).ConfigureAwait(false);
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            Catalog.Clear();
+            foreach (var app in apps)
+            {
+                Catalog.Add(app);
+            }
+        });
+
+        await RefreshManagersAsync(cancellationToken, echoToConsole: false).ConfigureAwait(false);
+    }
+
+    private async Task RefreshManagersAsync(CancellationToken cancellationToken, bool echoToConsole = true)
+    {
+        var availability = await _storeInstallService.GetManagerAvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        WingetInstalled = availability.Winget.IsAvailable;
+        ChocoInstalled = availability.Chocolatey.IsAvailable;
+        if (echoToConsole)
+        {
+            _console.Publish("Trace", $"winget resolver: {(WingetInstalled ? availability.Winget.ExecutablePath : availability.Winget.Message)}");
+            _console.Publish("Trace", $"choco resolver: {(ChocoInstalled ? availability.Chocolatey.ExecutablePath : availability.Chocolatey.Message)}");
+        }
+
+        _console.Publish("Info", $"Package managers: winget={(WingetInstalled ? "present" : "missing")}, choco={(ChocoInstalled ? "present" : "missing")}");
+    }
+
+    private async Task InstallMissingManagersAsync(CancellationToken cancellationToken)
+    {
+        var operations = new List<OperationDefinition>();
+
+        if (!WingetInstalled)
+        {
+            operations.Add(BuildInstallWingetOperation());
+        }
+
+        if (!ChocoInstalled)
+        {
+            operations.Add(BuildInstallChocoOperation());
+        }
+
+        if (operations.Count == 0)
+        {
+            _console.Publish("Info", "Nothing to install. winget and Chocolatey are already present.");
+            return;
+        }
+
+        if (await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false))
+        {
+            await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task InstallWingetAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildInstallWingetOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UninstallWingetAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildUninstallWingetOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InstallChocoAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildInstallChocoOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UninstallChocoAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteManagerOperationAsync(BuildUninstallChocoOperation(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ToggleWingetAsync(CancellationToken cancellationToken)
+    {
+        if (WingetInstalled)
+        {
+            await UninstallWingetAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await InstallWingetAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ToggleChocoAsync(CancellationToken cancellationToken)
+    {
+        if (ChocoInstalled)
+        {
+            await UninstallChocoAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await InstallChocoAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InstallSelectedAsync(CancellationToken cancellationToken)
+    {
+        var selected = Catalog.Where(x => x.Selected).ToList();
+        if (selected.Count == 0)
+        {
+            _console.Publish("Info", "No items selected.");
+            return;
+        }
+
+        if (!_networkGuard.IsOnline())
+        {
+            _console.Publish("Error", "Offline detected. Store install blocked before execution.");
+            return;
+        }
+
+        CancellationToken token;
+        try
+        {
+            token = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken);
+        try
+        {
+            foreach (var app in selected)
+            {
+                await UpdateAppStatusAsync(app, "Running").ConfigureAwait(false);
+                _console.Publish("Info", $"Store install started: {app.DisplayName}");
+                var result = await _storeInstallService.InstallAsync(app, linked.Token).ConfigureAwait(false);
+                if (result.Success)
+                {
+                    await UpdateAppStatusAsync(app, "Succeeded").ConfigureAwait(false);
+                    _console.Publish("Info", $"{app.DisplayName}: {result.Message}");
+                }
+                else
+                {
+                    await UpdateAppStatusAsync(app, "Failed").ConfigureAwait(false);
+                    PublishInstallFailure(app, result);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", "Store install cancelled.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Store install failed: {ex}");
+            throw;
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+            await RefreshManagersAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    private async Task UninstallSelectedAsync(CancellationToken cancellationToken)
+    {
+        var selected = Catalog.Where(x => x.Selected).ToList();
+        var operations = BuildOperationsForSelected(selected, BuildUninstallOperation);
+        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpgradeSelectedAsync(CancellationToken cancellationToken)
+    {
+        var selected = Catalog.Where(x => x.Selected).ToList();
+        var operations = BuildOperationsForSelected(selected, BuildUpgradeOperation);
+        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
+    {
+        if (operations.Count == 0)
+        {
+            _console.Publish("Info", "No items selected.");
+            return false;
+        }
+
+        if (!_networkGuard.IsOnline())
+        {
+            _console.Publish("Error", "Offline detected. Store action blocked before execution.");
+            return false;
+        }
+
+        CancellationToken token;
+        try
+        {
+            token = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return false;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, externalToken);
+        try
+        {
+            var precheck = await _operationEngine.RunBatchPrecheckAsync(operations, linked.Token).ConfigureAwait(false);
+            if (!precheck.IsSuccess)
+            {
+                _console.Publish("Error", precheck.Message);
+                return true;
+            }
+
+            var response = await _operationEngine.ExecuteBatchAsync(new OperationRequest
+            {
+                Operations = operations,
+                Undo = false,
+                DryRun = dryRun,
+                EnableDestructiveOperations = _settingsAccessor().EnableDestructiveOperations,
+                ForceDangerous = false,
+                ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
+            }, linked.Token).ConfigureAwait(false);
+
+            foreach (var op in response.Results)
+            {
+                _console.Publish(op.Success ? "Info" : "Error", $"{op.OperationId}: {op.Message}");
+                var item = Catalog.FirstOrDefault(x => $"store.app.{SanitizeId(x.DisplayName)}" == op.OperationId);
+                if (item is not null)
+                {
+                    item.Status = op.Success ? "Done" : "Failed";
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", "Store operation cancelled.");
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Store operation failed: {ex.Message}");
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+        }
+
+        return true;
+    }
+
+    private static string SanitizeId(string source)
+    {
+        return new string(source.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+    }
+
+    private async Task ExecuteManagerOperationAsync(OperationDefinition operation, CancellationToken cancellationToken)
+    {
+        if (await ExecuteStoreOperationsAsync([operation], dryRun: false, cancellationToken).ConfigureAwait(false))
+        {
+            await RefreshManagersAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private bool CanRunStoreOperation() => !_executionCoordinator.IsRunning;
+
+    private void OnExecutionCoordinatorRunningChanged(object? sender, bool _)
+    {
+        RefreshManagersCommand.RaiseCanExecuteChanged();
+        InstallMissingManagersCommand.RaiseCanExecuteChanged();
+        InstallWingetCommand.RaiseCanExecuteChanged();
+        UninstallWingetCommand.RaiseCanExecuteChanged();
+        InstallChocoCommand.RaiseCanExecuteChanged();
+        UninstallChocoCommand.RaiseCanExecuteChanged();
+        ToggleWingetCommand.RaiseCanExecuteChanged();
+        ToggleChocoCommand.RaiseCanExecuteChanged();
+        InstallSelectedCommand.RaiseCanExecuteChanged();
+        UninstallSelectedCommand.RaiseCanExecuteChanged();
+        UpgradeSelectedCommand.RaiseCanExecuteChanged();
+    }
+
+    private IReadOnlyList<OperationDefinition> BuildOperationsForSelected(
+        IReadOnlyList<CatalogApp> selected,
+        Func<CatalogApp, OperationDefinition> operationBuilder)
+    {
+        var operations = new List<OperationDefinition>();
+        foreach (var app in selected)
+        {
+            try
+            {
+                operations.Add(operationBuilder(app));
+            }
+            catch (ArgumentException ex)
+            {
+                _console.Publish("Error", ex.Message);
+            }
+        }
+
+        return operations;
+    }
+
+    private static OperationDefinition BuildInstallWingetOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.install.winget",
+            Title = "Install winget",
+            Description = "Installs winget using Microsoft App Installer package.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install-winget",
+                    RequiresNetwork = true,
+                    Script = "$wingetPresent=$false; try { Get-Command winget -ErrorAction Stop | Out-Null; $wingetPresent=$true } catch { $wingetPresent=$false }; if ($wingetPresent) { Write-Output 'winget already installed.'; return }; $bundlePath = Join-Path $env:TEMP ('AppInstaller-' + [Guid]::NewGuid().ToString('N') + '.msixbundle'); try { Invoke-WebRequest -Uri 'https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle' -OutFile $bundlePath -ErrorAction Stop; $sig = Get-AuthenticodeSignature $bundlePath; if ($sig.Status -ne 'Valid') { throw \"App Installer signature validation failed: $($sig.Status)\" }; Add-AppxPackage -Path $bundlePath -ErrorAction Stop } finally { Remove-Item -Path $bundlePath -Force -ErrorAction SilentlyContinue }"
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildUninstallWingetOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.uninstall.winget",
+            Title = "Uninstall winget",
+            Description = "Removes Microsoft App Installer (winget).",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall-winget",
+                    RequiresNetwork = false,
+                    Script = "$packages = @(Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -AllUsers -ErrorAction SilentlyContinue); foreach ($pkg in $packages) { Remove-AppxPackage -Package $pkg.PackageFullName -AllUsers -ErrorAction Stop }; $provisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Microsoft.DesktopAppInstaller*' }); foreach ($pkg in $provisioned) { Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop | Out-Null }"
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildInstallChocoOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.install.choco",
+            Title = "Install Chocolatey",
+            Description = "Installs Chocolatey package manager.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install-choco",
+                    RequiresNetwork = true,
+                    Script = """
+                             $chocoCandidates=@(
+                               (Join-Path $env:ProgramData 'chocolatey\bin\choco.exe'),
+                               (Join-Path $env:ProgramData 'chocolatey\choco.exe')
+                             )
+                             if($env:ChocolateyInstall){
+                               $chocoCandidates += (Join-Path $env:ChocolateyInstall 'bin\choco.exe')
+                               $chocoCandidates += (Join-Path $env:ChocolateyInstall 'choco.exe')
+                             }
+                             $chocoCandidates = $chocoCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+                             $chocoPresent = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
+                             if(-not $chocoPresent){
+                               foreach($candidate in $chocoCandidates){
+                                 if(Test-Path $candidate){
+                                   $chocoPresent=$true
+                                   break
+                                 }
+                               }
+                             }
+                             if($chocoPresent){
+                               Write-Output 'Chocolatey already installed.'
+                               return
+                             }
+                             $wingetPresent = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+                             if(-not $wingetPresent){
+                               throw 'winget is required to install Chocolatey in safe mode.'
+                             }
+                             $wingetOut = (winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-String)
+                             $wingetExit = $LASTEXITCODE
+                             $alreadyInstalled = $wingetOut -match '(?im)already installed|No available upgrade found|No newer package versions are available'
+                             if($wingetExit -ne 0 -and -not $alreadyInstalled){
+                               throw ('Chocolatey installation failed. ' + $wingetOut.Trim())
+                             }
+                             $chocoPresent = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
+                             if(-not $chocoPresent){
+                               foreach($candidate in $chocoCandidates){
+                                 if(Test-Path $candidate){
+                                   $chocoPresent=$true
+                                   break
+                                 }
+                               }
+                             }
+                             if($chocoPresent){
+                               Write-Output 'Chocolatey installed.'
+                               return
+                             }
+                             if($alreadyInstalled){
+                               throw 'Chocolatey is marked installed by winget, but choco.exe was not found on disk. Repair or reinstall Chocolatey and retry.'
+                             }
+                             throw ('Chocolatey installation did not produce a detectable choco binary. ' + $wingetOut.Trim())
+                             """
+                }
+            ]
+        };
+    }
+
+    private static OperationDefinition BuildUninstallChocoOperation()
+    {
+        return new OperationDefinition
+        {
+            Id = "store.manager.uninstall.choco",
+            Title = "Uninstall Chocolatey",
+            Description = "Removes Chocolatey package manager binaries and PATH entry.",
+            RiskTier = RiskTier.Dangerous,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall-choco",
+                    RequiresNetwork = false,
+                    Script = "$chocoExe = Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'; $hasChocoCmd = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChocoCmd -and (Test-Path $chocoExe)) { $chocoDir = [System.IO.Path]::GetDirectoryName($chocoExe); if ($chocoDir) { $env:PATH = $chocoDir + ';' + $env:PATH }; $hasChocoCmd = $null -ne (Get-Command choco -ErrorAction SilentlyContinue) }; if ($hasChocoCmd) { choco uninstall chocolatey -y --remove-dependencies | Out-Null }; $root = Join-Path $env:ProgramData 'chocolatey'; if (Test-Path $root) { Remove-Item $root -Recurse -Force -ErrorAction Stop }; $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); if ($machinePath -and $machinePath -match '(?i)chocolatey\\\\bin') { $updatedPath = (($machinePath -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)chocolatey\\\\bin') }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'Machine') }; $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"
+                }
+            ]
+        };
+    }
+
+    private OperationDefinition BuildInstallOperation(CatalogApp app)
+    {
+        var context = $"store app '{app.DisplayName}'";
+        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
+        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
+        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
+
+        var silentArgs = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
+        var silentArgsSegment = silentArgs.Length == 0 ? string.Empty : $" {silentArgs}";
+
+        var wingetScript = wingetId.Length == 0
+            ? $"winget install --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}"
+            : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}";
+
+        var chocoScript = chocoId.Length > 0
+            ? $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y{silentArgsSegment}"
+            : string.Empty;
+
+        var wingetUninstallScript = wingetId.Length == 0
+            ? $"winget uninstall --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --silent"
+            : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent";
+
+        return new OperationDefinition
+        {
+            Id = $"store.app.{SanitizeId(app.DisplayName)}",
+            Title = $"Install {app.DisplayName}",
+            Description = "Install app from catalog.",
+            RiskTier = RiskTier.Basic,
+            Reversible = true,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install",
+                    RequiresNetwork = true,
+                    Script = BuildManagerFallbackScript(wingetScript, chocoScript)
+                }
+            ],
+            UndoScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "uninstall",
+                    RequiresNetwork = false,
+                    Script = BuildManagerFallbackScript(
+                        wingetUninstallScript,
+                        chocoId.Length > 0 ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y" : string.Empty)
+                }
+            ]
+        };
+    }
+
+    private OperationDefinition BuildUninstallOperation(CatalogApp app)
+    {
+        var operation = BuildInstallOperation(app);
+        operation.Title = $"Uninstall {app.DisplayName}";
+        operation.RunScripts = operation.UndoScripts;
+        operation.UndoScripts = Array.Empty<PowerShellStep>();
+        operation.Reversible = false;
+        operation.RiskTier = RiskTier.Advanced;
+        return operation;
+    }
+
+    private OperationDefinition BuildUpgradeOperation(CatalogApp app)
+    {
+        var context = $"store app '{app.DisplayName}'";
+        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
+        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
+        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
+
+        var wingetScript = wingetId.Length == 0
+            ? $"winget upgrade --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements"
+            : $"winget upgrade --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements";
+
+        var chocoScript = chocoId.Length > 0
+            ? $"choco upgrade {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
+            : string.Empty;
+
+        return new OperationDefinition
+        {
+            Id = $"store.upgrade.{SanitizeId(app.DisplayName)}",
+            Title = $"Upgrade {app.DisplayName}",
+            Description = "Upgrade app from catalog.",
+            RiskTier = RiskTier.Basic,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "upgrade",
+                    RequiresNetwork = true,
+                    Script = BuildManagerFallbackScript(wingetScript, chocoScript)
+                }
+            ]
+        };
+    }
+
+    private static string BuildManagerFallbackScript(string wingetScript, string chocoScript)
+    {
+        var hasWinget = !string.IsNullOrWhiteSpace(wingetScript);
+        var hasChoco = !string.IsNullOrWhiteSpace(chocoScript);
+        if (hasWinget && hasChoco)
+        {
+            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} elseif ($hasChoco) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
+        }
+
+        if (hasWinget)
+        {
+            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
+        }
+
+        if (hasChoco)
+        {
+            return $"{ManagerProbeScript}if ($hasChoco) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
+        }
+
+        return "throw 'No installer metadata defined for this app.'";
+    }
+
+    private static string NormalizePackageId(string? raw, string context)
+    {
+        return string.IsNullOrWhiteSpace(raw)
+            ? string.Empty
+            : PowerShellInputSanitizer.EnsurePackageId(raw, context);
+    }
+
+    private static string NormalizePackageQuery(string? raw, string context)
+    {
+        return PowerShellInputSanitizer.EnsurePackageQuery(raw, context);
+    }
+
+    private static string NormalizeSilentArgs(string? raw, string context)
+    {
+        return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
+    }
+
+    private async Task UpdateAppStatusAsync(CatalogApp app, string status)
+    {
+        if (Application.Current?.Dispatcher is { } dispatcher)
+        {
+            if (dispatcher.CheckAccess())
+            {
+                app.Status = status;
+                CatalogView.Refresh();
+                return;
+            }
+
+            await dispatcher.InvokeAsync(() =>
+            {
+                app.Status = status;
+                CatalogView.Refresh();
+            });
+            return;
+        }
+
+        app.Status = status;
+        CatalogView.Refresh();
+    }
+
+    private void PublishInstallFailure(CatalogApp app, StoreInstallResult result)
+    {
+        var managerText = result.Manager?.ToString() ?? "unknown";
+        if (result.InstallExecution is { } install)
+        {
+            _console.Publish("Error", $"{app.DisplayName}: manager={managerText}, exitCode={install.ExitCode}, durationMs={install.DurationMs}, exe={install.FilePath}, args={install.Arguments}");
+            var stderrTail = GetLastLines(install.Stderr, 6);
+            if (!string.IsNullOrWhiteSpace(stderrTail))
+            {
+                _console.Publish("Error", $"{app.DisplayName} stderr: {stderrTail}");
+            }
+        }
+
+        if (result.VerificationExecution is { } verify)
+        {
+            _console.Publish("Error", $"{app.DisplayName}: verificationExitCode={verify.ExitCode}, verificationDurationMs={verify.DurationMs}");
+            var verificationTail = GetLastLines(string.Concat(verify.Stderr, Environment.NewLine, verify.Stdout), 6);
+            if (!string.IsNullOrWhiteSpace(verificationTail))
+            {
+                _console.Publish("Error", $"{app.DisplayName} verification output: {verificationTail}");
+            }
+        }
+
+        _console.Publish("Error", $"{app.DisplayName}: {result.Message}");
+        if (!string.IsNullOrWhiteSpace(result.Suggestion))
+        {
+            _console.Publish("Warning", $"{app.DisplayName}: {result.Suggestion}");
+        }
+    }
+
+    private static string GetLastLines(string text, int maxLines)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            " | ",
+            text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .TakeLast(Math.Max(1, maxLines)));
+    }
+
+    private bool FilterCatalog(object obj)
+    {
+        if (obj is not CatalogApp app)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(Search))
+        {
+            return true;
+        }
+
+        return app.DisplayName.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+               app.Category.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+               app.Tags.Any(tag => tag.Contains(Search, StringComparison.OrdinalIgnoreCase));
+    }
+}

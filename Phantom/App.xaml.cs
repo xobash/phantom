@@ -1,0 +1,402 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Windows;
+using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using Phantom.Models;
+using Phantom.Services;
+using Phantom.Views;
+
+namespace Phantom;
+
+public partial class App : Application
+{
+    private const long EmergencyStartupLogMaxBytes = 10 * 1024 * 1024;
+    private const int EmergencyStartupLogArchiveLimit = 3;
+    private AppBootstrap? _bootstrap;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        WriteEmergencyStartupTrace($"OnStartup invoked at {DateTimeOffset.Now:O}");
+        WriteEmergencyStartupTrace($"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
+
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => WriteEmergencyStartupTrace($"ProcessExit at {DateTimeOffset.Now:O}");
+        _ = StartAsync(e);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try
+        {
+            _bootstrap?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            WriteEmergencyStartupTrace($"OnExit disposal failed: {ex}");
+        }
+
+        base.OnExit(e);
+    }
+
+    private async Task StartAsync(StartupEventArgs e)
+    {
+        try
+        {
+            WriteEmergencyStartupTrace("StartAsync entered.");
+            if (!AdminGuard.IsAdministrator())
+            {
+                WriteEmergencyStartupTrace("Administrator check failed.");
+                if (TryRelaunchElevated(e.Args ?? Array.Empty<string>(), out var relaunchMessage))
+                {
+                    WriteEmergencyStartupTrace("Elevation relaunch started successfully.");
+                    Shutdown(0);
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(relaunchMessage))
+                {
+                    WriteEmergencyStartupTrace($"Elevation relaunch failed: {relaunchMessage}");
+                }
+
+                MessageBox.Show("Phantom requires Administrator privileges. Please approve the elevation prompt and relaunch.", "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(10);
+                return;
+            }
+
+            if (!WindowsSupportPolicy.IsCurrentOsSupported(out var osSupportMessage, out var osWarningOnly))
+            {
+                WriteEmergencyStartupTrace($"OS support check failed: {osSupportMessage}");
+                MessageBox.Show(osSupportMessage, "Phantom", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(11);
+                return;
+            }
+
+            if (osWarningOnly && !string.IsNullOrWhiteSpace(osSupportMessage))
+            {
+                WriteEmergencyStartupTrace($"OS support warning: {osSupportMessage}");
+            }
+
+            _bootstrap = new AppBootstrap();
+            var initialSettings = await _bootstrap.SettingsStore.LoadAsync(CancellationToken.None).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(initialSettings.ThemeMode))
+            {
+                initialSettings.ThemeMode = initialSettings.UseDarkMode ? AppThemeModes.Dark : AppThemeModes.Light;
+            }
+            else
+            {
+                initialSettings.ThemeMode = AppThemeModes.Normalize(initialSettings.ThemeMode);
+            }
+
+            _bootstrap.SettingsProvider.Update(initialSettings);
+            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode));
+            _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
+            _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
+            await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
+
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                try
+                {
+                    if (_bootstrap is not null)
+                    {
+                        var fatal = args.ExceptionObject?.ToString() ?? "Unknown fatal error";
+                        _bootstrap.Console.Publish("Fatal", fatal);
+                        _bootstrap.Log.WriteAsync("Fatal", fatal).GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        WriteEmergencyStartupTrace($"Fatal before bootstrap: {args.ExceptionObject}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEmergencyStartupTrace($"UnhandledException logging failed: {ex}");
+                }
+            };
+
+            var args = e.Args ?? Array.Empty<string>();
+            if (TryParseCli(args, out var configPath, out var run, out var forceDangerous, out var dangerousAcknowledgement, out var skipCaptureCheck) && run)
+            {
+                _bootstrap.Console.Publish("Trace", $"CLI mode requested. configPath={configPath}, forceDangerous={forceDangerous}, skipCaptureCheck={skipCaptureCheck}");
+                var exitCode = await _bootstrap.CliRunner.RunAsync(configPath!, forceDangerous, dangerousAcknowledgement, skipCaptureCheck, CancellationToken.None);
+                _bootstrap.Console.Publish("Trace", $"CLI mode completed with exitCode={exitCode}");
+                Shutdown(exitCode);
+                return;
+            }
+
+            _bootstrap.Console.Publish("Trace", "Creating MainWindow instance.");
+            await Dispatcher.InvokeAsync(StartAmbientAnimations);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var window = new MainWindow
+                {
+                    DataContext = _bootstrap.Main
+                };
+
+                MainWindow = window;
+                window.Show();
+                _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode);
+            });
+            _bootstrap.Console.Publish("Trace", "MainWindow shown.");
+            await _bootstrap.Main.InitializeAsync(CancellationToken.None);
+            _bootstrap.Console.Publish("Trace", "Startup completed.");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (_bootstrap is not null)
+                {
+                    _bootstrap.Console.Publish("StartupError", ex.ToString());
+                    await _bootstrap.Log.WriteAsync("StartupError", ex.ToString());
+                }
+                else
+                {
+                    WriteEmergencyStartupTrace($"StartupError before bootstrap: {ex}");
+                }
+            }
+            catch
+            {
+            }
+
+            MessageBox.Show(ex.ToString(), "Phantom Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            if (_bootstrap is not null)
+            {
+                _bootstrap.Console.Publish("DispatcherUnhandled", e.Exception.ToString());
+                await _bootstrap.Log.WriteAsync("DispatcherUnhandled", e.Exception.ToString());
+            }
+            else
+            {
+                WriteEmergencyStartupTrace($"DispatcherUnhandled before bootstrap: {e.Exception}");
+            }
+        }
+        catch
+        {
+        }
+
+        MessageBox.Show(e.Exception.ToString(), "Phantom Unhandled Exception", MessageBoxButton.OK, MessageBoxImage.Error);
+        e.Handled = true;
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try
+        {
+            if (_bootstrap is not null)
+            {
+                _bootstrap.Console.Publish("UnobservedTaskException", e.Exception.ToString());
+                _ = _bootstrap.Log.WriteAsync("UnobservedTaskException", e.Exception.ToString());
+            }
+            else
+            {
+                WriteEmergencyStartupTrace($"UnobservedTaskException before bootstrap: {e.Exception}");
+            }
+        }
+        catch
+        {
+        }
+
+        e.SetObserved();
+    }
+
+    private static void WriteEmergencyStartupTrace(string message)
+    {
+        try
+        {
+            var appRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Phantom",
+                "app");
+            var logsDir = Path.Combine(appRoot, "logs");
+            Directory.CreateDirectory(logsDir);
+            var logPath = Path.Combine(logsDir, "startup-emergency.log");
+            RotateEmergencyStartupTraceIfNeeded(logsDir, logPath);
+            var line = $"[{DateTimeOffset.Now:O}] [Emergency] {message}{Environment.NewLine}";
+            File.AppendAllText(logPath, line);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void RotateEmergencyStartupTraceIfNeeded(string logsDir, string logPath)
+    {
+        try
+        {
+            if (!File.Exists(logPath))
+            {
+                return;
+            }
+
+            var currentLog = new FileInfo(logPath);
+            if (currentLog.Length < EmergencyStartupLogMaxBytes)
+            {
+                return;
+            }
+
+            var archivePath = Path.Combine(logsDir, $"startup-emergency.{DateTimeOffset.Now:yyyyMMdd-HHmmss}.log");
+            File.Move(logPath, archivePath, overwrite: true);
+
+            var archives = Directory.GetFiles(logsDir, "startup-emergency.*.log")
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(info => info.LastWriteTimeUtc)
+                .ToList();
+
+            foreach (var stale in archives.Skip(EmergencyStartupLogArchiveLimit))
+            {
+                try
+                {
+                    stale.Delete();
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool TryRelaunchElevated(string[] args, out string message)
+    {
+        message = string.Empty;
+
+        try
+        {
+            var fileName = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                message = "Unable to resolve current executable path.";
+                return false;
+            }
+
+            var quotedArgs = string.Join(" ", args.Select(WindowsCommandLine.QuoteArgument));
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = quotedArgs,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            Process.Start(psi);
+            return true;
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            message = "Elevation prompt was cancelled.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            return false;
+        }
+    }
+
+    private void StartAmbientAnimations()
+    {
+        try
+        {
+            if (Resources["AppBgBrush"] is not LinearGradientBrush appBrush)
+            {
+                return;
+            }
+
+            var duration = new Duration(TimeSpan.FromSeconds(24));
+            var easing = new SineEase { EasingMode = EasingMode.EaseInOut };
+
+            appBrush.BeginAnimation(
+                LinearGradientBrush.StartPointProperty,
+                new PointAnimation
+                {
+                    From = new Point(0, 0),
+                    To = new Point(0.12, 0.06),
+                    Duration = duration,
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = easing
+                });
+
+            appBrush.BeginAnimation(
+                LinearGradientBrush.EndPointProperty,
+                new PointAnimation
+                {
+                    From = new Point(1, 1),
+                    To = new Point(0.88, 0.94),
+                    Duration = duration,
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = easing
+                });
+        }
+        catch (Exception ex)
+        {
+            WriteEmergencyStartupTrace($"Ambient animation setup failed: {ex}");
+        }
+    }
+
+    private static bool TryParseCli(
+        string[] args,
+        out string? configPath,
+        out bool run,
+        out bool forceDangerous,
+        out string? dangerousAcknowledgement,
+        out bool skipCaptureCheck)
+    {
+        configPath = null;
+        run = false;
+        forceDangerous = false;
+        dangerousAcknowledgement = null;
+        skipCaptureCheck = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var current = args[i];
+            if (string.Equals(current, "-Config", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                configPath = args[i + 1];
+                i++;
+                continue;
+            }
+
+            if (string.Equals(current, "-Run", StringComparison.OrdinalIgnoreCase))
+            {
+                run = true;
+                continue;
+            }
+
+            if (string.Equals(current, "-ForceDangerous", StringComparison.OrdinalIgnoreCase))
+            {
+                forceDangerous = true;
+                continue;
+            }
+
+            if (string.Equals(current, "-AcknowledgeDangerous", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                dangerousAcknowledgement = args[i + 1];
+                i++;
+                continue;
+            }
+
+            if (string.Equals(current, "-SkipCaptureCheck", StringComparison.OrdinalIgnoreCase))
+            {
+                skipCaptureCheck = true;
+            }
+        }
+
+        return !string.IsNullOrWhiteSpace(configPath);
+    }
+}

@@ -1,0 +1,464 @@
+<UserControl x:Class="Phantom.Views.FeaturesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="{DynamicResource AppBgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+
+        <Style x:Key="FeatureRowBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource DarkCardBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="6,4"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FeatureTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
+        </Style>
+
+        <Style x:Key="FeatureDescriptionStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+        </Style>
+
+        <Style x:Key="CompactButtonStyle" TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+
+        <Style x:Key="OpenIconButtonStyle" TargetType="Button" BasedOn="{StaticResource CompactButtonStyle}">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinWidth" Value="36"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+
+        <Style x:Key="FeatureInfoChipStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
+        </Style>
+
+        <Style x:Key="ChevronToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Content" Value="▸"/>
+            <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="ChevronBorder"
+                                CornerRadius="7"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ChevronBorder" Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
+                                <Setter TargetName="ChevronBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ChevronBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ChevronBorder" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Content" Value="▾"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBgBrush}">
+        <StackPanel Background="{DynamicResource AppBgBrush}" Margin="0,4,0,10">
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Fast startup" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Allows the device to boot faster after shutdown." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" IsChecked="{Binding FastStartupEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Hibernation" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Saves the current OS state into hiberfil.sys." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Background="{DynamicResource InputBackgroundBrush}" BorderBrush="{DynamicResource DarkBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,8,0">
+                            <TextBlock Text="{Binding HibernationPercent}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}"/>
+                        </Border>
+                        <ToggleButton IsChecked="{Binding HibernationEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Cleanup" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Free up storage space, clear caches, and remove stale restore data." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" IsChecked="{Binding CleanupExpanded, Mode=TwoWay}" Style="{StaticResource ChevronToggleStyle}"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}" Visibility="{Binding CleanupExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Storage cleanup" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Clean" Command="{Binding CleanupStorageCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="File Explorer cache" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Clean" Command="{Binding CleanupFileExplorerCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Microsoft Store cache" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Reset" Command="{Binding CleanupStoreCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="3" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Network stack cache" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Reset" Command="{Binding CleanupNetworkCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="4" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="System restore shadows" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Delete" Command="{Binding CleanupRestorePointsCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Drive optimization" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Controls scheduled drive optimization and opens Optimize Drives." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Command="{Binding OpenDriveOptimizationCommand}" Style="{StaticResource OpenIconButtonStyle}" ToolTip="Open Optimize Drives">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="16" Height="16">
+                                    <Path Data="M1,4 L15,4 M1,12 L15,12"
+                                          Stroke="{DynamicResource DarkTextBrush}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="4" Canvas.Top="2"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="10" Canvas.Top="10"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <ToggleButton IsChecked="{Binding DriveOptimizationEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Storage sense" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Turns Storage Sense on or off and opens Storage settings." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Command="{Binding OpenStorageSenseSettingsCommand}" Style="{StaticResource OpenIconButtonStyle}" ToolTip="Open Storage settings">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="16" Height="16">
+                                    <Path Data="M1,4 L15,4 M1,12 L15,12"
+                                          Stroke="{DynamicResource DarkTextBrush}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="4" Canvas.Top="2"/>
+                                    <Ellipse Width="4" Height="4" Fill="{DynamicResource DarkTextBrush}" Canvas.Left="10" Canvas.Top="10"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <ToggleButton IsChecked="{Binding StorageSenseEnabled, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Repair" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Run DISM, SFC, and CHKDSK diagnostics and repair flows." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" IsChecked="{Binding RepairExpanded, Mode=TwoWay}" Style="{StaticResource ChevronToggleStyle}"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}" Visibility="{Binding RepairExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0"
+                                Margin="0,0,0,8"
+                                Visibility="{Binding RepairInProgress, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding RepairProgressMessage}"
+                                       Style="{StaticResource FeatureDescriptionStyle}"/>
+                            <TextBlock Grid.Column="1"
+                                       Margin="10,0,0,0"
+                                       Text="{Binding RepairProgressPercentLabel}"
+                                       Style="{StaticResource FeatureDescriptionStyle}"/>
+                        </Grid>
+                        <ProgressBar Height="6"
+                                     Margin="0,6,0,0"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="{Binding RepairProgressPercent}"
+                                     Background="{DynamicResource InputBackgroundBrush}"
+                                     Foreground="{DynamicResource AccentBorderBrush}"/>
+                        <TextBlock Margin="0,6,0,0"
+                                   Text="{Binding RepairTransientOutput}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FeatureDescriptionStyle}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RepairTransientOutput}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                    </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="DISM restore health" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Run" Command="{Binding RepairDismCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="System file checker (SFC)" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Run" Command="{Binding RepairSfcCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="3" Margin="0,2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Check disk (CHKDSK scan)" Style="{StaticResource FeatureDescriptionStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Run" Command="{Binding RepairChkdskCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Memory diagnostic" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Launches Windows Memory Diagnostic to check for RAM issues." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Check" Command="{Binding RunMemoryDiagnosticCommand}" Style="{StaticResource CompactButtonStyle}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Graphics driver" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Restarts the Desktop Window Manager to recover from display glitches." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Restart" Command="{Binding RestartGraphicsDriverCommand}" Style="{StaticResource CompactButtonStyle}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Icons cache" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Rebuilds icon cache when icons are blank or corrupted." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Rebuild" Command="{Binding RebuildIconCacheCommand}" Style="{StaticResource CompactButtonStyle}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Windows optional features" Style="{StaticResource FeatureTitleStyle}"/>
+                        <TextBlock Text="Existing feature list retained for advanced enable/disable control." Style="{StaticResource FeatureDescriptionStyle}"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" IsChecked="{Binding OptionalFeaturesExpanded, Mode=TwoWay}" Style="{StaticResource ChevronToggleStyle}"/>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource FeatureRowBorderStyle}" Visibility="{Binding OptionalFeaturesExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <TextBox Width="260" Margin="0,0,12,0" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBoxStyle}"/>
+                        <WrapPanel>
+                            <Button Command="{Binding RefreshStatusCommand}"
+                                    Style="{StaticResource RefreshIconButtonStyle}"
+                                    ToolTip="Refresh optional feature status"/>
+                            <Button Content="Enable selected" Command="{Binding ApplySelectedCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                            <Button Content="Disable selected" Command="{Binding UndoSelectedCommand}" Style="{StaticResource CompactButtonStyle}"/>
+                        </WrapPanel>
+                    </DockPanel>
+
+                    <DataGrid ItemsSource="{Binding FeaturesView}" AutoGenerateColumns="False" Height="300"
+                              Style="{StaticResource DarkDataGridStyle}"
+                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.CanContentScroll="True" EnableRowVirtualization="True">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Sel" Width="70">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ToggleButton IsChecked="{Binding Selected, Mode=TwoWay}" Style="{StaticResource SwitchToggleStyle}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Feature" Binding="{Binding Name}" Width="240"/>
+                            <DataGridTextColumn Header="FeatureName" Binding="{Binding FeatureName}" Width="280"/>
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                            <DataGridTemplateColumn Header="Info" Width="62">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource FeatureInfoChipStyle}"
+                                                Cursor="Help"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                ToolTipService.ShowDuration="60000"
+                                                ToolTipService.InitialShowDelay="120">
+                                            <Border.ToolTip>
+                                                <ToolTip Background="{DynamicResource DarkCard2Brush}"
+                                                         Foreground="{DynamicResource DarkTextBrush}"
+                                                         BorderBrush="{DynamicResource DarkBorderBrush}"
+                                                         BorderThickness="1"
+                                                         MaxWidth="520"
+                                                         Placement="Mouse">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                                                        <TextBlock Text="{Binding Description}" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource DarkTextBrush}"/>
+                                                        <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}">
+                                                            <Run Text="FeatureName: "/>
+                                                            <Run Text="{Binding FeatureName}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Foreground="{DynamicResource MutedTextBrush}">
+                                                            <Run Text="Current state: "/>
+                                                            <Run Text="{Binding Status}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </ToolTip>
+                                            </Border.ToolTip>
+                                            <TextBlock Text="i" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
