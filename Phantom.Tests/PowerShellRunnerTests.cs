@@ -395,4 +395,39 @@ public sealed class PowerShellRunnerTests
         Assert.False(result.Success);
         Assert.Contains("Blocked download host", result.CombinedOutput, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void TryParseServiceBackup_ExtractsStartupModeAndRunningState()
+    {
+        var method = typeof(PowerShellRunner).GetMethod(
+            "TryParseServiceBackup",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+
+        var args = new object?[]
+        {
+            """
+            Service: bits
+            --- sc qc ---
+            SERVICE_NAME: bits
+                    TYPE               : 20  WIN32_SHARE_PROCESS
+                    START_TYPE         : 2   AUTO_START
+            --- sc query ---
+            SERVICE_NAME: bits
+                    TYPE               : 20  WIN32_SHARE_PROCESS
+                    STATE              : 4  RUNNING
+            """,
+            null,
+            null,
+            null
+        };
+
+        var parsed = (bool)method!.Invoke(null, args)!;
+
+        Assert.True(parsed);
+        Assert.Equal("bits", args[1]);
+        Assert.Equal("auto", args[2]);
+        Assert.Equal(true, args[3]);
+    }
 }

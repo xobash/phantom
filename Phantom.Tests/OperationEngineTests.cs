@@ -6,7 +6,7 @@ namespace Phantom.Tests;
 public sealed class OperationEngineTests
 {
     [Fact]
-    public async Task ExecuteBatchAsync_BlocksDestructiveOperation_WhenSettingDisabled()
+    public async Task ExecuteBatchAsync_BlocksDangerousOrDestructiveOperation_WhenSettingDisabled()
     {
         var settings = new AppSettings
         {
@@ -27,11 +27,11 @@ public sealed class OperationEngineTests
             [
                 new OperationDefinition
                 {
-                    Id = "op.destructive",
-                    Title = "Destructive op",
+                    Id = "op.dangerous",
+                    Title = "Dangerous op",
                     Description = "test",
-                    Destructive = true,
-                    RiskTier = RiskTier.Advanced,
+                    Destructive = false,
+                    RiskTier = RiskTier.Dangerous,
                     Reversible = false,
                     RunScripts = [new PowerShellStep { Name = "apply", Script = "Write-Output 'hi'" }]
                 }
@@ -45,7 +45,7 @@ public sealed class OperationEngineTests
 
         Assert.Single(result.Results);
         Assert.False(result.Results[0].Success);
-        Assert.Contains("destructive operations disabled", result.Results[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("dangerous operations disabled", result.Results[0].Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(runner.Requests);
     }
 

@@ -44,7 +44,11 @@ public sealed class PowerShellQueryService
         _log = log;
     }
 
-    public async Task<(int ExitCode, string Stdout, string Stderr)> InvokeAsync(string script, CancellationToken cancellationToken, bool echoToConsole = true)
+    public async Task<(int ExitCode, string Stdout, string Stderr)> InvokeAsync(
+        string script,
+        CancellationToken cancellationToken,
+        bool echoToConsole = true,
+        bool logExecution = true)
     {
         var startedAt = Stopwatch.GetTimestamp();
         var scriptHash = ComputeScriptHash(script);
@@ -53,14 +57,17 @@ public sealed class PowerShellQueryService
         {
             _console.Publish("Query", BuildQueryPreview(script), persist: false);
         }
-        await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        if (diagnosticsEnabled)
+        if (logExecution)
         {
-            await _log.WriteAsync("Query", RedactSensitive(script), cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        }
-        else
-        {
-            await _log.WriteAsync("Trace", $"PowerShellQuery body omitted. hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync start. length={script.Length} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (diagnosticsEnabled)
+            {
+                await _log.WriteAsync("Query", RedactSensitive(script), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
+            else
+            {
+                await _log.WriteAsync("Trace", $"PowerShellQuery body omitted. hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
         }
 
         if (!PowerShellRunner.ValidateScriptSafetyGuards(script, out var blockedReason))
@@ -70,7 +77,10 @@ public sealed class PowerShellQueryService
             {
                 _console.Publish("Error", blocked, persist: false);
             }
-            await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (logExecution)
+            {
+                await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
             return (1, string.Empty, blocked);
         }
 
@@ -82,7 +92,10 @@ public sealed class PowerShellQueryService
                 _console.Publish("Error", blocked, persist: false);
             }
 
-            await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (logExecution)
+            {
+                await _log.WriteAsync("Error", blocked, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
             return (1, string.Empty, blocked);
         }
 
@@ -93,7 +106,10 @@ public sealed class PowerShellQueryService
             {
                 _console.Publish("Error", notWindows, persist: false);
             }
-            await _log.WriteAsync("Error", notWindows, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (logExecution)
+            {
+                await _log.WriteAsync("Error", notWindows, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
             return (1, string.Empty, "Not running on Windows.");
         }
 
@@ -107,18 +123,24 @@ public sealed class PowerShellQueryService
             {
                 _console.Publish("Error", failedStart, persist: false);
             }
-            await _log.WriteAsync("Error", failedStart, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (logExecution)
+            {
+                await _log.WriteAsync("Error", failedStart, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
             return (1, string.Empty, failedStart);
         }
 
-        await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        if (diagnosticsEnabled)
+        if (logExecution)
         {
-            await _log.WriteAsync("Security", $"PowerShellQuery invocation: {RedactSensitive(commandLine)}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-        }
-        else
-        {
-            await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            if (diagnosticsEnabled)
+            {
+                await _log.WriteAsync("Security", $"PowerShellQuery invocation: {RedactSensitive(commandLine)}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
+            else
+            {
+                await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
         }
 
         using (process)
@@ -151,12 +173,18 @@ public sealed class PowerShellQueryService
 
             if (!string.IsNullOrWhiteSpace(stdout))
             {
-                await _log.WriteAsync("Output", stdout.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                if (logExecution)
+                {
+                    await _log.WriteAsync("Output", stdout.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(sanitizedStderr))
             {
-                await _log.WriteAsync("Error", sanitizedStderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                if (logExecution)
+                {
+                    await _log.WriteAsync("Error", sanitizedStderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                }
             }
 
             if (echoToConsole)
@@ -190,12 +218,15 @@ public sealed class PowerShellQueryService
                     persist: false);
             }
 
-            await _log.WriteAsync(
-                    process.ExitCode == 0 ? "Trace" : "Error",
-                    $"PowerShellQueryService.InvokeAsync exit={process.ExitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={sanitizedStderr.Length}",
-                    cancellationToken,
-                    echoToConsole: false)
-                .ConfigureAwait(false);
+            if (logExecution)
+            {
+                await _log.WriteAsync(
+                        process.ExitCode == 0 ? "Trace" : "Error",
+                        $"PowerShellQueryService.InvokeAsync exit={process.ExitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={sanitizedStderr.Length}",
+                        cancellationToken,
+                        echoToConsole: false)
+                    .ConfigureAwait(false);
+            }
 
             return (process.ExitCode, stdout, sanitizedStderr);
         }

@@ -6,6 +6,7 @@ using System.Management.Automation.Runspaces;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Microsoft.Win32;
 using Phantom.Models;
 
@@ -65,6 +66,9 @@ public sealed class PowerShellRunner : IPowerShellRunner
     private static readonly Regex ProgressLineRegex = new(@"\b(100|[1-9]?\d(?:\.\d+)?)\s*%", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SpinnerLineRegex = new(@"^[\s\\/\-|]+$", RegexOptions.Compiled);
     private static readonly Regex ScriptFilePathRegex = new(@"(?:-File(?:Path)?|&)\s+(?:['""](?<path>[A-Za-z]:\\[^'""]+\.ps1)['""]|(?<path>[A-Za-z]:\\\S+\.ps1))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ServiceBackupNameRegex = new(@"^Service:\s*(?<name>[A-Za-z0-9_.\-]+)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
+    private static readonly Regex ServiceStartTypeRegex = new(@"^\s*START_TYPE\s*:\s*\d+\s+(?<type>[A-Z_()]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
+    private static readonly Regex ServiceStateRegex = new(@"^\s*STATE\s*:\s*\d+\s+(?<state>[A-Z_]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
     private static readonly HashSet<string> DynamicInvokeAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         "Invoke-Expression",
@@ -376,16 +380,26 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 .EnumerateFiles(folder, "registry-*.reg", SearchOption.TopDirectoryOnly)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            var serviceBackups = Directory
+                .EnumerateFiles(folder, "service-*.txt", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var scheduledTaskBackups = Directory
+                .EnumerateFiles(folder, "task-*.xml", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            if (registryBackups.Count == 0)
+            if (registryBackups.Count == 0 &&
+                serviceBackups.Count == 0 &&
+                scheduledTaskBackups.Count == 0)
             {
                 continue;
             }
 
-            attempted = true;
             foreach (var registryBackup in registryBackups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                attempted = true;
                 var import = await RunProcessAsync("reg.exe", ["import", registryBackup], cancellationToken).ConfigureAwait(false);
                 if (import.ExitCode == 0)
                 {
@@ -399,13 +413,58 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 }
             }
 
+            foreach (var serviceBackup in serviceBackups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var restoreResult = await TryRestoreServiceBackupAsync(serviceBackup, cancellationToken).ConfigureAwait(false);
+                if (!restoreResult.Attempted)
+                {
+                    continue;
+                }
+
+                attempted = true;
+                if (restoreResult.Success)
+                {
+                    restored++;
+                }
+                else
+                {
+                    failed++;
+                    _console.Publish("Warning", restoreResult.Message);
+                }
+            }
+
+            foreach (var taskBackup in scheduledTaskBackups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var restoreResult = await TryRestoreScheduledTaskBackupAsync(taskBackup, cancellationToken).ConfigureAwait(false);
+                if (!restoreResult.Attempted)
+                {
+                    continue;
+                }
+
+                attempted = true;
+                if (restoreResult.Success)
+                {
+                    restored++;
+                }
+                else
+                {
+                    failed++;
+                    _console.Publish("Warning", restoreResult.Message);
+                }
+            }
+
             if (restored > 0)
             {
+                var success = failed == 0;
                 return new BackupCompensationResult
                 {
                     Attempted = true,
-                    Success = true,
-                    Message = $"Restored {restored} registry backup artifact(s) from safety backups for '{operationId}'."
+                    Success = success,
+                    Message = success
+                        ? $"Restored {restored} safety backup artifact(s) from '{operationId}' (registry, services, and scheduled tasks)."
+                        : $"Partially restored {restored} safety backup artifact(s) from '{operationId}', but {failed} artifact restore(s) still failed."
                 };
             }
         }
@@ -416,7 +475,7 @@ public sealed class PowerShellRunner : IPowerShellRunner
             {
                 Attempted = false,
                 Success = false,
-                Message = $"Safety backups exist for '{operationId}' but no restorable registry artifacts were found."
+                Message = $"Safety backups exist for '{operationId}' but no restorable registry, service, or scheduled-task artifacts were found."
             };
         }
 
@@ -426,6 +485,102 @@ public sealed class PowerShellRunner : IPowerShellRunner
             Success = false,
             Message = $"Safety compensation attempted for '{operationId}' but restore did not succeed (restored={restored}, failed={failed})."
         };
+    }
+
+    private async Task<(bool Attempted, bool Success, string Message)> TryRestoreServiceBackupAsync(string backupPath, CancellationToken cancellationToken)
+    {
+        string backupText;
+        try
+        {
+            backupText = await File.ReadAllTextAsync(backupPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return (true, false, $"Compensation restore failed for service backup {backupPath}: {ex.Message}");
+        }
+
+        if (!TryParseServiceBackup(backupText, out var serviceName, out var startMode, out var shouldBeRunning))
+        {
+            return (false, false, string.Empty);
+        }
+
+        string safeServiceName;
+        try
+        {
+            safeServiceName = PowerShellInputSanitizer.EnsureServiceName(serviceName, "Safety compensation");
+        }
+        catch (ArgumentException ex)
+        {
+            return (true, false, $"Compensation restore failed for service '{serviceName}': {ex.Message}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(startMode))
+        {
+            var config = await RunProcessAsync("sc.exe", ["config", safeServiceName, "start=", startMode], cancellationToken).ConfigureAwait(false);
+            if (config.ExitCode != 0)
+            {
+                var error = string.IsNullOrWhiteSpace(config.Stderr) ? config.Stdout.Trim() : config.Stderr.Trim();
+                return (true, false, $"Compensation restore failed for service '{safeServiceName}' startup type: {error}");
+            }
+        }
+
+        if (shouldBeRunning.HasValue)
+        {
+            var query = await RunProcessAsync("sc.exe", ["query", safeServiceName], cancellationToken).ConfigureAwait(false);
+            if (query.ExitCode != 0)
+            {
+                var error = string.IsNullOrWhiteSpace(query.Stderr) ? query.Stdout.Trim() : query.Stderr.Trim();
+                return (true, false, $"Compensation restore failed for service '{safeServiceName}' state query: {error}");
+            }
+
+            var isCurrentlyRunning = query.Stdout.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
+            if (shouldBeRunning.Value != isCurrentlyRunning)
+            {
+                var action = shouldBeRunning.Value ? "start" : "stop";
+                var stateResult = await RunProcessAsync("sc.exe", [action, safeServiceName], cancellationToken).ConfigureAwait(false);
+                if (!IsExpectedServiceStateResult(stateResult, shouldBeRunning.Value))
+                {
+                    var error = string.IsNullOrWhiteSpace(stateResult.Stderr) ? stateResult.Stdout.Trim() : stateResult.Stderr.Trim();
+                    return (true, false, $"Compensation restore failed for service '{safeServiceName}' state change: {error}");
+                }
+            }
+        }
+
+        return (true, true, $"Restored service backup for '{safeServiceName}'.");
+    }
+
+    private async Task<(bool Attempted, bool Success, string Message)> TryRestoreScheduledTaskBackupAsync(string backupPath, CancellationToken cancellationToken)
+    {
+        string taskName;
+        try
+        {
+            await using var stream = File.OpenRead(backupPath);
+            var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            taskName = document
+                .Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.Equals("URI", StringComparison.OrdinalIgnoreCase))
+                ?.Value
+                ?.Trim() ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            return (true, false, $"Compensation restore failed for scheduled-task backup {backupPath}: {ex.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(taskName))
+        {
+            return (false, false, string.Empty);
+        }
+
+        var normalizedTaskName = NormalizeScheduledTaskName(taskName);
+        var restore = await RunProcessAsync("schtasks.exe", ["/Create", "/TN", normalizedTaskName, "/XML", backupPath, "/F"], cancellationToken).ConfigureAwait(false);
+        if (restore.ExitCode != 0)
+        {
+            var error = string.IsNullOrWhiteSpace(restore.Stderr) ? restore.Stdout.Trim() : restore.Stderr.Trim();
+            return (true, false, $"Compensation restore failed for scheduled task '{normalizedTaskName}': {error}");
+        }
+
+        return (true, true, $"Restored scheduled task backup for '{normalizedTaskName}'.");
     }
 
     private async Task<PowerShellExecutionResult> ExecuteViaRunspaceAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
@@ -1881,6 +2036,85 @@ public sealed class PowerShellRunner : IPowerShellRunner
     {
         var task = value.Trim().Trim('\'', '"');
         return task.StartsWith('\\') ? task : "\\" + task;
+    }
+
+    private static bool TryParseServiceBackup(string content, out string serviceName, out string startMode, out bool? shouldBeRunning)
+    {
+        serviceName = string.Empty;
+        startMode = string.Empty;
+        shouldBeRunning = null;
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        var nameMatch = ServiceBackupNameRegex.Match(content);
+        if (!nameMatch.Success)
+        {
+            return false;
+        }
+
+        serviceName = nameMatch.Groups["name"].Value.Trim();
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return false;
+        }
+
+        var startType = ServiceStartTypeRegex.Match(content).Groups["type"].Value.Trim();
+        if (!string.IsNullOrWhiteSpace(startType))
+        {
+            startMode = MapServiceStartMode(startType);
+        }
+
+        var state = ServiceStateRegex.Match(content).Groups["state"].Value.Trim();
+        if (state.Equals("RUNNING", StringComparison.OrdinalIgnoreCase))
+        {
+            shouldBeRunning = true;
+        }
+        else if (state.Equals("STOPPED", StringComparison.OrdinalIgnoreCase))
+        {
+            shouldBeRunning = false;
+        }
+
+        return true;
+    }
+
+    private static string MapServiceStartMode(string rawStartType)
+    {
+        var normalized = rawStartType.Trim().ToUpperInvariant();
+        if (normalized.Contains("DISABLED", StringComparison.Ordinal))
+        {
+            return "disabled";
+        }
+
+        if (normalized.Contains("DEMAND", StringComparison.Ordinal) ||
+            normalized.Contains("MANUAL", StringComparison.Ordinal))
+        {
+            return "demand";
+        }
+
+        if (normalized.Contains("AUTO", StringComparison.Ordinal))
+        {
+            return normalized.Contains("DELAYED", StringComparison.Ordinal) ? "delayed-auto" : "auto";
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsExpectedServiceStateResult((int ExitCode, string Stdout, string Stderr) result, bool shouldBeRunning)
+    {
+        if (result.ExitCode == 0)
+        {
+            return true;
+        }
+
+        var combined = $"{result.Stdout} {result.Stderr}";
+        return shouldBeRunning
+            ? combined.Contains("FAILED 1056", StringComparison.OrdinalIgnoreCase) ||
+              combined.Contains("already running", StringComparison.OrdinalIgnoreCase)
+            : combined.Contains("FAILED 1062", StringComparison.OrdinalIgnoreCase) ||
+              combined.Contains("has not been started", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool RegistryKeyExists(string normalizedPath)

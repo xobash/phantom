@@ -163,9 +163,10 @@ public sealed class OperationEngine
 
             try
             {
-                if (operation.Destructive && !request.EnableDestructiveOperations)
+                if ((operation.RiskTier == RiskTier.Dangerous || operation.Destructive) &&
+                    !request.EnableDestructiveOperations)
                 {
-                    opResult.Message = "Blocked by settings: destructive operations disabled.";
+                    opResult.Message = "Blocked by settings: dangerous operations disabled.";
                     _console.Publish("Warning", opResult.Message);
                     result.Results.Add(opResult);
                     continue;
@@ -626,7 +627,7 @@ public sealed class OperationEngine
         var forceText = forceDangerous
             ? " Force-dangerous override is active, but safety gates remain enforced."
             : string.Empty;
-        return $"DANGEROUS OPERATION: [{operation.Id}] {operation.Title}. Risk tier: {operation.RiskTier}. Current detect status: '{status}'. This operation can cause irreversible system changes. Automatic compensation restores registry backups only; service/file/task changes may require manual recovery.{forceText} Confirm execution? (Y/N)";
+        return $"DANGEROUS OPERATION: [{operation.Id}] {operation.Title}. Risk tier: {operation.RiskTier}. Current detect status: '{status}'. This operation can cause irreversible system changes. Automatic compensation can restore captured registry, service, and scheduled-task backups; file changes may still require manual recovery.{forceText} Confirm execution? (Y/N)";
     }
 
     private static bool ShouldPreferProcessMode(string operationId, string stepName)

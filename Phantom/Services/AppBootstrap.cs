@@ -35,7 +35,7 @@ public sealed class AppBootstrap : IDisposable
         Prompt = new UserPromptService();
         ExecutionCoordinator = new ExecutionCoordinator();
         ExecutionCoordinator.RunningChanged += (_, running) => Console.Publish("Trace", $"ExecutionCoordinator running={running}");
-        HomeData = new HomeDataService(Console, TelemetryStore);
+        HomeData = new HomeDataService(Console, Query, TelemetryStore);
 
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme, Paths);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);

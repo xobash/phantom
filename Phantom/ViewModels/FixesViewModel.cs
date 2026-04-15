@@ -84,7 +84,8 @@ public sealed class FixesViewModel : ObservableObject, ISectionViewModel
             Fixes.Clear();
             foreach (var fix in fixes)
             {
-                if (fix.Destructive && !_settingsAccessor().EnableDestructiveOperations)
+                if ((fix.Destructive || fix.RiskTier == RiskTier.Dangerous) &&
+                    !_settingsAccessor().EnableDestructiveOperations)
                 {
                     continue;
                 }

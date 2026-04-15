@@ -272,7 +272,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             Tweaks.Clear();
             foreach (var tweak in tweaks)
             {
-                if (tweak.Destructive && !_settingsAccessor().EnableDestructiveOperations)
+                if ((tweak.Destructive || tweak.RiskTier == RiskTier.Dangerous) &&
+                    !_settingsAccessor().EnableDestructiveOperations)
                 {
                     continue;
                 }

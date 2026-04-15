@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using Phantom.Models;
 
 namespace Phantom.Services;
@@ -14,12 +15,14 @@ public sealed class HomeDataService
     };
 
     private readonly ConsoleStreamService _console;
+    private readonly PowerShellQueryService _query;
     private readonly TelemetryStore _telemetryStore;
     private TelemetryState? _telemetry;
 
-    public HomeDataService(ConsoleStreamService console, TelemetryStore telemetryStore)
+    public HomeDataService(ConsoleStreamService console, PowerShellQueryService query, TelemetryStore telemetryStore)
     {
         _console = console;
+        _query = query;
         _telemetryStore = telemetryStore;
     }
 
@@ -111,32 +114,42 @@ catch {
             return "Unavailable";
         }
 
-        var command = @"
-$ErrorActionPreference = 'Stop'
-try {
-  Start-Process -FilePath 'winsat.exe' -ArgumentList 'formal' -Wait -NoNewWindow | Out-Null
-  $f = Get-ChildItem ""$env:WinDir\Performance\WinSAT\DataStore\*Formal*.WinSAT.xml"" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if (-not $f) { throw 'WinSAT XML not found.' }
-  [xml]$x = Get-Content $f.FullName
-  $score = $x.WinSAT.WinSPR.SystemScore
-  if (-not $score) { throw 'SystemScore not found.' }
-  [PSCustomObject]@{ Score = $score } | ConvertTo-Json -Compress
-}
-catch {
-  Write-Error $_
-  exit 1
-}";
-
-        var json = await RunPowerShellForJsonAsync(command, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
+        var ranFormal = await RunWinsatFormalAsync(cancellationToken).ConfigureAwait(false);
+        if (!ranFormal)
         {
             return "Unavailable";
         }
 
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("Score").GetString() ?? "Unavailable";
+            var dataStorePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Performance",
+                "WinSAT",
+                "DataStore");
+            if (!Directory.Exists(dataStorePath))
+            {
+                throw new DirectoryNotFoundException($"WinSAT data store not found: {dataStorePath}");
+            }
+
+            var latestXml = Directory
+                .EnumerateFiles(dataStorePath, "*Formal*.WinSAT.xml", SearchOption.TopDirectoryOnly)
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(file => file.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (latestXml is null)
+            {
+                throw new FileNotFoundException("WinSAT XML not found.");
+            }
+
+            await using var stream = File.OpenRead(latestXml.FullName);
+            var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            var score = document
+                .Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.Equals("SystemScore", StringComparison.OrdinalIgnoreCase))
+                ?.Value
+                ?.Trim();
+            return string.IsNullOrWhiteSpace(score) ? "Unavailable" : score;
         }
         catch (Exception ex)
         {
@@ -147,28 +160,37 @@ catch {
 
     private async Task<string> RunPowerShellForJsonAsync(string script, CancellationToken cancellationToken)
     {
-        var wrapped = $"$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';& {{ {script} }}";
-        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
+        var (exitCode, stdout, stderr) = await _query.InvokeAsync(script, cancellationToken, echoToConsole: false, logExecution: false).ConfigureAwait(false);
+        if (exitCode == 0)
+        {
+            return stdout.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(stderr))
+        {
+            _console.Publish("Error", stderr.Trim());
+        }
+
+        return string.Empty;
+    }
+
+    private async Task<bool> RunWinsatFormalAsync(CancellationToken cancellationToken)
+    {
         var psi = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = "winsat.exe",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            CreateNoWindow = true,
+            CreateNoWindow = true
         };
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-NonInteractive");
-        psi.ArgumentList.Add("-ExecutionPolicy");
-        psi.ArgumentList.Add("RemoteSigned");
-        psi.ArgumentList.Add("-EncodedCommand");
-        psi.ArgumentList.Add(encodedCommand);
+        psi.ArgumentList.Add("formal");
 
         using var process = Process.Start(psi);
         if (process is null)
         {
-            _console.Publish("Error", "HomeDataService.RunPowerShellForJsonAsync failed to start powershell.exe.");
-            return string.Empty;
+            _console.Publish("Error", "HomeDataService.RunWinsatScoreAsync failed to start winsat.exe.");
+            return false;
         }
 
         var processCompleted = 0;
@@ -207,28 +229,18 @@ catch {
 
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
-
-        if (!string.IsNullOrWhiteSpace(stderr) &&
-            !IsProgressCliXml(stderr))
+        if (process.ExitCode == 0)
         {
-            _console.Publish("Error", stderr.Trim());
+            return true;
         }
 
-        return process.ExitCode == 0 ? stdout.Trim() : string.Empty;
-    }
-
-    private static bool IsProgressCliXml(string stderr)
-    {
-        var trimmed = stderr.Trim();
-        if (!trimmed.StartsWith("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+        var output = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+        if (!string.IsNullOrWhiteSpace(output))
         {
-            return false;
+            _console.Publish("Error", output.Trim());
         }
 
-        var containsProgressObjects = trimmed.Contains("<Obj S=\"progress\"", StringComparison.OrdinalIgnoreCase);
-        var containsErrorObjects = trimmed.Contains(" S=\"error\"", StringComparison.OrdinalIgnoreCase) ||
-                                   trimmed.Contains("<S S=\"Error\">", StringComparison.OrdinalIgnoreCase);
-        return containsProgressObjects && !containsErrorObjects;
+        return false;
     }
 
     private static string ComputeNetworkUsage(TelemetryState telemetry)

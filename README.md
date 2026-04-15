@@ -12,7 +12,7 @@
                                                                                                   
 A portable, self-contained Windows administration utility built with WPF and .NET 8. Phantom provides a unified interface for system monitoring, tweaking, app management, Windows Update control, and automation — all from a single elevated window with a persistent in-app console.
 
-> **Requires Administrator privileges.** Phantom will not auto-elevate and will exit cleanly if launched without elevation.
+> **Requires Administrator privileges.** If Phantom is launched without elevation, it will prompt for UAC elevation and relaunch itself.
 
 ---
 
@@ -47,7 +47,7 @@ Built output is saved to `%LOCALAPPDATA%\Phantom\app`. Subsequent launches can r
 
 Phantom is a personal Windows admin tool in the spirit of [ChrisTitusTech/winutil](https://github.com/ChrisTitusTech/winutil) and WinToys. It aims to consolidate the scattered day-to-day tasks of Windows administration — debloating, tweaking, update management, app installs, and system diagnostics — into a single, auditable, offline-capable interface.
 
-Everything runs locally. No telemetry leaves the machine, no background services are installed, and the app makes no outbound connections unless you explicitly trigger an action that requires one.
+Everything runs locally. No telemetry leaves the machine, no background services are installed, and outbound network access only happens for explicit user-triggered actions such as the bootstrap launcher, package-manager installs, app installs/upgrades, or approved external tool downloads.
 
 ---
 
@@ -63,8 +63,8 @@ Everything runs locally. No telemetry leaves the machine, no background services
 ### Store
 
 - Detects winget and Chocolatey at launch; offers to install either if missing
-- Install, uninstall, and upgrade applications from a local JSON catalog
-- Import and export catalog JSON for sharing or version control
+- Install, uninstall, and upgrade applications from the bundled local JSON catalog
+- Export and import Store selections through the unified automation config JSON
 
 ### Tweaks
 
@@ -179,7 +179,7 @@ Add `-ForceDangerous` for dangerous operations in CLI mode, plus a second explic
 
 ### Caveats
 
-- Administrator elevation is mandatory. The app will not prompt for it — launch from an already-elevated shell.
+- Administrator elevation is mandatory. Phantom can prompt for UAC elevation on startup, or you can launch it from an already-elevated shell.
 - Dangerous CLI execution requires all three: config `"confirmDangerous": true`, `-ForceDangerous`, and `-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`.
 - WinSAT scores may be stale if Windows has not run a formal assessment; Phantom can trigger one on demand but it takes several minutes.
 - Feature toggles that require a reboot will not take effect until the system is restarted — Phantom will warn you but cannot force a reboot.
@@ -222,7 +222,8 @@ All other features — monitoring, tweaks, update mode changes, fixes, log revie
 | Dependency | Version | Purpose |
 |---|---|---|
 | .NET | 8.0 | Runtime and WPF framework |
-| Microsoft.PowerShell.SDK | 7.4.6 | In-process PowerShell execution |
+| Microsoft.PowerShell.SDK | 7.4.6 | In-process execution for mutating operations |
+| Windows PowerShell / PowerShell 7 host | built-in / optional | Guarded read-only queries and verification fallback |
 | winget | any | Package management for app installs (auto-detected) |
 | Chocolatey | any | Package management for app installs (auto-detected) |
 
@@ -232,15 +233,15 @@ The build output is self-contained — the .NET 8 runtime is bundled. winget and
 
 ## Security Notes
 
-**Elevation model:** Phantom requires administrator privileges and verifies elevation on startup. It does not use UAC auto-elevation (`requireAdministrator` manifest), so the calling shell must already be elevated. This is intentional — it prevents privilege escalation via accidental double-click.
+**Elevation model:** Phantom requires administrator privileges and verifies elevation on startup. If it is launched unelevated, it attempts a UAC relaunch of the current executable and exits the original process once the elevated instance starts. Launching from an already-elevated shell still works.
 
-**PowerShell execution:** All PowerShell logic runs in-process via `Microsoft.PowerShell.SDK`. No `powershell.exe` or `pwsh.exe` child processes are spawned for core operations. This means Phantom's PowerShell commands are not visible to process monitors watching for child shell spawns, but it also means they are subject to the execution policy of the current session.
+**PowerShell execution:** Mutating operations execute primarily in-process via `Microsoft.PowerShell.SDK` runspaces. Read-only detection and dashboard queries run through guarded `pwsh.exe` / `powershell.exe` child hosts, and verification steps can fall back to an external host when runspace execution is unavailable. PowerShell scripts are still validated against the operation allowlist, AST safety guards, and download-host restrictions before execution.
 
-**No automatic outbound connections:** Phantom makes no network calls on its own. The only outbound URLs in the codebase are the official winget installer (`aka.ms/getwinget`) and the Chocolatey install script (`community.chocolatey.org/install.ps1`), both of which are only triggered by an explicit user action.
+**User-triggered outbound connections only:** Phantom does not beacon or sync in the background. Network traffic occurs only when you explicitly trigger a networked action such as the bootstrap launcher, winget/Chocolatey bootstrap, app installs/upgrades, the Microsoft App Installer download, or the O&O ShutUp10 download/launch flow. The current allowlisted hosts in code are `aka.ms`, `community.chocolatey.org`, `www.oo-software.com`, `dl5.oo-software.com`, `github.com/xobash/phantom/*`, `github.com/microsoft/winget-cli/*`, and `raw.githubusercontent.com/xobash/phantom/*`.
 
-**Dangerous operation gates:** Irreversible operations require both a Settings toggle and explicit confirmation. In CLI mode, dangerous operations require `"confirmDangerous": true`, `-ForceDangerous`, and an explicit acknowledgement token (`-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`). Restore point safeguards are not bypassed by force mode.
+**Dangerous operation gates:** Irreversible operations require both the **Enable Destructive Operations** toggle and explicit confirmation. In CLI mode, dangerous operations require `"confirmDangerous": true`, `-ForceDangerous`, and an explicit acknowledgement token (`-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`). Restore point safeguards are not bypassed by force mode. Safety-backup compensation can restore captured registry, service, and scheduled-task artifacts, but file-system deletions may still require manual recovery.
 
-**Supply chain considerations:** The `irm | iex` pattern downloads and executes a remote PowerShell script. If you are security-conscious about this, review `launch.ps1` in the repository before running it. The script's only external action is installing the .NET 8 SDK via winget and cloning/building from this repository.
+**Supply chain considerations:** The `irm | iex` pattern downloads and executes a remote PowerShell script. If you are security-conscious about this, review `launch.ps1` in the repository before running it. The launcher can install the .NET 8 SDK via winget, download Phantom source from GitHub, and build it locally.
 
 **No persistence mechanisms:** Phantom installs no services, scheduled tasks, startup entries, or shell extensions. Removing the app directory and `%LOCALAPPDATA%\Phantom` leaves no running components behind.
 
