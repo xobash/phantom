@@ -121,7 +121,7 @@
                                     <TextBlock Text="{Binding Name}"
                                                FontSize="15"
                                                FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ConsoleAccentBlueBrush}"/>
+                                               Foreground="{DynamicResource AccentBrush}"/>
                                 </Border>
                             </DataTemplate>
                         </GroupStyle.HeaderTemplate>

@@ -37,7 +37,7 @@
                                 <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#7EA6FF"/>
+                                <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

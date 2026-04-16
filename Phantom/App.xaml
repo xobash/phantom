@@ -7,9 +7,9 @@
              xmlns:views="clr-namespace:Phantom.Views"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
-        <Color x:Key="BgColor">#FF1E1E1E</Color>
-        <Color x:Key="CardColor">#FF2B2B2B</Color>
-        <Color x:Key="BorderColor">#FF3D3D3D</Color>
+        <Color x:Key="BgColor">#FF171C1B</Color>
+        <Color x:Key="CardColor">#FF202826</Color>
+        <Color x:Key="BorderColor">#FF34413D</Color>
 
         <SolidColorBrush x:Key="BgBrush" po:Freeze="False" Color="{StaticResource BgColor}"/>
         <SolidColorBrush x:Key="CardBrush" po:Freeze="False" Color="{StaticResource CardColor}"/>
@@ -19,45 +19,39 @@
                              po:Freeze="False"
                              StartPoint="0,0"
                              EndPoint="1,1">
-            <GradientStop Color="#0F1014" Offset="0"/>
-            <GradientStop Color="#131520" Offset="0.35"/>
-            <GradientStop Color="#181A26" Offset="0.65"/>
-            <GradientStop Color="#1C1B28" Offset="1"/>
+            <GradientStop Color="#0C100F" Offset="0"/>
+            <GradientStop Color="#121715" Offset="0.38"/>
+            <GradientStop Color="#171E1C" Offset="0.7"/>
+            <GradientStop Color="#1C2422" Offset="1"/>
         </LinearGradientBrush>
-        <SolidColorBrush x:Key="ShellBrush" po:Freeze="False" Color="#1B1B1B"/>
-        <SolidColorBrush x:Key="ShellAltBrush" po:Freeze="False" Color="#202020"/>
-        <SolidColorBrush x:Key="DarkCardBrush" po:Freeze="False" Color="#262626"/>
-        <SolidColorBrush x:Key="DarkCard2Brush" po:Freeze="False" Color="#2B2B2B"/>
-        <SolidColorBrush x:Key="DarkBorderBrush" po:Freeze="False" Color="#3D3D3D"/>
-        <SolidColorBrush x:Key="DarkTextBrush" po:Freeze="False" Color="#F2F2F2"/>
-        <SolidColorBrush x:Key="MutedTextBrush" po:Freeze="False" Color="#CECECE"/>
-        <SolidColorBrush x:Key="AccentBrush" po:Freeze="False" Color="#6C6C6C"/>
-        <SolidColorBrush x:Key="AccentBorderBrush" po:Freeze="False" Color="#8A8A8A"/>
-        <SolidColorBrush x:Key="ConsoleAccentBlueBrush" po:Freeze="False" Color="#73C8FF"/>
+        <SolidColorBrush x:Key="ShellBrush" po:Freeze="False" Color="#131918"/>
+        <SolidColorBrush x:Key="ShellAltBrush" po:Freeze="False" Color="#181F1E"/>
+        <SolidColorBrush x:Key="DarkCardBrush" po:Freeze="False" Color="#1D2423"/>
+        <SolidColorBrush x:Key="DarkCard2Brush" po:Freeze="False" Color="#212A28"/>
+        <SolidColorBrush x:Key="DarkBorderBrush" po:Freeze="False" Color="#34413D"/>
+        <SolidColorBrush x:Key="DarkTextBrush" po:Freeze="False" Color="#F3F4F1"/>
+        <SolidColorBrush x:Key="MutedTextBrush" po:Freeze="False" Color="#B9C2BC"/>
+        <SolidColorBrush x:Key="AccentBrush" po:Freeze="False" Color="#B98543"/>
+        <SolidColorBrush x:Key="AccentBorderBrush" po:Freeze="False" Color="#D49C57"/>
 
-        <SolidColorBrush x:Key="NavItemBackgroundBrush" po:Freeze="False" Color="#262626"/>
-        <SolidColorBrush x:Key="NavItemHoverBrush" po:Freeze="False" Color="#2E2E2E"/>
-        <SolidColorBrush x:Key="NavItemSelectedBrush" po:Freeze="False" Color="#373737"/>
-        <SolidColorBrush x:Key="NavItemBorderBrush" po:Freeze="False" Color="#444444"/>
+        <SolidColorBrush x:Key="NavItemBackgroundBrush" po:Freeze="False" Color="#1B2221"/>
+        <SolidColorBrush x:Key="NavItemHoverBrush" po:Freeze="False" Color="#212927"/>
+        <SolidColorBrush x:Key="NavItemSelectedBrush" po:Freeze="False" Color="#28312F"/>
+        <SolidColorBrush x:Key="NavItemBorderBrush" po:Freeze="False" Color="#33403C"/>
 
-        <SolidColorBrush x:Key="InputBackgroundBrush" po:Freeze="False" Color="#1F1F1F"/>
-        <SolidColorBrush x:Key="HeaderBackgroundBrush" po:Freeze="False" Color="#303030"/>
-        <SolidColorBrush x:Key="RowBackgroundBrush" po:Freeze="False" Color="#252525"/>
-        <SolidColorBrush x:Key="RowAltBackgroundBrush" po:Freeze="False" Color="#2B2B2B"/>
-        <SolidColorBrush x:Key="RowHoverBackgroundBrush" po:Freeze="False" Color="#333333"/>
-        <SolidColorBrush x:Key="RowSelectedBackgroundBrush" po:Freeze="False" Color="#3D3D3D"/>
-        <SolidColorBrush x:Key="ScrollTrackBrush" po:Freeze="False" Color="#171717"/>
-        <SolidColorBrush x:Key="ScrollThumbBrush" po:Freeze="False" Color="#505050"/>
-        <SolidColorBrush x:Key="ScrollThumbHoverBrush" po:Freeze="False" Color="#696969"/>
-        <SolidColorBrush x:Key="ScrollThumbPressedBrush" po:Freeze="False" Color="#818181"/>
+        <SolidColorBrush x:Key="InputBackgroundBrush" po:Freeze="False" Color="#141A19"/>
+        <SolidColorBrush x:Key="HeaderBackgroundBrush" po:Freeze="False" Color="#212A28"/>
+        <SolidColorBrush x:Key="RowBackgroundBrush" po:Freeze="False" Color="#1B2221"/>
+        <SolidColorBrush x:Key="RowAltBackgroundBrush" po:Freeze="False" Color="#202826"/>
+        <SolidColorBrush x:Key="RowHoverBackgroundBrush" po:Freeze="False" Color="#262F2D"/>
+        <SolidColorBrush x:Key="RowSelectedBackgroundBrush" po:Freeze="False" Color="#313936"/>
+        <SolidColorBrush x:Key="ScrollTrackBrush" po:Freeze="False" Color="#101413"/>
+        <SolidColorBrush x:Key="ScrollThumbBrush" po:Freeze="False" Color="#4C5954"/>
+        <SolidColorBrush x:Key="ScrollThumbHoverBrush" po:Freeze="False" Color="#65736D"/>
+        <SolidColorBrush x:Key="ScrollThumbPressedBrush" po:Freeze="False" Color="#7C8A84"/>
 
-        <SolidColorBrush x:Key="TerminalBackgroundBrush" po:Freeze="False" Color="#000000"/>
-        <SolidColorBrush x:Key="TerminalForegroundBrush" po:Freeze="False" Color="#E6E6E6"/>
-
-        <!-- Glow accent palette -->
-        <SolidColorBrush x:Key="GlowBlueBrush" po:Freeze="False" Color="#4080C8FF"/>
-        <SolidColorBrush x:Key="GlowPurpleBrush" po:Freeze="False" Color="#30A060E0"/>
-        <SolidColorBrush x:Key="NavAccentBrush" po:Freeze="False" Color="#1FA3E2"/>
+        <SolidColorBrush x:Key="TerminalBackgroundBrush" po:Freeze="False" Color="#0B0F0F"/>
+        <SolidColorBrush x:Key="TerminalForegroundBrush" po:Freeze="False" Color="#D9E2DC"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
@@ -84,32 +78,12 @@
             <Setter Property="Background" Value="{DynamicResource DarkCardBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="Margin" Value="6"/>
-            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect Color="#28406090" BlurRadius="14" ShadowDepth="0" Opacity="0.32"/>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="behaviors:CardTiltBehavior.IsEnabled" Value="True"/>
             <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#6898D0FF"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#5580C8FF" BlurRadius="28" ShadowDepth="0" Opacity="0.55"/>
-                        </Setter.Value>
-                    </Setter>
-                </Trigger>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                    <Setter Property="BorderBrush" Value="#88AAFF"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#7089C8FF" BlurRadius="26" ShadowDepth="0" Opacity="0.55"/>
-                        </Setter.Value>
-                    </Setter>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -124,12 +98,6 @@
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="17"/>
-            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-            <Setter Property="RenderTransform">
-                <Setter.Value>
-                    <ScaleTransform ScaleX="1" ScaleY="1"/>
-                </Setter.Value>
-            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -139,23 +107,13 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#7098D0FF"/>
-                                <Setter TargetName="BtnBorder" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#4878B0F0" BlurRadius="18" ShadowDepth="0" Opacity="0.48"/>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource NavItemSelectedBrush}"/>
+                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource RowSelectedBackgroundBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#7EA6FF"/>
-                                <Setter TargetName="BtnBorder" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#5589C8FF" BlurRadius="12" ShadowDepth="0" Opacity="0.34"/>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="BtnBorder" Property="Opacity" Value="0.45"/>
@@ -164,60 +122,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Trigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
-                                                 To="1.02"
-                                                 Duration="0:0:0.18"/>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
-                                                 To="1.02"
-                                                 Duration="0:0:0.18"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.EnterActions>
-                    <Trigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
-                                                 To="1.0"
-                                                 Duration="0:0:0.18"/>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
-                                                 To="1.0"
-                                                 Duration="0:0:0.18"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.ExitActions>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Trigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
-                                                 To="0.98"
-                                                 Duration="0:0:0.06"/>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
-                                                 To="0.98"
-                                                 Duration="0:0:0.06"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.EnterActions>
-                    <Trigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
-                                                 To="1.0"
-                                                 Duration="0:0:0.10"/>
-                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
-                                                 To="1.0"
-                                                 Duration="0:0:0.10"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.ExitActions>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <Style x:Key="RefreshIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
@@ -243,12 +147,7 @@
             <Setter Property="FontSize" Value="17"/>
             <Style.Triggers>
                 <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                    <Setter Property="BorderBrush" Value="#7EA6FF"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#5589C8FF" BlurRadius="12" ShadowDepth="0" Opacity="0.34"/>
-                        </Setter.Value>
-                    </Setter>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -360,12 +259,7 @@
                                 <Setter TargetName="ControlBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="ControlBorder" Property="BorderBrush" Value="#7EA6FF"/>
-                                <Setter TargetName="ControlBorder" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#5589C8FF" BlurRadius="12" ShadowDepth="0" Opacity="0.34"/>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter TargetName="ControlBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ControlBorder" Property="Opacity" Value="0.45"/>
@@ -594,16 +488,11 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#1FA3E2"/>
-                                <Setter TargetName="Track" Property="BorderBrush" Value="#1FA3E2"/>
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                                 <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
-                                <Setter TargetName="Track" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#601FA3E2" BlurRadius="16" ShadowDepth="0" Opacity="0.6"/>
-                                    </Setter.Value>
-                                </Setter>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -637,16 +526,11 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#1FA3E2"/>
-                                <Setter TargetName="Track" Property="BorderBrush" Value="#1FA3E2"/>
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                                 <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
                                 <Setter TargetName="Thumb" Property="Fill" Value="White"/>
-                                <Setter TargetName="Track" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#601FA3E2" BlurRadius="16" ShadowDepth="0" Opacity="0.6"/>
-                                    </Setter.Value>
-                                </Setter>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Track" Property="Opacity" Value="0.45"/>
@@ -693,11 +577,6 @@
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource RowHoverBackgroundBrush}"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#3568B0F0" BlurRadius="12" ShadowDepth="0" Opacity="0.35"/>
-                        </Setter.Value>
-                    </Setter>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="{DynamicResource RowSelectedBackgroundBrush}"/>

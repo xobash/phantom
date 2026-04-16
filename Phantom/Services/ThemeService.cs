@@ -157,35 +157,43 @@ public sealed class ThemeService
     {
         var resources = Application.Current.Resources;
         var baseColor = (Color)ColorConverter.ConvertFromString(hex)!;
-        var start = ScaleColor(baseColor, darkMode ? 0.9 : 1.03);
-        var end = ScaleColor(baseColor, darkMode ? 1.15 : 0.97);
+        var start = ScaleColor(baseColor, darkMode ? 0.82 : 1.03);
+        var middle = ScaleColor(baseColor, darkMode ? 0.95 : 1.00);
+        var end = ScaleColor(baseColor, darkMode ? 1.12 : 0.94);
 
         if (resources["AppBgBrush"] is LinearGradientBrush gradient)
         {
             if (gradient.IsFrozen)
             {
-                resources["AppBgBrush"] = CreateAppGradientBrush(start, end);
+                resources["AppBgBrush"] = CreateAppGradientBrush(start, middle, end);
                 return;
             }
 
             gradient.StartPoint = new Point(0, 0);
             gradient.EndPoint = new Point(1, 1);
-            if (gradient.GradientStops.Count < 2)
+            if (gradient.GradientStops.Count < 3)
             {
                 gradient.GradientStops.Clear();
                 gradient.GradientStops.Add(new GradientStop(start, 0));
+                gradient.GradientStops.Add(new GradientStop(middle, 0.58));
                 gradient.GradientStops.Add(new GradientStop(end, 1));
                 return;
             }
 
             gradient.GradientStops[0].Color = start;
             gradient.GradientStops[0].Offset = 0;
-            gradient.GradientStops[1].Color = end;
-            gradient.GradientStops[1].Offset = 1;
+            gradient.GradientStops[1].Color = middle;
+            gradient.GradientStops[1].Offset = 0.58;
+            gradient.GradientStops[2].Color = end;
+            gradient.GradientStops[2].Offset = 1;
+            while (gradient.GradientStops.Count > 3)
+            {
+                gradient.GradientStops.RemoveAt(gradient.GradientStops.Count - 1);
+            }
             return;
         }
 
-        resources["AppBgBrush"] = CreateAppGradientBrush(start, end);
+        resources["AppBgBrush"] = CreateAppGradientBrush(start, middle, end);
     }
 
     private static Color ScaleColor(Color color, double scale)
@@ -198,7 +206,7 @@ public sealed class ThemeService
             ClampChannel(color.B * scale));
     }
 
-    private static LinearGradientBrush CreateAppGradientBrush(Color start, Color end)
+    private static LinearGradientBrush CreateAppGradientBrush(Color start, Color middle, Color end)
     {
         var brush = new LinearGradientBrush
         {
@@ -206,6 +214,7 @@ public sealed class ThemeService
             EndPoint = new Point(1, 1)
         };
         brush.GradientStops.Add(new GradientStop(start, 0));
+        brush.GradientStops.Add(new GradientStop(middle, 0.58));
         brush.GradientStops.Add(new GradientStop(end, 1));
         return brush;
     }
@@ -244,63 +253,63 @@ public sealed class ThemeService
         string TerminalForeground)
     {
         public static ThemePalette Dark { get; } = new(
-            AppBackground: "#141414",
-            WindowBackground: "#1E1E1E",
-            ShellBackground: "#1B1B1B",
-            ShellAltBackground: "#202020",
-            PanelBackground: "#262626",
-            PanelAltBackground: "#2B2B2B",
-            CardBackground: "#2B2B2B",
-            Border: "#3D3D3D",
-            TextPrimary: "#F2F2F2",
-            TextSecondary: "#CECECE",
-            Accent: "#6C6C6C",
-            AccentBorder: "#8A8A8A",
-            NavItemBackground: "#262626",
-            NavItemHover: "#2E2E2E",
-            NavItemSelected: "#373737",
-            NavItemBorder: "#444444",
-            InputBackground: "#1F1F1F",
-            GridHeaderBackground: "#303030",
-            GridRowBackground: "#252525",
-            GridRowAltBackground: "#2B2B2B",
-            GridRowHoverBackground: "#333333",
-            GridRowSelectedBackground: "#3D3D3D",
-            ScrollTrack: "#171717",
-            ScrollThumb: "#505050",
-            ScrollThumbHover: "#696969",
-            ScrollThumbPressed: "#818181",
-            TerminalBackground: "#080808",
-            TerminalForeground: "#DDE7FF");
+            AppBackground: "#111716",
+            WindowBackground: "#171C1B",
+            ShellBackground: "#131918",
+            ShellAltBackground: "#181F1E",
+            PanelBackground: "#1D2423",
+            PanelAltBackground: "#212A28",
+            CardBackground: "#202826",
+            Border: "#34413D",
+            TextPrimary: "#F3F4F1",
+            TextSecondary: "#B9C2BC",
+            Accent: "#B98543",
+            AccentBorder: "#D49C57",
+            NavItemBackground: "#1B2221",
+            NavItemHover: "#212927",
+            NavItemSelected: "#28312F",
+            NavItemBorder: "#33403C",
+            InputBackground: "#141A19",
+            GridHeaderBackground: "#212A28",
+            GridRowBackground: "#1B2221",
+            GridRowAltBackground: "#202826",
+            GridRowHoverBackground: "#262F2D",
+            GridRowSelectedBackground: "#313936",
+            ScrollTrack: "#101413",
+            ScrollThumb: "#4C5954",
+            ScrollThumbHover: "#65736D",
+            ScrollThumbPressed: "#7C8A84",
+            TerminalBackground: "#0B0F0F",
+            TerminalForeground: "#D9E2DC");
 
         public static ThemePalette Light { get; } = new(
-            AppBackground: "#E8E8E8",
-            WindowBackground: "#F0F0F0",
-            ShellBackground: "#E2E2E2",
-            ShellAltBackground: "#ECECEC",
-            PanelBackground: "#F8F8F8",
+            AppBackground: "#ECE8E1",
+            WindowBackground: "#F6F3EE",
+            ShellBackground: "#EBE6DE",
+            ShellAltBackground: "#F2EEE8",
+            PanelBackground: "#FAF7F2",
             PanelAltBackground: "#FFFFFF",
-            CardBackground: "#F8F8F8",
-            Border: "#CFCFCF",
-            TextPrimary: "#111111",
-            TextSecondary: "#454545",
-            Accent: "#5E5E5E",
-            AccentBorder: "#757575",
-            NavItemBackground: "#F7F7F7",
-            NavItemHover: "#EEEEEE",
-            NavItemSelected: "#E4E4E4",
-            NavItemBorder: "#CFCFCF",
+            CardBackground: "#FAF7F2",
+            Border: "#CDC3B7",
+            TextPrimary: "#1B1F1D",
+            TextSecondary: "#535B57",
+            Accent: "#A36A2C",
+            AccentBorder: "#B97E3E",
+            NavItemBackground: "#F5F1EA",
+            NavItemHover: "#EDE7DE",
+            NavItemSelected: "#E6DED2",
+            NavItemBorder: "#D1C7BB",
             InputBackground: "#FFFFFF",
-            GridHeaderBackground: "#F0F0F0",
+            GridHeaderBackground: "#EFE8DE",
             GridRowBackground: "#FFFFFF",
-            GridRowAltBackground: "#F9F9F9",
-            GridRowHoverBackground: "#F0F0F0",
-            GridRowSelectedBackground: "#E3E3E3",
-            ScrollTrack: "#EEEEEE",
-            ScrollThumb: "#B8B8B8",
-            ScrollThumbHover: "#989898",
-            ScrollThumbPressed: "#7D7D7D",
-            TerminalBackground: "#F6F8FC",
-            TerminalForeground: "#1C2430");
+            GridRowAltBackground: "#FBF8F3",
+            GridRowHoverBackground: "#F1EADF",
+            GridRowSelectedBackground: "#E8DFD1",
+            ScrollTrack: "#EEE7DD",
+            ScrollThumb: "#B1A69A",
+            ScrollThumbHover: "#978B7F",
+            ScrollThumbPressed: "#7A6F65",
+            TerminalBackground: "#F4F1EA",
+            TerminalForeground: "#24302C");
     }
 }
