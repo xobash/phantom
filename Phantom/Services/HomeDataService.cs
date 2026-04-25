@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -19,7 +20,9 @@ public sealed class HomeDataService
     private readonly ConsoleStreamService _console;
     private readonly PowerShellQueryService _query;
     private readonly TelemetryStore _telemetryStore;
+    private readonly object _cpuSampleSync = new();
     private TelemetryState? _telemetry;
+    private CpuSample? _lastCpuSample;
 
     public HomeDataService(ConsoleStreamService console, PowerShellQueryService query, TelemetryStore telemetryStore)
     {
@@ -42,14 +45,7 @@ public sealed class HomeDataService
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
 
-        var json = await RunPowerShellForJsonAsync(BuildSnapshotScript(includeDetails: false), cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            _console.Publish("Warning", "HomeDataService.GetSnapshotAsync returned empty JSON.");
-            return new HomeSnapshot();
-        }
-
-        var snapshot = JsonSerializer.Deserialize<HomeSnapshot>(json, JsonOptions) ?? new HomeSnapshot();
+        var snapshot = await Task.Run(() => BuildCompiledSnapshot(includeDetails), cancellationToken).ConfigureAwait(false);
         if (includeDetails)
         {
             snapshot.Apps = (await GetInstalledAppsAsync(cancellationToken).ConfigureAwait(false)).ToList();
@@ -74,20 +70,14 @@ public sealed class HomeDataService
         return Task.Run<IReadOnlyList<InstalledAppInfo>>(EnumerateInstalledApps, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ServiceInfoRow>> GetServicesAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<ServiceInfoRow>> GetServicesAsync(CancellationToken cancellationToken)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT)
         {
-            return Array.Empty<ServiceInfoRow>();
+            return Task.FromResult<IReadOnlyList<ServiceInfoRow>>(Array.Empty<ServiceInfoRow>());
         }
 
-        var json = await RunPowerShellForJsonAsync(BuildServicesScript(), cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return Array.Empty<ServiceInfoRow>();
-        }
-
-        return DeserializeJsonList<ServiceInfoRow>(json);
+        return Task.Run<IReadOnlyList<ServiceInfoRow>>(EnumerateServices, cancellationToken);
     }
 
     public async Task<(double CpuUsage, double MemoryUsage, double GpuUsage, string NetworkUsage)> GetLiveMetricsAsync(CancellationToken cancellationToken)
@@ -98,55 +88,10 @@ public sealed class HomeDataService
         }
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-
-        const string script = @"
-$ErrorActionPreference = 'Continue'
-$os = $null
-try { $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop } catch {}
-$cpu = 0
-try {
-  $cpuSample = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop).CounterSamples | Select-Object -First 1
-  if ($cpuSample) { $cpu = $cpuSample.CookedValue }
-} catch {}
-$memoryPct = 0
-if ($os -and $os.TotalVisibleMemorySize -gt 0) {
-  $memoryPct = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
-}
-$gpuCtr = 0
-try {
-  $gpuSample = (Get-Counter '\GPU Engine(_Total)\Utilization Percentage' -ErrorAction Stop).CounterSamples | Select-Object -First 1
-  if ($gpuSample) { $gpuCtr = $gpuSample.CookedValue }
-}
-catch {
-  $gpuCtr = 0
-}
-[PSCustomObject]@{
-  CpuUsage = [math]::Round($cpu, 2)
-  MemoryUsage = [math]::Round($memoryPct, 2)
-  GpuUsage = [math]::Round([math]::Min([math]::Max($gpuCtr, 0), 100), 2)
-} | ConvertTo-Json -Compress";
-
-        var json = await RunPowerShellForJsonAsync(script, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            _console.Publish("Warning", "HomeDataService.GetLiveMetricsAsync returned empty JSON.");
-            return (0, 0, 0, ComputeNetworkUsage(_telemetry));
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var cpu = doc.RootElement.GetProperty("CpuUsage").GetDouble();
-            var memory = doc.RootElement.GetProperty("MemoryUsage").GetDouble();
-            var gpu = doc.RootElement.GetProperty("GpuUsage").GetDouble();
-            var network = ComputeNetworkUsage(_telemetry);
-            return (cpu, memory, gpu, network);
-        }
-        catch (Exception ex)
-        {
-            _console.Publish("Error", $"Live metrics parse failed: {ex.Message}");
-            return (0, 0, 0, ComputeNetworkUsage(_telemetry));
-        }
+        var cpu = GetCpuUsagePercent();
+        var memory = GetMemoryUsagePercent();
+        var network = ComputeNetworkUsage(_telemetry);
+        return (cpu, memory, 0, network);
     }
 
     public async Task<string> RunWinsatScoreAsync(CancellationToken cancellationToken)
@@ -312,6 +257,367 @@ catch {
         return Array.Empty<T>();
     }
 
+    private HomeSnapshot BuildCompiledSnapshot(bool includeDetails)
+    {
+        var appsCount = 0;
+        var services = Array.Empty<ServiceInfoRow>() as IReadOnlyList<ServiceInfoRow>;
+        try
+        {
+            appsCount = EnumerateInstalledApps().Count;
+        }
+        catch
+        {
+            appsCount = 0;
+        }
+
+        try
+        {
+            services = EnumerateServices();
+        }
+        catch
+        {
+            services = Array.Empty<ServiceInfoRow>();
+        }
+
+        return new HomeSnapshot
+        {
+            Motherboard = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "BaseBoardProduct", "Unknown"),
+            Graphics = "Unknown",
+            GraphicsDriverVersion = "Unknown",
+            GraphicsDriverDate = "Unknown",
+            Storage = BuildStorageSummary(),
+            Uptime = FormatUptime(TimeSpan.FromMilliseconds(Math.Max(0, Environment.TickCount64))),
+            Processor = BuildProcessorSummary(),
+            Memory = BuildMemorySummary(),
+            Windows = BuildWindowsSummary(),
+            AppsCount = appsCount,
+            ProcessesCount = SafeProcessCount(),
+            ServicesCount = services.Count,
+            CpuUsage = GetCpuUsagePercent(),
+            GpuUsage = 0,
+            MemoryUsage = GetMemoryUsagePercent(),
+            Apps = includeDetails ? EnumerateInstalledApps().ToList() : [],
+            Services = includeDetails ? services.ToList() : []
+        };
+    }
+
+    private static string BuildStorageSummary()
+    {
+        long total = 0;
+        long free = 0;
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
+                {
+                    continue;
+                }
+
+                total += drive.TotalSize;
+                free += drive.AvailableFreeSpace;
+            }
+            catch
+            {
+            }
+        }
+
+        return total <= 0
+            ? "Unknown"
+            : $"Total {Math.Round(total / 1024d / 1024d / 1024d, 2)} GB, Free {Math.Round(free / 1024d / 1024d / 1024d, 2)} GB";
+    }
+
+    private static string BuildProcessorSummary()
+    {
+        var name = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString", string.Empty);
+        return string.IsNullOrWhiteSpace(name)
+            ? $"{Environment.ProcessorCount} logical processors"
+            : $"{name.Trim()} ({Environment.ProcessorCount}T)";
+    }
+
+    private static string BuildMemorySummary()
+    {
+        return TryGetMemoryStatus(out var status)
+            ? $"{Math.Round(status.ullTotalPhys / 1024d / 1024d / 1024d, 2)} GB"
+            : "Unknown";
+    }
+
+    private static string BuildWindowsSummary()
+    {
+        const string key = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+        var product = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, key, "ProductName", "Windows");
+        var displayVersion = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, key, "DisplayVersion", string.Empty);
+        var build = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, key, "CurrentBuildNumber", string.Empty);
+        var ubr = ReadRegistryLong(RegistryHive.LocalMachine, RegistryView.Registry64, key, "UBR");
+        var buildText = string.IsNullOrWhiteSpace(build)
+            ? Environment.OSVersion.Version.ToString()
+            : ubr > 0 ? $"{build}.{ubr}" : build;
+        return string.IsNullOrWhiteSpace(displayVersion)
+            ? $"{product} (Build {buildText})"
+            : $"{product} {displayVersion} (Build {buildText})";
+    }
+
+    private static int SafeProcessCount()
+    {
+        try
+        {
+            return Process.GetProcesses().Length;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private double GetCpuUsagePercent()
+    {
+        if (!GetSystemTimes(out var idleTime, out var kernelTime, out var userTime))
+        {
+            return 0;
+        }
+
+        var sample = new CpuSample(ToLong(idleTime), ToLong(kernelTime), ToLong(userTime));
+        lock (_cpuSampleSync)
+        {
+            if (_lastCpuSample is not { } previous)
+            {
+                _lastCpuSample = sample;
+                return 0;
+            }
+
+            var idle = sample.Idle - previous.Idle;
+            var kernel = sample.Kernel - previous.Kernel;
+            var user = sample.User - previous.User;
+            var total = kernel + user;
+            _lastCpuSample = sample;
+            if (total <= 0)
+            {
+                return 0;
+            }
+
+            return Math.Round(Math.Clamp((total - idle) * 100d / total, 0, 100), 2);
+        }
+    }
+
+    private static double GetMemoryUsagePercent()
+    {
+        if (!TryGetMemoryStatus(out var status) || status.ullTotalPhys == 0)
+        {
+            return 0;
+        }
+
+        var used = status.ullTotalPhys - status.ullAvailPhys;
+        return Math.Round(Math.Clamp(used * 100d / status.ullTotalPhys, 0, 100), 2);
+    }
+
+    private static IReadOnlyList<ServiceInfoRow> EnumerateServices()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Array.Empty<ServiceInfoRow>();
+        }
+
+        var manager = OpenSCManager(null, null, SC_MANAGER_ENUMERATE_SERVICE);
+        if (manager == IntPtr.Zero)
+        {
+            return Array.Empty<ServiceInfoRow>();
+        }
+
+        try
+        {
+            var resume = 0;
+            _ = EnumServicesStatusEx(
+                manager,
+                SC_ENUM_PROCESS_INFO,
+                SERVICE_WIN32,
+                SERVICE_STATE_ALL,
+                IntPtr.Zero,
+                0,
+                out var bytesNeeded,
+                out _,
+                ref resume,
+                null);
+
+            if (bytesNeeded <= 0)
+            {
+                return Array.Empty<ServiceInfoRow>();
+            }
+
+            var buffer = Marshal.AllocHGlobal(bytesNeeded);
+            try
+            {
+                resume = 0;
+                if (!EnumServicesStatusEx(
+                        manager,
+                        SC_ENUM_PROCESS_INFO,
+                        SERVICE_WIN32,
+                        SERVICE_STATE_ALL,
+                        buffer,
+                        bytesNeeded,
+                        out _,
+                        out var servicesReturned,
+                        ref resume,
+                        null))
+                {
+                    return Array.Empty<ServiceInfoRow>();
+                }
+
+                var rows = new List<ServiceInfoRow>(servicesReturned);
+                var itemSize = Marshal.SizeOf<EnumServiceStatusProcess>();
+                for (var i = 0; i < servicesReturned; i++)
+                {
+                    var item = Marshal.PtrToStructure<EnumServiceStatusProcess>(buffer + (i * itemSize));
+                    var registry = ReadServiceRegistry(item.ServiceName);
+                    var displayName = ResolveIndirectString(registry.DisplayName);
+                    if (string.IsNullOrWhiteSpace(displayName))
+                    {
+                        displayName = item.DisplayName;
+                    }
+
+                    var description = ResolveIndirectString(registry.Description);
+                    var row = new ServiceInfoRow
+                    {
+                        Name = item.ServiceName,
+                        DisplayName = string.IsNullOrWhiteSpace(displayName) ? item.ServiceName : displayName,
+                        StartupType = registry.StartupType,
+                        Status = FormatServiceStatus(item.Status.CurrentState),
+                        PathName = registry.PathName,
+                        Description = description,
+                    };
+                    row.Summary = BuildServiceSummary(row);
+                    rows.Add(row);
+                }
+
+                return rows;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(manager);
+        }
+    }
+
+    private static ServiceRegistryInfo ReadServiceRegistry(string serviceName)
+    {
+        const string root = @"SYSTEM\CurrentControlSet\Services";
+        try
+        {
+            using var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var key = hklm.OpenSubKey($@"{root}\{serviceName}", writable: false);
+            if (key is null)
+            {
+                return new ServiceRegistryInfo("Unknown", string.Empty, string.Empty, string.Empty);
+            }
+
+            return new ServiceRegistryInfo(
+                FormatStartupType(GetRegistryLong(key, "Start")),
+                GetRegistryString(key, "ImagePath"),
+                GetRegistryString(key, "Description"),
+                GetRegistryString(key, "DisplayName"));
+        }
+        catch
+        {
+            return new ServiceRegistryInfo("Unknown", string.Empty, string.Empty, string.Empty);
+        }
+    }
+
+    private static string BuildServiceSummary(ServiceInfoRow service)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(service.Description))
+        {
+            parts.Add(service.Description);
+        }
+
+        parts.Add($"Service name: {service.Name}");
+        parts.Add($"Status: {service.Status}");
+        parts.Add($"Startup: {service.StartupType}");
+        if (!string.IsNullOrWhiteSpace(service.PathName))
+        {
+            parts.Add($"Path: {service.PathName}");
+        }
+
+        return string.Join(Environment.NewLine, parts);
+    }
+
+    private static string FormatStartupType(long start)
+    {
+        return start switch
+        {
+            0 => "Boot",
+            1 => "System",
+            2 => "Automatic",
+            3 => "Manual",
+            4 => "Disabled",
+            _ => "Unknown"
+        };
+    }
+
+    private static string FormatServiceStatus(uint state)
+    {
+        return state switch
+        {
+            1 => "Stopped",
+            2 => "Start Pending",
+            3 => "Stop Pending",
+            4 => "Running",
+            5 => "Continue Pending",
+            6 => "Pause Pending",
+            7 => "Paused",
+            _ => "Unknown"
+        };
+    }
+
+    private static string ResolveIndirectString(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        if (!value.StartsWith('@'))
+        {
+            return value;
+        }
+
+        var builder = new StringBuilder(2048);
+        return SHLoadIndirectString(value, builder, (uint)builder.Capacity, IntPtr.Zero) == 0
+            ? builder.ToString()
+            : string.Empty;
+    }
+
+    private static string ReadRegistryString(RegistryHive hive, RegistryView view, string subKey, string name, string fallback)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var key = baseKey.OpenSubKey(subKey, writable: false);
+            return key?.GetValue(name)?.ToString() ?? fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static long ReadRegistryLong(RegistryHive hive, RegistryView view, string subKey, string name)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var key = baseKey.OpenSubKey(subKey, writable: false);
+            return key is null ? 0 : GetRegistryLong(key, name);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     private static IReadOnlyList<InstalledAppInfo> EnumerateInstalledApps()
     {
         const string uninstallSubKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
@@ -368,9 +674,90 @@ catch {
             }
         }
 
+        AddAppxPackages(apps);
+
         return apps.Values
             .OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static void AddAppxPackages(IDictionary<string, InstalledAppInfo> apps)
+    {
+        const string currentUserRepository = @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+        AddAppxPackagesFromKey(apps, RegistryHive.CurrentUser, RegistryView.Default, currentUserRepository);
+        AddAppxPackagesFromKey(apps, RegistryHive.LocalMachine, RegistryView.Registry64, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications");
+    }
+
+    private static void AddAppxPackagesFromKey(
+        IDictionary<string, InstalledAppInfo> apps,
+        RegistryHive hive,
+        RegistryView view,
+        string subKey)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var root = baseKey.OpenSubKey(subKey, writable: false);
+            if (root is null)
+            {
+                return;
+            }
+
+            foreach (var packageFullName in root.GetSubKeyNames())
+            {
+                using var packageKey = root.OpenSubKey(packageFullName, writable: false);
+                if (packageKey is null)
+                {
+                    continue;
+                }
+
+                var displayName = FirstNonEmpty(
+                    ResolveIndirectString(GetRegistryString(packageKey, "DisplayName")),
+                    ParseAppxDisplayName(packageFullName));
+                if (string.IsNullOrWhiteSpace(displayName))
+                {
+                    continue;
+                }
+
+                var app = new InstalledAppInfo
+                {
+                    Name = displayName,
+                    Version = ParseAppxVersion(packageFullName),
+                    Publisher = FirstNonEmpty(
+                        ResolveIndirectString(GetRegistryString(packageKey, "PublisherDisplayName")),
+                        "Microsoft Store package"),
+                    InstallLocation = FirstNonEmpty(
+                        GetRegistryString(packageKey, "PackageRootFolder"),
+                        GetRegistryString(packageKey, "Path")),
+                    SizeOnDisk = string.Empty,
+                    InstallDate = string.Empty,
+                    DisplayIcon = string.Empty,
+                    UninstallCommand = string.Empty
+                };
+
+                apps.TryAdd($"appx|{packageFullName}", app);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static string ParseAppxDisplayName(string packageFullName)
+    {
+        var index = packageFullName.IndexOf('_', StringComparison.Ordinal);
+        return index <= 0 ? packageFullName : packageFullName[..index];
+    }
+
+    private static string ParseAppxVersion(string packageFullName)
+    {
+        var parts = packageFullName.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[1] : string.Empty;
+    }
+
+    private static string FormatUptime(TimeSpan uptime)
+    {
+        return $"{(int)uptime.TotalHours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}";
     }
 
     private static bool IsHiddenUninstallEntry(RegistryKey appKey)
@@ -723,4 +1110,100 @@ catch {
         sb.AppendLine("$obj | ConvertTo-Json -Depth 5 -Compress");
         return sb.ToString();
     }
+
+    private const int SC_MANAGER_ENUMERATE_SERVICE = 0x0004;
+    private const int SC_ENUM_PROCESS_INFO = 0;
+    private const int SERVICE_WIN32 = 0x00000030;
+    private const int SERVICE_STATE_ALL = 0x00000003;
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, int desiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool CloseServiceHandle(IntPtr serviceControlManagerHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool EnumServicesStatusEx(
+        IntPtr serviceControlManagerHandle,
+        int infoLevel,
+        int serviceType,
+        int serviceState,
+        IntPtr services,
+        int bufferSize,
+        out int bytesNeeded,
+        out int servicesReturned,
+        ref int resumeHandle,
+        string? groupName);
+
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHLoadIndirectString(string source, StringBuilder outputBuffer, uint outputBufferCharacters, IntPtr reserved);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetSystemTimes(out FileTime idleTime, out FileTime kernelTime, out FileTime userTime);
+
+    private static bool TryGetMemoryStatus(out MemoryStatusEx status)
+    {
+        status = new MemoryStatusEx
+        {
+            dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>()
+        };
+        return GlobalMemoryStatusEx(ref status);
+    }
+
+    private static long ToLong(FileTime fileTime)
+        => ((long)fileTime.HighDateTime << 32) + fileTime.LowDateTime;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct EnumServiceStatusProcess
+    {
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string ServiceName;
+
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string DisplayName;
+
+        public ServiceStatusProcess Status;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        public uint ServiceType;
+        public uint CurrentState;
+        public uint ControlsAccepted;
+        public uint Win32ExitCode;
+        public uint ServiceSpecificExitCode;
+        public uint CheckPoint;
+        public uint WaitHint;
+        public uint ProcessId;
+        public uint ServiceFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MemoryStatusEx
+    {
+        public uint dwLength;
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileTime
+    {
+        public uint LowDateTime;
+        public uint HighDateTime;
+    }
+
+    private sealed record ServiceRegistryInfo(string StartupType, string PathName, string Description, string DisplayName);
+
+    private sealed record CpuSample(long Idle, long Kernel, long User);
 }

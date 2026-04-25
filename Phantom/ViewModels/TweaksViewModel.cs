@@ -723,7 +723,18 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private async Task RunToggleBatchOperationsAsync(IReadOnlyList<TweakDefinition> tweaks, bool undo)
     {
         var operations = tweaks.Select(BuildApplyOperation).ToList();
-        await RunOperationsAsync(operations, undo, CancellationToken.None).ConfigureAwait(false);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(10);
+        while (DateTimeOffset.UtcNow < deadline && !_disposed)
+        {
+            if (await RunOperationsAsync(operations, undo, CancellationToken.None).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false);
+        }
+
+        _console.Publish("Warning", "Queued tweak batch timed out waiting for the current operation to finish.");
     }
 
     public async Task ApplyActionFromUiAsync(TweakDefinition? tweak, CancellationToken cancellationToken)
@@ -857,6 +868,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             if (string.IsNullOrWhiteSpace(tweak.DetectScript))
             {
                 updates.Add((tweak.Id, "Unknown", false));
+                continue;
+            }
+
+            if (CompiledTweakScriptService.TryEvaluateDetect(tweak.DetectScript, out var compiledStatus))
+            {
+                updates.Add((tweak.Id, compiledStatus, IsAppliedStatus(compiledStatus)));
                 continue;
             }
 
@@ -1036,11 +1053,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         return operations;
     }
 
-    private async Task RunOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool undo, CancellationToken externalToken)
+    private async Task<bool> RunOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool undo, CancellationToken externalToken)
     {
         if (operations.Count == 0)
         {
-            return;
+            return true;
         }
 
         CancellationToken token;
@@ -1051,7 +1068,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         catch (InvalidOperationException ex)
         {
             _console.Publish("Warning", ex.Message);
-            return;
+            return false;
         }
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, externalToken);
@@ -1062,7 +1079,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             if (!precheck.IsSuccess)
             {
                 _console.Publish("Error", precheck.Message);
-                return;
+                return true;
             }
 
             var batch = await _operationEngine.ExecuteBatchAsync(new OperationRequest
@@ -1112,6 +1129,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         {
             _executionCoordinator.Complete();
         }
+
+        return true;
     }
 
     private OperationDefinition BuildApplyOperation(TweakDefinition tweak)
@@ -1194,6 +1213,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         if (string.IsNullOrWhiteSpace(tweak.DetectScript))
         {
             return false;
+        }
+
+        if (CompiledTweakScriptService.TryEvaluateDetect(tweak.DetectScript, out var compiledStatus))
+        {
+            return IsAppliedStatus(compiledStatus) == desiredApplied;
         }
 
         var result = await _queryService.InvokeAsync(tweak.DetectScript, cancellationToken, echoToConsole: false).ConfigureAwait(false);

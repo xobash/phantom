@@ -257,6 +257,12 @@ public sealed class OperationEngine
                     var captured = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var capture in operation.StateCaptureScripts)
                     {
+                        if (CompiledTweakScriptService.TryCaptureRegistryState(capture.Name, out var capturedJson))
+                        {
+                            captured[capture.Name] = capturedJson;
+                            continue;
+                        }
+
                         var captureResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
                         {
                             OperationId = operation.Id,
@@ -331,6 +337,13 @@ public sealed class OperationEngine
                         var stepOperationId = IsStateRestoreStep(step)
                             ? "system.undo-state"
                             : operation.Id;
+
+                        if (CompiledTweakScriptService.TryExecuteMutation(step.Script, request.DryRun, out var compiledMessage))
+                        {
+                            _console.Publish("Trace", $"Operation step completed: {operation.Id}/{step.Name} ({compiledMessage})");
+                            continue;
+                        }
+
                         var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
                         {
                             OperationId = stepOperationId,
@@ -563,6 +576,15 @@ public sealed class OperationEngine
                 DetectSucceeded: false,
                 State: OperationDetectState.Unknown,
                 StatusText: "Detect script unavailable");
+        }
+
+        if (CompiledTweakScriptService.TryEvaluateDetect(operation.DetectScript, out var compiledStatus))
+        {
+            return new OperationStateEvaluation(
+                DetectAvailable: true,
+                DetectSucceeded: true,
+                State: OperationStatusParser.Parse(compiledStatus),
+                StatusText: compiledStatus);
         }
 
         var detect = await _runner.ExecuteAsync(new PowerShellExecutionRequest

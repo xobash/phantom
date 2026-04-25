@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -18,7 +17,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
     private readonly ConsoleStreamService _console;
     private readonly NetworkGuardService _networkGuard;
     private readonly StoreInstallService _storeInstallService;
-    private readonly PowerShellQueryService _queryService;
+    private readonly PackageExecutionService _packageExecution;
     private readonly Func<AppSettings> _settingsAccessor;
 
     private bool _wingetInstalled;
@@ -35,7 +34,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         ConsoleStreamService console,
         NetworkGuardService networkGuard,
         StoreInstallService storeInstallService,
-        PowerShellQueryService queryService,
+        PackageExecutionService packageExecution,
         Func<AppSettings> settingsAccessor)
     {
         _catalogService = catalogService;
@@ -45,7 +44,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         _console = console;
         _networkGuard = networkGuard;
         _storeInstallService = storeInstallService;
-        _queryService = queryService;
+        _packageExecution = packageExecution;
         _settingsAccessor = settingsAccessor;
 
         Catalog = new ObservableCollection<CatalogApp>();
@@ -245,9 +244,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
 
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
     {
-        var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = BuildOperationsForSelected(selected, app => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install));
-        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+        await ExecutePackageSelectionAsync(PackageAction.Install, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DiscoverSelectedAsync(CancellationToken cancellationToken)
@@ -259,75 +256,109 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             return;
         }
 
-        foreach (var app in selected)
+        var results = await _packageExecution.DiscoverAsync(selected, cancellationToken).ConfigureAwait(false);
+        foreach (var result in results)
         {
-            try
-            {
-                var script = OperationDefinitionFactory.BuildPackageDiscoveryScript(app);
-                var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
-                var output = (result.Stdout + Environment.NewLine + result.Stderr).Trim();
-                _console.Publish(result.ExitCode == 0 ? "Info" : "Error", $"{app.DisplayName} discovery: {output}");
-            }
-            catch (Exception ex)
-            {
-                _console.Publish("Error", $"{app.DisplayName} discovery failed: {ex.Message}");
-            }
+            _console.Publish(result.Success ? "Info" : "Error", $"{result.App.DisplayName} discovery: {result.Message}");
         }
     }
 
     private async Task UninstallSelectedAsync(CancellationToken cancellationToken)
     {
-        var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = BuildOperationsForSelected(selected, BuildUninstallOperation);
-        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+        await ExecutePackageSelectionAsync(PackageAction.Uninstall, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UpgradeSelectedAsync(CancellationToken cancellationToken)
     {
-        var selected = Catalog.Where(x => x.Selected).ToList();
-        var operations = BuildOperationsForSelected(selected, BuildUpgradeOperation);
-        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+        await ExecutePackageSelectionAsync(PackageAction.Upgrade, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RefreshPackageStatusAsync(CancellationToken cancellationToken)
     {
         var apps = await Application.Current.Dispatcher.InvokeAsync(() => Catalog.ToList());
-        var updates = new List<(CatalogApp App, PackageStatusResult Status)>(apps.Count);
-
-        foreach (var app in apps)
-        {
-            try
-            {
-                var script = OperationDefinitionFactory.BuildPackageStatusScript(app);
-                var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
-                var output = (result.Stdout + Environment.NewLine + result.Stderr).Trim();
-                var status = result.ExitCode == 0 && !string.IsNullOrWhiteSpace(output)
-                    ? JsonSerializer.Deserialize<PackageStatusResult>(output, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? PackageStatusResult.Unknown("Empty package status JSON.")
-                    : PackageStatusResult.Unknown(string.IsNullOrWhiteSpace(output) ? "No package status output." : output);
-                updates.Add((app, status));
-            }
-            catch (Exception ex)
-            {
-                updates.Add((app, PackageStatusResult.Unknown(ex.Message)));
-            }
-        }
+        var updates = await _packageExecution.GetStatusAsync(apps, cancellationToken).ConfigureAwait(false);
 
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             foreach (var update in updates)
             {
-                update.App.Status = update.Status.Status;
-                update.App.InstalledVersion = update.Status.InstalledVersion;
-                update.App.AvailableVersion = update.Status.AvailableVersion;
-                update.App.SourceSummary = string.IsNullOrWhiteSpace(update.Status.Manager)
-                    ? BuildSourceSummary(update.App)
-                    : $"{update.Status.Manager}:{update.Status.PackageId}";
+                update.App.Status = update.Status;
+                update.App.InstalledVersion = update.InstalledVersion;
+                update.App.AvailableVersion = update.AvailableVersion;
+                update.App.SourceSummary = update.SourceSummary;
             }
 
             CatalogView.Refresh();
         });
 
         _console.Publish("Info", $"Package state refreshed: {updates.Count} catalog entries.");
+    }
+
+    private async Task ExecutePackageSelectionAsync(PackageAction action, CancellationToken externalToken)
+    {
+        var selected = await Application.Current.Dispatcher.InvokeAsync(() => Catalog.Where(x => x.Selected).ToList());
+        if (selected.Count == 0)
+        {
+            _console.Publish("Info", "No items selected.");
+            return;
+        }
+
+        if (action != PackageAction.Uninstall && !_networkGuard.IsOnline())
+        {
+            _console.Publish("Error", "Offline detected. Store action blocked before execution.");
+            return;
+        }
+
+        CancellationToken token;
+        try
+        {
+            token = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, externalToken);
+        try
+        {
+            var results = await _packageExecution.ExecuteAsync(selected, action, linked.Token).ConfigureAwait(false);
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                foreach (var result in results)
+                {
+                    result.App.Status = result.Success
+                        ? action switch
+                        {
+                            PackageAction.Install => "Installed",
+                            PackageAction.Uninstall => "Ready",
+                            PackageAction.Upgrade => "Updated",
+                            _ => "Done"
+                        }
+                        : "Failed";
+                }
+
+                CatalogView.Refresh();
+            });
+
+            foreach (var result in results)
+            {
+                _console.Publish(result.Success ? "Info" : "Error", $"{result.App.DisplayName}: {result.Message}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", "Store package operation cancelled.");
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Store package operation failed: {ex.Message}");
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+        }
     }
 
     private async Task<bool> ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
@@ -432,44 +463,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         InstallSelectedCommand.RaiseCanExecuteChanged();
         UninstallSelectedCommand.RaiseCanExecuteChanged();
         UpgradeSelectedCommand.RaiseCanExecuteChanged();
-    }
-
-    private IReadOnlyList<OperationDefinition> BuildOperationsForSelected(
-        IReadOnlyList<CatalogApp> selected,
-        Func<CatalogApp, OperationDefinition> operationBuilder)
-    {
-        var operations = new List<OperationDefinition>();
-        foreach (var app in selected)
-        {
-            if (!HasAutomaticPackageSource(app))
-            {
-                _console.Publish("Warning", $"{app.DisplayName}: manual-only entry has no automatic package source.");
-                continue;
-            }
-
-            try
-            {
-                operations.Add(operationBuilder(app));
-            }
-            catch (ArgumentException ex)
-            {
-                _console.Publish("Error", ex.Message);
-            }
-        }
-
-        return operations;
-    }
-
-    private static bool HasAutomaticPackageSource(CatalogApp app)
-    {
-        return !app.ManualOnly &&
-               (!string.IsNullOrWhiteSpace(app.WingetId) ||
-                !string.IsNullOrWhiteSpace(app.ScoopId) ||
-                !string.IsNullOrWhiteSpace(app.ChocoId) ||
-                !string.IsNullOrWhiteSpace(app.PipId) ||
-                !string.IsNullOrWhiteSpace(app.NpmId) ||
-                !string.IsNullOrWhiteSpace(app.DotNetToolId) ||
-                !string.IsNullOrWhiteSpace(app.PowerShellGalleryId));
     }
 
     private static OperationDefinition BuildInstallWingetOperation()
@@ -606,15 +599,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         };
     }
 
-    private OperationDefinition BuildInstallOperation(CatalogApp app)
-        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install);
-
-    private OperationDefinition BuildUninstallOperation(CatalogApp app)
-        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Uninstall);
-
-    private OperationDefinition BuildUpgradeOperation(CatalogApp app)
-        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Upgrade);
-
     private async Task UpdateAppStatusAsync(CatalogApp app, string status)
     {
         if (Application.Current?.Dispatcher is { } dispatcher)
@@ -699,22 +683,5 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         _disposed = true;
         _executionCoordinator.RunningChanged -= OnExecutionCoordinatorRunningChanged;
         GC.SuppressFinalize(this);
-    }
-
-    private sealed class PackageStatusResult
-    {
-        public string Status { get; set; } = "Unknown";
-        public string Manager { get; set; } = string.Empty;
-        public string PackageId { get; set; } = string.Empty;
-        public bool Installed { get; set; }
-        public string InstalledVersion { get; set; } = string.Empty;
-        public string AvailableVersion { get; set; } = string.Empty;
-        public string Message { get; set; } = string.Empty;
-
-        public static PackageStatusResult Unknown(string message) => new()
-        {
-            Status = "Unknown",
-            Message = message
-        };
     }
 }

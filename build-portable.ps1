@@ -13,7 +13,7 @@ if (-not $dotnet) {
   exit 1
 }
 
-dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $outDir
+dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:PublishTrimmed=false -o $outDir
 if ($LASTEXITCODE -ne 0) {
   Write-Error 'dotnet publish failed.'
   exit $LASTEXITCODE

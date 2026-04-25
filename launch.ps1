@@ -248,7 +248,7 @@ if (-not (Remove-DirectoryWithRetry $AppDir)) {
     return
 }
 
-dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $AppDir
+dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:PublishTrimmed=false -o $AppDir
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "dotnet publish failed. See output above."

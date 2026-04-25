@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -13,6 +14,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
     private readonly HomeDataService _homeData;
     private readonly ConsoleStreamService _console;
     private readonly IPowerShellRunner _runner;
+    private readonly ExternalProcessRunner _processRunner;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
     private readonly IUserPromptService _promptService;
@@ -26,6 +28,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         HomeDataService homeData,
         ConsoleStreamService console,
         IPowerShellRunner runner,
+        ExternalProcessRunner processRunner,
         OperationEngine operationEngine,
         ExecutionCoordinator executionCoordinator,
         IUserPromptService promptService,
@@ -34,6 +37,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         _homeData = homeData;
         _console = console;
         _runner = runner;
+        _processRunner = processRunner;
         _operationEngine = operationEngine;
         _executionCoordinator = executionCoordinator;
         _promptService = promptService;
@@ -135,9 +139,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
-        var script = $"Stop-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
-        return ExecuteManagedOperationAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true);
+        return ExecuteServiceControlAsync("services.stop", safeName, [["stop", safeName]], cancellationToken, refreshAfter: true);
     }
 
     private Task RestartServiceAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -153,9 +155,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
-        var script = $"Restart-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
-        return ExecuteManagedOperationAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true);
+        return ExecuteServiceControlAsync("services.restart", safeName, [["stop", safeName], ["start", safeName]], cancellationToken, refreshAfter: true);
     }
 
     private Task BrowseServiceLocationAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -179,7 +179,8 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        return ExecuteTransientScriptAsync("services.browse", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(folder)}'", cancellationToken, refreshAfter: false);
+        StartExplorer(folder);
+        return Task.CompletedTask;
     }
 
     private Task SearchOnlineAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -190,8 +191,8 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         }
 
         var query = Uri.EscapeDataString($"{service.DisplayName} {service.Name} windows service");
-        var url = $"https://www.bing.com/search?q={query}";
-        return ExecuteTransientScriptAsync("services.search", service.Name, $"Start-Process -FilePath 'explorer.exe' -ArgumentList '{EscapeSingleQuotes(url)}'", cancellationToken, refreshAfter: false);
+        StartExplorer($"https://www.bing.com/search?q={query}");
+        return Task.CompletedTask;
     }
 
     private Task SetModeAsync(ServiceInfoRow? service, string mode, CancellationToken cancellationToken)
@@ -218,9 +219,69 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             return Task.CompletedTask;
         }
 
-        var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
-        var script = $"Set-Service -Name {serviceLiteral} -StartupType {safeMode} -ErrorAction Stop";
-        return ExecuteManagedOperationAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true);
+        var scMode = safeMode switch
+        {
+            "Automatic" => "auto",
+            "Manual" => "demand",
+            "Disabled" => "disabled",
+            _ => "demand"
+        };
+        return ExecuteServiceControlAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, [["config", safeName, "start=", scMode]], cancellationToken, refreshAfter: true);
+    }
+
+    private async Task ExecuteServiceControlAsync(
+        string operationId,
+        string serviceName,
+        IReadOnlyList<IReadOnlyList<string>> commandBatches,
+        CancellationToken cancellationToken,
+        bool refreshAfter)
+    {
+        CancellationToken coordinatorToken;
+        try
+        {
+            coordinatorToken = _executionCoordinator.Begin();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _console.Publish("Warning", ex.Message);
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(coordinatorToken, cancellationToken);
+        try
+        {
+            foreach (var arguments in commandBatches)
+            {
+                var result = await _processRunner.RunAsync(new ExternalProcessRequest
+                {
+                    OperationId = operationId,
+                    StepName = serviceName,
+                    FilePath = "sc.exe",
+                    Arguments = arguments,
+                    Timeout = TimeSpan.FromSeconds(30)
+                }, linked.Token).ConfigureAwait(false);
+
+                if (!result.Success)
+                {
+                    var message = string.IsNullOrWhiteSpace(result.Stderr) ? result.Stdout : result.Stderr;
+                    _console.Publish("Error", $"{operationId} failed for {serviceName}: {message}");
+                    return;
+                }
+            }
+
+            if (refreshAfter)
+            {
+                await RefreshAsync(linked.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", $"{operationId}: operation cancelled.");
+        }
+        finally
+        {
+            _executionCoordinator.Complete();
+        }
     }
 
     private async Task ExecuteManagedOperationAsync(
@@ -365,6 +426,16 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         }
 
         return text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+    }
+
+    private static void StartExplorer(string target)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = WindowsCommandLine.QuoteArgument(target),
+            UseShellExecute = true
+        });
     }
 
     private static string EscapeSingleQuotes(string text) => PowerShellInputSanitizer.EscapeSingleQuotes(text);

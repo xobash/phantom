@@ -40,8 +40,10 @@ public sealed class AppBootstrap : IDisposable
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme, Paths);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
         Apps = new AppsViewModel(HomeData, Console, Runner);
-        Services = new ServicesViewModel(HomeData, Console, Runner, Operations, ExecutionCoordinator, Prompt, () => SettingsProvider.Current);
-        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, Query, () => SettingsProvider.Current);
+        PackageExecution = new PackageExecutionService(PackageManagers, ProcessRunner, Console);
+
+        Services = new ServicesViewModel(HomeData, Console, Runner, ProcessRunner, Operations, ExecutionCoordinator, Prompt, () => SettingsProvider.Current);
+        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, PackageExecution, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
         Fixes = new FixesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Runner, () => SettingsProvider.Current);
@@ -68,6 +70,7 @@ public sealed class AppBootstrap : IDisposable
     public ExternalProcessRunner ProcessRunner { get; }
     public PackageManagerResolver PackageManagers { get; }
     public StoreInstallService StoreInstaller { get; }
+    public PackageExecutionService PackageExecution { get; }
     public OperationEngine Operations { get; }
     public DefinitionCatalogService Definitions { get; }
     public IUserPromptService Prompt { get; }

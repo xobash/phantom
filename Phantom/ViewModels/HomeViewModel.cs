@@ -106,12 +106,14 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     public RelayCommand<string> RefreshCardCommand { get; }
     public AsyncRelayCommand RunWinsatCommand { get; }
 
-    public async Task InitializeAsync(CancellationToken cancellationToken)
+    public Task InitializeAsync(CancellationToken cancellationToken)
     {
         _timer.Interval = TimeSpan.FromSeconds(Math.Max(2, _settingsAccessor().HomeRefreshSeconds));
         _timer.Start();
         _fastMetricsTimer.Start();
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        SeedInitialTiles();
+        _ = SafeFireAndForgetAsync(RefreshAsync(cancellationToken));
+        return Task.CompletedTask;
     }
 
     public void StopTimer()
@@ -271,6 +273,37 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
                 _ = SafeFireAndForgetAsync(RefreshAsync(CancellationToken.None, queueIfBusy: true));
             }
         }
+    }
+
+    private void SeedInitialTiles()
+    {
+        if (Application.Current.Dispatcher.CheckAccess())
+        {
+            SeedInitialTilesOnUiThread();
+            return;
+        }
+
+        Application.Current.Dispatcher.Invoke(SeedInitialTilesOnUiThread);
+    }
+
+    private void SeedInitialTilesOnUiThread()
+    {
+        UpsertTopCard("System", "Loading...");
+        UpsertTopCard("Graphics", "Loading...");
+        UpsertTopCard("Storage", "Loading...");
+        UpsertTopCard("Uptime", "Loading...");
+        UpsertTopCard("Processor", "Loading...");
+        UpsertTopCard("Memory", "Loading...");
+        UpsertTopCard("Windows", "Loading...");
+        UpsertTopCard("Performance", "Unavailable", PerformanceTooltipText);
+        UpsertKpiTile("Apps", "...");
+        UpsertKpiTile("Processes", "...");
+        UpsertKpiTile("Services", "...");
+        UpsertKpiTile("Space cleaned", "...");
+        UpsertKpiTile("CPU %", "...");
+        UpsertKpiTile("GPU %", "...");
+        UpsertKpiTile("Memory %", "...");
+        UpsertKpiTile("Network", "...");
     }
 
     private async Task RunWinsatAsync(CancellationToken cancellationToken)

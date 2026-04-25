@@ -10,6 +10,8 @@ public sealed class ExternalProcessRequest
     public string FilePath { get; init; } = string.Empty;
     public IReadOnlyList<string> Arguments { get; init; } = Array.Empty<string>();
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(10);
+    public bool EchoCommand { get; init; } = true;
+    public bool EchoOutput { get; init; } = true;
 }
 
 public sealed class ExternalProcessResult
@@ -46,7 +48,10 @@ public sealed class ExternalProcessRunner
 
         var args = request.Arguments ?? Array.Empty<string>();
         var argsText = string.Join(" ", args.Select(WindowsCommandLine.QuoteArgument));
-        _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.FilePath} {argsText}".TrimEnd());
+        if (request.EchoCommand)
+        {
+            _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.FilePath} {argsText}".TrimEnd());
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var stdout = new StringBuilder();
@@ -80,13 +85,19 @@ public sealed class ExternalProcessRunner
             stdoutTask = PumpStreamAsync(process.StandardOutput, line =>
             {
                 stdout.AppendLine(line);
-                _console.Publish("Output", line);
+                if (request.EchoOutput)
+                {
+                    _console.Publish("Output", line);
+                }
             }, effectiveToken);
 
             stderrTask = PumpStreamAsync(process.StandardError, line =>
             {
                 stderr.AppendLine(line);
-                _console.Publish("Error", line);
+                if (request.EchoOutput)
+                {
+                    _console.Publish("Error", line);
+                }
             }, effectiveToken);
 
             await process.WaitForExitAsync(effectiveToken).ConfigureAwait(false);

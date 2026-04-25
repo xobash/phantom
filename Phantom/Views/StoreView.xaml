@@ -12,6 +12,14 @@
             <Setter Property="FontSize" Value="18"/>
             <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
         </Style>
+        <Style x:Key="StoreInfoChipStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource DarkBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource DarkCard2Brush}"/>
+        </Style>
     </UserControl.Resources>
     <Grid Background="{DynamicResource AppBgBrush}">
         <Grid.ColumnDefinitions>
@@ -141,13 +149,51 @@
                     <DataGridTemplateColumn Header="App" Width="*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayName}"
-                                           Style="{StaticResource StoreGridTextStyle}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="30"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding DisplayName}"
+                                               Style="{StaticResource StoreGridTextStyle}"/>
+
+                                    <Border Grid.Column="1"
+                                            Style="{StaticResource StoreInfoChipStyle}"
+                                            Cursor="Help"
+                                            HorizontalAlignment="Right"
+                                            ToolTipService.ShowDuration="60000"
+                                            ToolTipService.InitialShowDelay="120">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="{DynamicResource DarkCard2Brush}"
+                                                     Foreground="{DynamicResource DarkTextBrush}"
+                                                     BorderBrush="{DynamicResource DarkBorderBrush}"
+                                                     BorderThickness="1"
+                                                     MaxWidth="520"
+                                                     Placement="Mouse">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource DarkTextBrush}"/>
+                                                    <TextBlock Text="{Binding SourceSummary}"
+                                                               Margin="0,4,0,0"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource DarkTextBrush}"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <TextBlock Text="i"
+                                                   FontWeight="Bold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="14"/>
+                                    </Border>
+                                </Grid>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="190"/>
-                    <DataGridTextColumn Header="Source" Binding="{Binding SourceSummary}" Width="220"/>
                     <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="110"/>
                     <DataGridTextColumn Header="Available" Binding="{Binding AvailableVersion}" Width="110"/>
                 </DataGrid.Columns>
