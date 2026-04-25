@@ -138,14 +138,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
     public async Task<PowerShellExecutionResult> ExecuteAsync(PowerShellExecutionRequest request, CancellationToken cancellationToken)
     {
         var scriptHash = CatalogTrustService.ComputeScriptHash(request.Script);
-        _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
-        await _log.WriteAsync("Command", request.Script, cancellationToken).ConfigureAwait(false);
+        if (!request.SuppressConsoleOutput)
+        {
+            _console.Publish("Command", $"[{request.OperationId}/{request.StepName}] {request.Script}");
+        }
+
+        await _log.WriteAsync("Command", request.Script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
         await _log.WriteAsync(
                 "Security",
                 $"ScriptAudit op={request.OperationId} step={request.StepName} hash={scriptHash} dryRun={request.DryRun} processMode={request.PreferProcessMode}",
-                cancellationToken)
+                cancellationToken,
+                echoToConsole: !request.SuppressConsoleOutput)
             .ConfigureAwait(false);
-        _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}, processMode={request.PreferProcessMode}");
+        if (!request.SuppressConsoleOutput)
+        {
+            _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync start. op={request.OperationId}, step={request.StepName}, dryRun={request.DryRun}, processMode={request.PreferProcessMode}");
+        }
 
         if (!ValidateOperationAllowlist(request.OperationId, out var blockedOperationReason))
         {
@@ -222,14 +230,22 @@ public sealed class PowerShellRunner : IPowerShellRunner
             if (request.PreferProcessMode)
             {
                 var processModeResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
-                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync preferred process mode completed. op={request.OperationId}, step={request.StepName}, exit={processModeResult.ExitCode}, success={processModeResult.Success}");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync preferred process mode completed. op={request.OperationId}, step={request.StepName}, exit={processModeResult.ExitCode}, success={processModeResult.Success}");
+                }
+
                 return processModeResult;
             }
 
             try
             {
                 var runspaceResult = await ExecuteViaRunspaceAsync(request, effectiveToken).ConfigureAwait(false);
-                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync runspace completed. op={request.OperationId}, step={request.StepName}, exit={runspaceResult.ExitCode}, success={runspaceResult.Success}");
+                }
+
                 return runspaceResult;
             }
             catch (OperationCanceledException)
@@ -254,7 +270,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 _console.Publish("Security", $"Runspace unavailable for verification step, falling back to external PowerShell host. {ex.Message}");
                 await _log.WriteAsync("Security", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
                 var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
-                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                }
+
                 return processResult;
             }
             catch (InvalidOperationException ex) when (!effectiveToken.IsCancellationRequested)
@@ -275,7 +295,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 _console.Publish("Security", $"Runspace unavailable for verification step, falling back to external PowerShell host. {ex.Message}");
                 await _log.WriteAsync("Security", $"Runspace fallback ({request.OperationId}/{request.StepName}): {ex}", effectiveToken).ConfigureAwait(false);
                 var processResult = await ExecuteViaProcessAsync(request, effectiveToken).ConfigureAwait(false);
-                _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Trace", $"PowerShellRunner.ExecuteAsync process fallback completed. op={request.OperationId}, step={request.StepName}, exit={processResult.ExitCode}, success={processResult.Success}");
+                }
+
                 return processResult;
             }
             catch (RuntimeException ex) when (!effectiveToken.IsCancellationRequested)
@@ -628,7 +652,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Output", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Output", normalized);
+                }
             };
             output.DataAdded += outputDataAdded;
 
@@ -650,7 +677,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Error", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Error", normalized);
+                }
             };
             ps.Streams.Error.DataAdded += errorDataAdded;
 
@@ -671,7 +701,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Warning", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Warning", normalized);
+                }
             };
             ps.Streams.Warning.DataAdded += warningDataAdded;
 
@@ -692,7 +725,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Verbose", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Verbose", normalized);
+                }
             };
             ps.Streams.Verbose.DataAdded += verboseDataAdded;
 
@@ -713,7 +749,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Debug", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Debug", normalized);
+                }
             };
             ps.Streams.Debug.DataAdded += debugDataAdded;
 
@@ -734,7 +773,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 {
                     combined.AppendLine(normalized);
                 }
-                _console.Publish("Information", normalized);
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Information", normalized);
+                }
             };
             ps.Streams.Information.DataAdded += informationDataAdded;
 
@@ -779,7 +821,11 @@ public sealed class PowerShellRunner : IPowerShellRunner
             var success = invocationState is PSInvocationState.Completed;
             if (!success && isDetectStep && hasExplicitDetectState)
             {
-                _console.Publish("Trace", "Detect step returned an explicit state despite runspace errors; treating detect as successful.");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Trace", "Detect step returned an explicit state despite runspace errors; treating detect as successful.");
+                }
+
                 success = true;
             }
             else if (success && ps.HadErrors)
@@ -787,16 +833,26 @@ public sealed class PowerShellRunner : IPowerShellRunner
                 if (ContainsWingetFailureMarker(request.Script, combinedText))
                 {
                     success = false;
-                    _console.Publish("Error", "Runspace completed but winget reported a package resolution failure.");
+                    if (!request.SuppressConsoleOutput)
+                    {
+                        _console.Publish("Error", "Runspace completed but winget reported a package resolution failure.");
+                    }
                 }
                 else
                 {
-                    _console.Publish("Trace", "Runspace reported non-terminating errors; treating step as successful because the script completed.");
+                    if (!request.SuppressConsoleOutput)
+                    {
+                        _console.Publish("Trace", "Runspace reported non-terminating errors; treating step as successful because the script completed.");
+                    }
                 }
             }
 
-            _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combinedText.Length}");
-            await _log.WriteAsync(success ? "Info" : "Error", combinedText, cancellationToken).ConfigureAwait(false);
+            if (!request.SuppressConsoleOutput)
+            {
+                _console.Publish("Trace", $"ExecuteViaRunspaceAsync finished. success={success}, outputChars={combinedText.Length}");
+            }
+
+            await _log.WriteAsync(success ? "Info" : "Error", combinedText, cancellationToken, echoToConsole: false).ConfigureAwait(false);
             return new PowerShellExecutionResult
             {
                 Success = success,
@@ -893,8 +949,12 @@ public sealed class PowerShellRunner : IPowerShellRunner
         psi.ArgumentList.Add(processScriptPath);
 
         var externalCommandLine = $"{psi.FileName} -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File <sha256:{CatalogTrustService.ComputeScriptHash(wrapped)}>";
-        _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
-        await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken).ConfigureAwait(false);
+        if (!request.SuppressConsoleOutput)
+        {
+            _console.Publish("Security", $"External PowerShell invocation: {externalCommandLine}");
+        }
+
+        await _log.WriteAsync("Security", $"External PowerShell invocation: {externalCommandLine}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
@@ -912,7 +972,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
             {
                 outputBuilder.AppendLine(normalized);
             }
-            _console.Publish(IsProgressMessage(normalized) ? "Progress" : "Output", normalized);
+            if (!request.SuppressConsoleOutput)
+            {
+                _console.Publish(IsProgressMessage(normalized) ? "Progress" : "Output", normalized);
+            }
         }, cancellationToken);
 
         var stderrTask = PumpProcessStreamAsync(process.StandardError, line =>
@@ -926,7 +989,10 @@ public sealed class PowerShellRunner : IPowerShellRunner
             {
                 outputBuilder.AppendLine(normalized);
             }
-            _console.Publish("Error", normalized);
+            if (!request.SuppressConsoleOutput)
+            {
+                _console.Publish("Error", normalized);
+            }
         }, cancellationToken);
 
         using var cancellationRegistration = cancellationToken.Register(() =>
@@ -953,13 +1019,19 @@ public sealed class PowerShellRunner : IPowerShellRunner
             if (success && ContainsWingetFailureMarker(request.Script, outputText))
             {
                 success = false;
-                _console.Publish("Error", "External PowerShell completed but winget reported a package resolution failure.");
+                if (!request.SuppressConsoleOutput)
+                {
+                    _console.Publish("Error", "External PowerShell completed but winget reported a package resolution failure.");
+                }
             }
 
             var effectiveExitCode = success ? process.ExitCode : (process.ExitCode == 0 ? 1 : process.ExitCode);
-            _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={effectiveExitCode}, success={success}, outputChars={outputText.Length}");
+            if (!request.SuppressConsoleOutput)
+            {
+                _console.Publish("Trace", $"ExecuteViaProcessAsync finished. exit={effectiveExitCode}, success={success}, outputChars={outputText.Length}");
+            }
 
-            await _log.WriteAsync(success ? "Info" : "Error", outputText, cancellationToken).ConfigureAwait(false);
+            await _log.WriteAsync(success ? "Info" : "Error", outputText, cancellationToken, echoToConsole: false).ConfigureAwait(false);
 
             return new PowerShellExecutionResult
             {

@@ -70,6 +70,7 @@ public sealed class PowerShellExecutionRequest
     public bool DryRun { get; set; }
     public bool PreferProcessMode { get; set; }
     public bool SkipSafetyBackup { get; set; }
+    public bool SuppressConsoleOutput { get; set; }
     public TimeSpan? Timeout { get; set; }
 }
 

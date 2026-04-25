@@ -257,15 +257,16 @@ public sealed class OperationEngine
                     var captured = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var capture in operation.StateCaptureScripts)
                     {
-                    var captureResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
-                    {
-                        OperationId = operation.Id,
-                        StepName = $"capture:{capture.Name}",
-                        Script = capture.Script,
-                        DryRun = request.DryRun,
-                        SkipSafetyBackup = true,
-                        Timeout = DetectStepTimeout
-                    }, cancellationToken).ConfigureAwait(false);
+                        var captureResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
+                        {
+                            OperationId = operation.Id,
+                            StepName = $"capture:{capture.Name}",
+                            Script = capture.Script,
+                            DryRun = request.DryRun,
+                            SkipSafetyBackup = true,
+                            SuppressConsoleOutput = true,
+                            Timeout = DetectStepTimeout
+                        }, cancellationToken).ConfigureAwait(false);
 
                         if (!captureResult.Success)
                         {
@@ -571,6 +572,7 @@ public sealed class OperationEngine
             Script = operation.DetectScript,
             DryRun = false,
             SkipSafetyBackup = true,
+            SuppressConsoleOutput = true,
             Timeout = DetectStepTimeout
         }, cancellationToken).ConfigureAwait(false);
 

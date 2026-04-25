@@ -334,7 +334,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
     {
         if (operations.Count == 0)
         {
-            _console.Publish("Info", "No items selected.");
+            _console.Publish("Info", "No automatic package operations selected.");
             return false;
         }
 
@@ -441,6 +441,12 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         var operations = new List<OperationDefinition>();
         foreach (var app in selected)
         {
+            if (!HasAutomaticPackageSource(app))
+            {
+                _console.Publish("Warning", $"{app.DisplayName}: manual-only entry has no automatic package source.");
+                continue;
+            }
+
             try
             {
                 operations.Add(operationBuilder(app));
@@ -452,6 +458,18 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         }
 
         return operations;
+    }
+
+    private static bool HasAutomaticPackageSource(CatalogApp app)
+    {
+        return !app.ManualOnly &&
+               (!string.IsNullOrWhiteSpace(app.WingetId) ||
+                !string.IsNullOrWhiteSpace(app.ScoopId) ||
+                !string.IsNullOrWhiteSpace(app.ChocoId) ||
+                !string.IsNullOrWhiteSpace(app.PipId) ||
+                !string.IsNullOrWhiteSpace(app.NpmId) ||
+                !string.IsNullOrWhiteSpace(app.DotNetToolId) ||
+                !string.IsNullOrWhiteSpace(app.PowerShellGalleryId));
     }
 
     private static OperationDefinition BuildInstallWingetOperation()

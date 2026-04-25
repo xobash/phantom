@@ -13,6 +13,8 @@ namespace Phantom.ViewModels;
 
 public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
+    private static readonly TimeSpan ToggleBatchDelay = TimeSpan.FromMilliseconds(350);
+
     private static readonly IReadOnlyDictionary<string, (string Title, string Description)> SectionMetadata =
         new Dictionary<string, (string Title, string Description)>(StringComparer.OrdinalIgnoreCase)
         {
@@ -173,7 +175,10 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private readonly PowerShellQueryService _queryService;
     private readonly Func<AppSettings> _settingsAccessor;
     private readonly SemaphoreSlim _toggleApplyLock = new(1, 1);
+    private readonly object _toggleBatchSync = new();
+    private readonly Dictionary<string, PendingToggle> _pendingToggleStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _sectionExpansionState = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _toggleBatchDelayCts;
     private bool _disposed;
     private bool _expandAllSections;
     private bool _suppressExpandAllApply;
@@ -583,36 +588,142 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         return "Apply";
     }
 
-    public async Task ApplyToggleFromUiAsync(TweakDefinition? tweak, bool enabled, CancellationToken cancellationToken)
+    public Task ApplyToggleFromUiAsync(TweakDefinition? tweak, bool enabled, CancellationToken cancellationToken)
     {
         if (tweak is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        QueueToggleBatchItem(tweak, enabled);
+        return Task.CompletedTask;
+    }
+
+    private void QueueToggleBatchItem(TweakDefinition tweak, bool enabled)
+    {
+        if (_disposed)
         {
             return;
         }
 
-        await _toggleApplyLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var delayCts = new CancellationTokenSource();
+        CancellationTokenSource? previousDelayCts;
+
+        lock (_toggleBatchSync)
+        {
+            _pendingToggleStates[tweak.Id] = new PendingToggle(tweak, enabled);
+            previousDelayCts = _toggleBatchDelayCts;
+            _toggleBatchDelayCts = delayCts;
+        }
+
+        previousDelayCts?.Cancel();
+
+        tweak.Selected = enabled;
+        tweak.Status = enabled ? "Queued apply" : "Queued undo";
+        RefreshTweaksView();
+
+        _ = RunQueuedToggleBatchAfterDelayAsync(delayCts);
+    }
+
+    private async Task RunQueuedToggleBatchAfterDelayAsync(CancellationTokenSource delayCts)
+    {
         try
         {
-            if (await IsTweakInDesiredStateAsync(tweak, enabled, cancellationToken).ConfigureAwait(false))
+            await Task.Delay(ToggleBatchDelay, delayCts.Token).ConfigureAwait(false);
+
+            List<PendingToggle> batch;
+            lock (_toggleBatchSync)
             {
-                tweak.Status = enabled ? "Applied" : "Not Applied";
-                tweak.Selected = enabled;
-                RefreshTweaksView();
-                _console.Publish("Info", $"{tweak.Name}: already in desired state, skipping.");
+                if (!ReferenceEquals(_toggleBatchDelayCts, delayCts))
+                {
+                    return;
+                }
+
+                batch = _pendingToggleStates.Values.ToList();
+                _pendingToggleStates.Clear();
+                _toggleBatchDelayCts = null;
+            }
+
+            if (batch.Count == 0 || _disposed)
+            {
                 return;
             }
 
-            tweak.Status = enabled ? "Applying..." : "Undoing...";
-            RefreshTweaksView();
+            await ExecuteQueuedToggleBatchAsync(batch).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Queued tweak batch failed: {ex.Message}");
+        }
+        finally
+        {
+            delayCts.Dispose();
+        }
+    }
 
-            var operation = BuildApplyOperation(tweak);
-            await RunOperationsAsync([operation], undo: !enabled, cancellationToken).ConfigureAwait(false);
-            await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+    private async Task ExecuteQueuedToggleBatchAsync(IReadOnlyList<PendingToggle> batch)
+    {
+        await _toggleApplyLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var applyTargets = batch
+                .Where(item => item.Enabled)
+                .Select(item => item.Tweak)
+                .ToList();
+            var undoTargets = batch
+                .Where(item => !item.Enabled)
+                .Select(item => item.Tweak)
+                .ToList();
+
+            await MarkToggleTargetsAsync(applyTargets, "Applying...").ConfigureAwait(false);
+            await MarkToggleTargetsAsync(undoTargets, "Undoing...").ConfigureAwait(false);
+
+            _console.Publish("Info", $"Applying {batch.Count} queued tweak change{(batch.Count == 1 ? string.Empty : "s")}.");
+
+            if (applyTargets.Count > 0)
+            {
+                await RunToggleBatchOperationsAsync(applyTargets, undo: false).ConfigureAwait(false);
+            }
+
+            if (undoTargets.Count > 0)
+            {
+                await RunToggleBatchOperationsAsync(undoTargets, undo: true).ConfigureAwait(false);
+            }
+
+            await RefreshStatusAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
             _toggleApplyLock.Release();
         }
+    }
+
+    private async Task MarkToggleTargetsAsync(IReadOnlyList<TweakDefinition> tweaks, string status)
+    {
+        if (tweaks.Count == 0)
+        {
+            return;
+        }
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var tweak in tweaks)
+            {
+                tweak.Status = status;
+            }
+
+            RefreshTweaksView();
+        });
+    }
+
+    private async Task RunToggleBatchOperationsAsync(IReadOnlyList<TweakDefinition> tweaks, bool undo)
+    {
+        var operations = tweaks.Select(BuildApplyOperation).ToList();
+        await RunOperationsAsync(operations, undo, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task ApplyActionFromUiAsync(TweakDefinition? tweak, CancellationToken cancellationToken)
@@ -1273,6 +1384,17 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         }
 
         _disposed = true;
+        CancellationTokenSource? pendingToggleDelay;
+        lock (_toggleBatchSync)
+        {
+            pendingToggleDelay = _toggleBatchDelayCts;
+            _toggleBatchDelayCts = null;
+            _pendingToggleStates.Clear();
+        }
+
+        pendingToggleDelay?.Cancel();
+        pendingToggleDelay?.Dispose();
+
         foreach (var section in Sections)
         {
             section.PropertyChanged -= OnSectionPropertyChanged;
@@ -1308,4 +1430,6 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     }
 
     public sealed record TweakScanFinding(string TweakId, string Name, string Classification, string Status);
+
+    private sealed record PendingToggle(TweakDefinition Tweak, bool Enabled);
 }

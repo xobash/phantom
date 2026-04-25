@@ -95,8 +95,12 @@ public sealed class StoreInstallPipelineTests
         Assert.False(operation.Reversible);
         var script = Assert.Single(operation.RunScripts).Script;
         Assert.Contains("scoop install 'tool'", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("winget install --id 'Vendor.Tool' --exact --source winget", script, StringComparison.OrdinalIgnoreCase);
         Assert.True(script.IndexOf("scoop install", StringComparison.OrdinalIgnoreCase) <
                     script.IndexOf("winget install", StringComparison.OrdinalIgnoreCase));
+
+        var uninstall = OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Uninstall);
+        Assert.Contains("winget uninstall --id 'Vendor.Tool' --exact --source winget", Assert.Single(uninstall.RunScripts).Script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
