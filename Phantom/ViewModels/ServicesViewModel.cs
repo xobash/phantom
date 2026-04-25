@@ -97,11 +97,11 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 
         try
         {
-            var snapshot = await _homeData.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var serviceRows = await _homeData.GetServicesAsync(cancellationToken).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Services.Clear();
-                foreach (var service in snapshot.Services.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
+                foreach (var service in serviceRows.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
                 {
                     service.Summary = ResolveSummary(service);
                     Services.Add(service);

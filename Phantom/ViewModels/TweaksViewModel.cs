@@ -47,9 +47,13 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["hide-task-view-button"] = "startmenu",
             ["revert-new-start-menu"] = "startmenu",
             ["disable-telemetry"] = "privacy",
+            ["disable-advertising-id"] = "privacy",
             ["disable-background-apps"] = "privacy",
             ["background-apps"] = "privacy",
+            ["disable-tailored-experiences"] = "privacy",
+            ["disable-feedback-frequency"] = "privacy",
             ["disable-delivery-optimization"] = "privacy",
+            ["delivery-optimization-lan-only"] = "privacy",
             ["activity-history"] = "privacy",
             ["disable-copilot"] = "privacy",
             ["disable-location-tracking"] = "privacy",
@@ -58,6 +62,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["disable-notification-tray-calendar"] = "privacy",
             ["disable-consumer-features"] = "ads",
             ["disable-windows-tips"] = "ads",
+            ["disable-content-suggestions"] = "ads",
             ["remove-widgets"] = "ads",
             ["disable-gamedvr"] = "system",
             ["high-performance-plan"] = "system",
@@ -91,6 +96,9 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["disable-fullscreen-optimizations"] = "system",
             ["search-indexing"] = "system",
             ["delivery-optimization"] = "system",
+            ["enable-defender-pua-protection"] = "system",
+            ["disable-llmnr"] = "system",
+            ["disable-wpad-autodetect"] = "system",
             ["network-adapter-onboard-processor"] = "system",
             ["disable-ipv6"] = "system",
             ["prefer-ipv4-over-ipv6"] = "system",
@@ -139,6 +147,15 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["activity-history"] = "disable-activity-history",
             ["delivery-optimization"] = "disable-delivery-optimization"
         };
+
+    private static readonly HashSet<string> SuppressedTweakIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "adobe-network-block",
+        "disable-ipv6",
+        "remove-edge",
+        "set-display-for-performance",
+        "set-services-to-manual"
+    };
 
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
@@ -296,6 +313,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     private bool IsTweakVisibleForCurrentSystem(TweakDefinition tweak)
     {
+        if (SuppressedTweakIds.Contains(tweak.Id))
+        {
+            return false;
+        }
+
         if (string.Equals(tweak.Id, "brave-debloat", StringComparison.OrdinalIgnoreCase))
         {
             return _isBraveInstalled;
@@ -898,7 +920,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             StateCaptureScripts = tweak.StateCaptureKeys.Select(key => new PowerShellStep
             {
                 Name = key,
-                Script = BuildCaptureScript(key)
+                Script = TweakStateScriptFactory.BuildCaptureScript(key)
             }).ToArray(),
             RunScripts =
             [
@@ -917,28 +939,6 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
                 }
             ]
         };
-    }
-
-    private static string BuildCaptureScript(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return "$null";
-        }
-
-        var escaped = key.Replace("'", "''");
-        return "$WarningPreference='Continue'; " +
-               $"$p='{escaped}'; " +
-               "if (Test-Path $p) { " +
-               "$item = Get-ItemProperty -Path $p -ErrorAction Stop; " +
-               "$out = [ordered]@{}; " +
-               "foreach ($prop in $item.PSObject.Properties) { " +
-               "if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }; " +
-               "$value = $prop.Value; " +
-               "if ($value -is [byte[]]) { $out[$prop.Name] = [Convert]::ToBase64String($value) } else { $out[$prop.Name] = $value } " +
-               "}; " +
-               "$out | ConvertTo-Json -Depth 8 -Compress " +
-               "} else { '' }";
     }
 
     private bool FilterTweaks(object obj)

@@ -2,12 +2,15 @@ using System.Diagnostics;
 using System.Text;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
 
 namespace Phantom.Services;
 
 public sealed class PowerShellQueryService
 {
     private const string DiagnosticScriptLoggingEnvironmentVariable = "PHANTOM_DIAGNOSTIC_SCRIPT_LOGGING";
+    private const string QueryBootstrapScript = "$ErrorActionPreference='Continue';$PSDefaultParameterValues['*:ErrorAction']='Stop';$ProgressPreference='SilentlyContinue';$VerbosePreference='SilentlyContinue';$InformationPreference='Continue';";
     private static readonly Regex SecretAssignmentRegex = new(
         @"(?im)\b(api[_-]?key|token|password|secret)\b\s*[:=]\s*(['""]?)(?<value>[^'""]+)\2",
         RegexOptions.Compiled);
@@ -113,129 +116,162 @@ public sealed class PowerShellQueryService
             return (1, string.Empty, "Not running on Windows.");
         }
 
-        var (process, host, error, commandLine) = StartPowerShellProcess(script);
-        if (process is null)
+        string host;
+        string stdout;
+        string stderr;
+        int exitCode;
+
+        string? runspaceFallbackReason = null;
+
+        try
         {
-            var failedStart = string.IsNullOrWhiteSpace(error)
-                ? "Failed to start PowerShell host."
-                : error;
-            if (echoToConsole)
+            host = "runspace";
+            (exitCode, stdout, stderr) = await InvokeViaRunspaceAsync(script, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            runspaceFallbackReason = ex.Message;
+            var (process, processHost, error, commandLine) = StartPowerShellProcess(script);
+            if (process is null)
             {
-                _console.Publish("Error", failedStart, persist: false);
+                var failedStart = string.IsNullOrWhiteSpace(error)
+                    ? "Failed to start PowerShell host."
+                    : error;
+                if (echoToConsole)
+                {
+                    _console.Publish("Error", failedStart, persist: false);
+                }
+                if (logExecution)
+                {
+                    if (!string.IsNullOrWhiteSpace(runspaceFallbackReason))
+                    {
+                        await _log.WriteAsync("Security", $"PowerShellQueryService.InvokeAsync runspace fallback: {runspaceFallbackReason}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                    }
+
+                    await _log.WriteAsync("Error", failedStart, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                }
+                return (1, string.Empty, failedStart);
             }
+
+            host = processHost;
             if (logExecution)
             {
-                await _log.WriteAsync("Error", failedStart, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                await _log.WriteAsync("Security", $"PowerShellQueryService.InvokeAsync runspace fallback: {runspaceFallbackReason}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                if (diagnosticsEnabled)
+                {
+                    await _log.WriteAsync("Security", $"PowerShellQuery invocation: {RedactSensitive(commandLine)}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                }
             }
-            return (1, string.Empty, failedStart);
+
+            using (process)
+            {
+                var processCompleted = 0;
+                using var cancellationRegistration = cancellationToken.Register(() =>
+                {
+                    if (Interlocked.CompareExchange(ref processCompleted, 0, 0) != 0)
+                    {
+                        return;
+                    }
+
+                    TryCancelProcess(process);
+                });
+
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+                var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+                try
+                {
+                    await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref processCompleted, 1);
+                }
+
+                stdout = await stdoutTask.ConfigureAwait(false);
+                stderr = SuppressProgressCliXml(await stderrTask.ConfigureAwait(false));
+                exitCode = process.ExitCode;
+            }
+        }
+
+        if (host == "runspace" && logExecution)
+        {
+            await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(stdout))
+        {
+            if (logExecution)
+            {
+                await _log.WriteAsync("Output", stdout.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(stderr))
+        {
+            if (logExecution)
+            {
+                await _log.WriteAsync("Error", stderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
+            }
+        }
+
+        if (echoToConsole)
+        {
+            var outputPreview = BuildOutputPreview(stdout);
+            if (!string.IsNullOrWhiteSpace(outputPreview))
+            {
+                _console.Publish("Output", outputPreview, persist: false);
+            }
+
+            var stderrLines = SplitLines(stderr).ToList();
+            foreach (var line in stderrLines.Take(8))
+            {
+                _console.Publish("Error", line, persist: false);
+            }
+
+            if (stderrLines.Count > 8)
+            {
+                _console.Publish("Error", $"... ({stderrLines.Count - 8} more stderr lines)", persist: false);
+            }
+        }
+
+        var elapsedMilliseconds = (long)((Stopwatch.GetTimestamp() - startedAt) * 1000d / Stopwatch.Frequency);
+        if (echoToConsole)
+        {
+            var stdoutLineCount = CountLines(stdout);
+            var stderrLineCount = CountLines(stderr);
+            _console.Publish(
+                exitCode == 0 ? "Trace" : "Error",
+                $"Query completed. exit={exitCode}, duration={elapsedMilliseconds}ms, stdoutLines={stdoutLineCount}, stderrLines={stderrLineCount}",
+                persist: false);
         }
 
         if (logExecution)
         {
-            await _log.WriteAsync("Trace", $"PowerShellQueryService.InvokeAsync host={host}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-            if (diagnosticsEnabled)
-            {
-                await _log.WriteAsync("Security", $"PowerShellQuery invocation: {RedactSensitive(commandLine)}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-            }
-            else
-            {
-                await _log.WriteAsync("Security", $"PowerShellQuery invocation host={host} hash={scriptHash}", cancellationToken, echoToConsole: false).ConfigureAwait(false);
-            }
+            await _log.WriteAsync(
+                    exitCode == 0 ? "Trace" : "Error",
+                    $"PowerShellQueryService.InvokeAsync exit={exitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={stderr.Length}",
+                    cancellationToken,
+                    echoToConsole: false)
+                .ConfigureAwait(false);
         }
 
-        using (process)
-        {
-            var processCompleted = 0;
-            using var cancellationRegistration = cancellationToken.Register(() =>
-            {
-                if (Interlocked.CompareExchange(ref processCompleted, 0, 0) != 0)
-                {
-                    return;
-                }
-
-                TryCancelProcess(process);
-            });
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            try
-            {
-                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                Interlocked.Exchange(ref processCompleted, 1);
-            }
-
-            var stdout = await stdoutTask.ConfigureAwait(false);
-            var stderr = await stderrTask.ConfigureAwait(false);
-            var sanitizedStderr = SuppressProgressCliXml(stderr);
-
-            if (!string.IsNullOrWhiteSpace(stdout))
-            {
-                if (logExecution)
-                {
-                    await _log.WriteAsync("Output", stdout.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(sanitizedStderr))
-            {
-                if (logExecution)
-                {
-                    await _log.WriteAsync("Error", sanitizedStderr.Trim(), cancellationToken, echoToConsole: false).ConfigureAwait(false);
-                }
-            }
-
-            if (echoToConsole)
-            {
-                var outputPreview = BuildOutputPreview(stdout);
-                if (!string.IsNullOrWhiteSpace(outputPreview))
-                {
-                    _console.Publish("Output", outputPreview, persist: false);
-                }
-
-                var stderrLines = SplitLines(sanitizedStderr).ToList();
-                foreach (var line in stderrLines.Take(8))
-                {
-                    _console.Publish("Error", line, persist: false);
-                }
-
-                if (stderrLines.Count > 8)
-                {
-                    _console.Publish("Error", $"... ({stderrLines.Count - 8} more stderr lines)", persist: false);
-                }
-            }
-
-            var elapsedMilliseconds = (long)((Stopwatch.GetTimestamp() - startedAt) * 1000d / Stopwatch.Frequency);
-            if (echoToConsole)
-            {
-                var stdoutLineCount = CountLines(stdout);
-                var stderrLineCount = CountLines(sanitizedStderr);
-                _console.Publish(
-                    process.ExitCode == 0 ? "Trace" : "Error",
-                    $"Query completed. exit={process.ExitCode}, duration={elapsedMilliseconds}ms, stdoutLines={stdoutLineCount}, stderrLines={stderrLineCount}",
-                    persist: false);
-            }
-
-            if (logExecution)
-            {
-                await _log.WriteAsync(
-                        process.ExitCode == 0 ? "Trace" : "Error",
-                        $"PowerShellQueryService.InvokeAsync exit={process.ExitCode} durationMs={elapsedMilliseconds} stdoutChars={stdout.Length} stderrChars={sanitizedStderr.Length}",
-                        cancellationToken,
-                        echoToConsole: false)
-                    .ConfigureAwait(false);
-            }
-
-            return (process.ExitCode, stdout, sanitizedStderr);
-        }
+        return (exitCode, stdout, stderr);
     }
 
     private static (Process? Process, string Host, string Error, string CommandLine) StartPowerShellProcess(string script)
     {
         Exception? lastError = null;
-        var wrappedScript = $"$ErrorActionPreference='Continue';$PSDefaultParameterValues['*:ErrorAction']='Stop';$ProgressPreference='SilentlyContinue';$VerbosePreference='SilentlyContinue';$InformationPreference='Continue';& {{ {script} }}";
+        var wrappedScript = BuildWrappedQueryScript(script);
 
         foreach (var host in new[] { "pwsh.exe", "powershell.exe" })
         {
@@ -331,6 +367,85 @@ public sealed class PowerShellQueryService
             .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> InvokeViaRunspaceAsync(string script, CancellationToken cancellationToken)
+    {
+        var sessionState = InitialSessionState.CreateDefault();
+        Runspace? runspace = null;
+        PowerShell? powerShell = null;
+        var output = new PSDataCollection<PSObject>();
+
+        try
+        {
+            runspace = RunspaceFactory.CreateRunspace(sessionState);
+            runspace.Open();
+
+            powerShell = PowerShell.Create();
+            powerShell.Runspace = runspace;
+            powerShell.AddScript(BuildWrappedQueryScript(script));
+
+            var invocationCompleted = 0;
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                if (Interlocked.CompareExchange(ref invocationCompleted, 0, 0) != 0)
+                {
+                    return;
+                }
+
+                try
+                {
+                    powerShell.Stop();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            });
+
+            var async = powerShell.BeginInvoke<PSObject, PSObject>(null, output);
+            while (!async.IsCompleted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                powerShell.EndInvoke(async);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref invocationCompleted, 1);
+            }
+
+            var stdout = string.Join(
+                Environment.NewLine,
+                output
+                    .Select(item => item?.ToString() ?? string.Empty)
+                    .SelectMany(SplitLines));
+            var stderr = string.Join(
+                Environment.NewLine,
+                powerShell.Streams.Error
+                    .Select(record => record?.ToString() ?? string.Empty)
+                    .SelectMany(SplitLines));
+
+            var exitCode = powerShell.InvocationStateInfo.State == PSInvocationState.Completed ? 0 : 1;
+            return (exitCode, stdout, stderr);
+        }
+        finally
+        {
+            powerShell?.Dispose();
+            runspace?.Dispose();
+            (sessionState as IDisposable)?.Dispose();
+        }
+    }
+
+    private static string BuildWrappedQueryScript(string script)
+    {
+        return QueryBootstrapScript + Environment.NewLine + "& {" + Environment.NewLine + script + Environment.NewLine + "}";
     }
 
     private void TryCancelProcess(Process process)

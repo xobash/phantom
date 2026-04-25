@@ -76,11 +76,11 @@ public sealed class AppsViewModel : ObservableObject, ISectionViewModel
 
         try
         {
-            var snapshot = await _homeData.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var installedApps = await _homeData.GetInstalledAppsAsync(cancellationToken).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Apps.Clear();
-                foreach (var app in snapshot.Apps.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+                foreach (var app in installedApps.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
                 {
                     Apps.Add(app);
                 }

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Phantom.Tests/Phantom.Tests.csproj" />
+  <Project Path="Phantom/Phantom.csproj" />
+</Solution>

@@ -1,12 +1,25 @@
 using Phantom.Models;
+using System.Text.RegularExpressions;
 
 namespace Phantom.Services;
 
 internal static class RequestedTweaksCatalog
 {
+    private static readonly HashSet<string> SuppressedTweakIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "adobe-network-block",
+        "disable-ipv6",
+        "set-display-for-performance",
+        "set-services-to-manual"
+    };
+
+    private static readonly Regex RegistryPathRegex = new(
+        @"(?:Registry::)?(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC):?\\[^'""`\r\n\)\]\};]+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public static IReadOnlyList<TweakDefinition> CreateRequestedTweaks()
     {
-        return
+        List<TweakDefinition> tweaks =
         [
             T("center-taskbar-items", "Center taskbar items", "Centers taskbar buttons/icons.", RiskTier.Basic, "HKCU", true,
                 """
@@ -1021,6 +1034,125 @@ internal static class RequestedTweaksCatalog
                 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Name DODownloadMode -Type DWord -Value 100
                 """),
 
+            T("disable-advertising-id", "Disable Advertising ID", "Disables the per-user advertising identifier and machine policy override.", RiskTier.Basic, "Both", true,
+                """
+                $cu='HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo'
+                $lm='HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo'
+                $userOk=$false
+                $policyOk=$false
+                try { $userOk=((Get-ItemProperty -Path $cu -Name Enabled -ErrorAction Stop).Enabled -eq 0) } catch {}
+                try { $policyOk=((Get-ItemProperty -Path $lm -Name DisabledByGroupPolicy -ErrorAction Stop).DisabledByGroupPolicy -eq 1) } catch {}
+                if($userOk -and $policyOk){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name Enabled -Type DWord -Value 0
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo' -Name DisabledByGroupPolicy -Type DWord -Value 1
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name Enabled -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo' -Name DisabledByGroupPolicy -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-tailored-experiences", "Disable Tailored Experiences", "Disables tips and recommendations based on diagnostic data.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+                if((Get-ItemProperty -Path $p -Name TailoredExperiencesWithDiagnosticDataEnabled -ErrorAction Stop).TailoredExperiencesWithDiagnosticDataEnabled -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name TailoredExperiencesWithDiagnosticDataEnabled -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name TailoredExperiencesWithDiagnosticDataEnabled -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-feedback-frequency", "Disable Feedback Frequency", "Prevents Windows from periodically asking for feedback.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Siuf\Rules'
+                if((Get-ItemProperty -Path $p -Name NumberOfSIUFInPeriod -ErrorAction Stop).NumberOfSIUFInPeriod -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Siuf\Rules' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Siuf\Rules' -Name NumberOfSIUFInPeriod -Type DWord -Value 0
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Siuf\Rules' -Name PeriodInNanoSeconds -ErrorAction SilentlyContinue
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Siuf\Rules' -Name NumberOfSIUFInPeriod -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Siuf\Rules' -Name PeriodInNanoSeconds -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-content-suggestions", "Disable Windows Content Suggestions", "Disables common ContentDeliveryManager suggestions, Spotlight prompts, and consumer content toggles.", RiskTier.Advanced, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+                $names=@('ContentDeliveryAllowed','FeatureManagementEnabled','OemPreInstalledAppsEnabled','PreInstalledAppsEnabled','PreInstalledAppsEverEnabled','SilentInstalledAppsEnabled','SoftLandingEnabled','SubscribedContent-310093Enabled','SubscribedContent-338387Enabled','SubscribedContent-338388Enabled','SubscribedContent-338389Enabled','SubscribedContent-338393Enabled','SubscribedContent-353694Enabled','SubscribedContent-353696Enabled','SystemPaneSuggestionsEnabled')
+                $ok=$true
+                foreach($name in $names){
+                  try { if((Get-ItemProperty -Path $p -Name $name -ErrorAction Stop).$name -ne 0){ $ok=$false; break } } catch { $ok=$false; break }
+                }
+                if($ok){'Applied'} else {'Not Applied'}
+                """,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+                New-Item -Path $p -Force | Out-Null
+                foreach($name in @('ContentDeliveryAllowed','FeatureManagementEnabled','OemPreInstalledAppsEnabled','PreInstalledAppsEnabled','PreInstalledAppsEverEnabled','SilentInstalledAppsEnabled','SoftLandingEnabled','SubscribedContent-310093Enabled','SubscribedContent-338387Enabled','SubscribedContent-338388Enabled','SubscribedContent-338389Enabled','SubscribedContent-338393Enabled','SubscribedContent-353694Enabled','SubscribedContent-353696Enabled','SystemPaneSuggestionsEnabled')){
+                  Set-ItemProperty -Path $p -Name $name -Type DWord -Value 0
+                }
+                """,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+                foreach($name in @('ContentDeliveryAllowed','FeatureManagementEnabled','OemPreInstalledAppsEnabled','PreInstalledAppsEnabled','PreInstalledAppsEverEnabled','SilentInstalledAppsEnabled','SoftLandingEnabled','SubscribedContent-310093Enabled','SubscribedContent-338387Enabled','SubscribedContent-338388Enabled','SubscribedContent-338389Enabled','SubscribedContent-338393Enabled','SubscribedContent-353694Enabled','SubscribedContent-353696Enabled','SystemPaneSuggestionsEnabled')){
+                  Remove-ItemProperty -Path $p -Name $name -ErrorAction SilentlyContinue
+                }
+                """),
+
+            T("enable-defender-pua-protection", "Enable Defender PUA Protection", "Enables Microsoft Defender potentially unwanted app blocking.", RiskTier.Advanced, "System", true,
+                """
+                $pref=Get-MpPreference -ErrorAction Stop
+                if($pref.PUAProtection -eq 1 -or $pref.PUAProtection -eq 'Enabled'){'Applied'} else {'Not Applied'}
+                """,
+                "Set-MpPreference -PUAProtection Enabled",
+                "Set-MpPreference -PUAProtection Disabled"),
+
+            T("disable-llmnr", "Disable LLMNR", "Disables multicast name resolution policy to reduce local-network spoofing exposure.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient'
+                if((Get-ItemProperty -Path $p -Name EnableMulticast -ErrorAction Stop).EnableMulticast -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name EnableMulticast -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' -Name EnableMulticast -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-wpad-autodetect", "Disable WPAD Auto-Detect", "Turns off automatic proxy discovery for the current user.", RiskTier.Advanced, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+                if((Get-ItemProperty -Path $p -Name AutoDetect -ErrorAction Stop).AutoDetect -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -Name AutoDetect -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -Name AutoDetect -ErrorAction SilentlyContinue
+                """),
+
+            T("delivery-optimization-lan-only", "Delivery Optimization LAN Only", "Allows Delivery Optimization only from local-network peers instead of internet peers.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config'
+                if((Get-ItemProperty -Path $p -Name DODownloadMode -ErrorAction Stop).DODownloadMode -eq 1){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Name DODownloadMode -Type DWord -Value 1
+                """,
+                """
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config' -Name DODownloadMode -ErrorAction SilentlyContinue
+                """),
+
             T("network-adapter-onboard-processor", "Network adapter onboard processor", "Enables Receive Side Scaling (RSS) on active adapter.", RiskTier.Advanced, "System", true,
                 """
                 $adapter=Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } | Sort-Object InterfaceMetric | Select-Object -First 1
@@ -1044,6 +1176,10 @@ internal static class RequestedTweaksCatalog
 
             
         ];
+
+        return tweaks
+            .Where(tweak => !SuppressedTweakIds.Contains(tweak.Id))
+            .ToArray();
     }
 
     private static TweakDefinition T(
@@ -1070,7 +1206,54 @@ internal static class RequestedTweaksCatalog
             ApplyScript = TweakScriptNormalizer.WrapMutationScript(applyScript),
             UndoScript = TweakScriptNormalizer.WrapMutationScript(undoScript),
             Destructive = destructive,
-            StateCaptureKeys = []
+            StateCaptureKeys = InferStateCaptureKeys(applyScript, undoScript)
         };
+    }
+
+    private static string[] InferStateCaptureKeys(params string[] scripts)
+    {
+        return scripts
+            .Where(script => !string.IsNullOrWhiteSpace(script))
+            .SelectMany(script => RegistryPathRegex.Matches(script).Cast<Match>())
+            .Select(match => NormalizeRegistryCapturePath(match.Value))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string NormalizeRegistryCapturePath(string path)
+    {
+        var cleaned = path.Trim().TrimEnd(',', '.');
+        if (cleaned.StartsWith("Registry::", StringComparison.OrdinalIgnoreCase))
+        {
+            cleaned = cleaned["Registry::".Length..];
+        }
+
+        if (cleaned.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HKLM:" + cleaned["HKEY_LOCAL_MACHINE".Length..];
+        }
+
+        if (cleaned.StartsWith("HKEY_CURRENT_USER", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HKCU:" + cleaned["HKEY_CURRENT_USER".Length..];
+        }
+
+        if (cleaned.StartsWith("HKEY_CLASSES_ROOT", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HKCR:" + cleaned["HKEY_CLASSES_ROOT".Length..];
+        }
+
+        if (cleaned.StartsWith("HKEY_USERS", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HKU:" + cleaned["HKEY_USERS".Length..];
+        }
+
+        if (cleaned.StartsWith("HKEY_CURRENT_CONFIG", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HKCC:" + cleaned["HKEY_CURRENT_CONFIG".Length..];
+        }
+
+        return cleaned;
     }
 }

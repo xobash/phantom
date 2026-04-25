@@ -585,8 +585,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             Id = $"store.app.{SanitizeId(app.DisplayName)}",
             Title = $"Install {app.DisplayName}",
             Description = "Install app from catalog.",
-            RiskTier = RiskTier.Basic,
-            Reversible = true,
+            RiskTier = RiskTier.Advanced,
+            Reversible = false,
             RunScripts =
             [
                 new PowerShellStep
@@ -641,7 +641,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             Id = $"store.upgrade.{SanitizeId(app.DisplayName)}",
             Title = $"Upgrade {app.DisplayName}",
             Description = "Upgrade app from catalog.",
-            RiskTier = RiskTier.Basic,
+            RiskTier = RiskTier.Advanced,
             Reversible = false,
             RunScripts =
             [

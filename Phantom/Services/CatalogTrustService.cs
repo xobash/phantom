@@ -19,7 +19,7 @@ public static class CatalogTrustService
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["catalog.apps.json"] = "2A17C9685F1FA84939231E49B9AD063847055045A73F84A78C0A6C73CD148E79",
-            ["tweaks.json"] = "F485D12C7D8F6D7D684D913BE857CA5A3E021BFB54DC1997068D35D841E38DBF",
+            ["tweaks.json"] = "C66D9A37EF748B3DCB4C54AB720D99C3BE2A9783F706557C2706EF0B22E90311",
             ["features.json"] = "2182F2172EF035A5CC2995DBCCD4172E5CCC91957F6DD1EFDFDDCEB5CBD87462",
             ["fixes.json"] = "2C63D665D1C959EF42E38F0425F12A8112EF6E16BDCD5B46A67EDF52F66DB904",
             ["legacy-panels.json"] = "687791E8C17DDC6E90F00665851A08E0A501CB0DDCADF0B8FBF77C56FD38FEB4"
@@ -76,6 +76,10 @@ public static class CatalogTrustService
                     AddScriptHash(hashes, TweakScriptNormalizer.WrapDetectScript(tweak.DetectScript));
                     AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.ApplyScript));
                     AddScriptHash(hashes, TweakScriptNormalizer.WrapMutationScript(tweak.UndoScript));
+                    foreach (var captureKey in tweak.StateCaptureKeys ?? Array.Empty<string>())
+                    {
+                        AddScriptHash(hashes, TweakStateScriptFactory.BuildCaptureScript(captureKey));
+                    }
                 }
             }
 
@@ -103,6 +107,10 @@ public static class CatalogTrustService
                 AddScriptHash(hashes, tweak.DetectScript);
                 AddScriptHash(hashes, tweak.ApplyScript);
                 AddScriptHash(hashes, tweak.UndoScript);
+                foreach (var captureKey in tweak.StateCaptureKeys ?? Array.Empty<string>())
+                {
+                    AddScriptHash(hashes, TweakStateScriptFactory.BuildCaptureScript(captureKey));
+                }
             }
 
             foreach (var script in RuntimeOperationScriptCatalog.GetTrustedRuntimeMutationScripts())

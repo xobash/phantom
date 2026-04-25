@@ -172,7 +172,9 @@ public sealed class OperationEngine
                     continue;
                 }
 
-                var scripts = request.Undo ? operation.UndoScripts : operation.RunScripts;
+                var scripts = request.Undo
+                    ? BuildUndoScriptPlan(operation, undoState)
+                    : operation.RunScripts;
                 var desiredApplied = !request.Undo;
 
                 var currentState = await EvaluateOperationStateAsync(operation, cancellationToken).ConfigureAwait(false);
@@ -326,9 +328,12 @@ public sealed class OperationEngine
                     {
                         currentStepName = step.Name;
                         _console.Publish("Trace", $"Operation step start: {operation.Id}/{step.Name}");
+                        var stepOperationId = IsStateRestoreStep(step)
+                            ? "system.undo-state"
+                            : operation.Id;
                         var stepResult = await _runner.ExecuteAsync(new PowerShellExecutionRequest
                         {
-                            OperationId = operation.Id,
+                            OperationId = stepOperationId,
                             StepName = step.Name,
                             Script = step.Script,
                             DryRun = request.DryRun,
@@ -391,6 +396,12 @@ public sealed class OperationEngine
                     if (!request.DryRun && !request.Undo)
                     {
                         successfullyApplied.Add(operation);
+                    }
+
+                    if (!request.DryRun && request.Undo && undoState.OperationState.Remove(operation.Id))
+                    {
+                        undoState.UpdatedAt = DateTimeOffset.Now;
+                        await _undoStore.SaveAsync(undoState, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -642,17 +653,51 @@ public sealed class OperationEngine
                operationId.StartsWith("feature.repair.", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static PowerShellStep[] BuildUndoScriptPlan(OperationDefinition operation, UndoStateDocument undoState)
+    {
+        var steps = new List<PowerShellStep>(operation.UndoScripts);
+        if (!undoState.OperationState.TryGetValue(operation.Id, out var captured) || captured.Count == 0)
+        {
+            return steps.ToArray();
+        }
+
+        foreach (var key in operation.StateCaptureKeys ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(key) || !captured.TryGetValue(key, out var capturedJson))
+            {
+                continue;
+            }
+
+            steps.Add(new PowerShellStep
+            {
+                Name = $"restore-state:{key}",
+                Script = TweakStateScriptFactory.BuildRestoreScript(key, capturedJson)
+            });
+        }
+
+        return steps.ToArray();
+    }
+
+    private static bool IsStateRestoreStep(PowerShellStep step)
+    {
+        return step.Name.StartsWith("restore-state:", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<(bool Success, List<string> FailedSteps, BackupCompensationResult Compensation)> ExecuteRollbackStepsAsync(
         OperationDefinition operation,
         string rollbackOperationId,
         CancellationToken cancellationToken)
     {
         var failedSteps = new List<string>();
-        foreach (var step in operation.UndoScripts)
+        var undoState = await _undoStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var step in BuildUndoScriptPlan(operation, undoState))
         {
+            var stepOperationId = IsStateRestoreStep(step)
+                ? "system.undo-state"
+                : rollbackOperationId;
             var rollbackStep = await _runner.ExecuteAsync(new PowerShellExecutionRequest
             {
-                OperationId = rollbackOperationId,
+                OperationId = stepOperationId,
                 StepName = step.Name,
                 Script = step.Script,
                 DryRun = false,
