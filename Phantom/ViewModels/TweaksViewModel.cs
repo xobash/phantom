@@ -52,6 +52,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["background-apps"] = "privacy",
             ["disable-tailored-experiences"] = "privacy",
             ["disable-feedback-frequency"] = "privacy",
+            ["disable-cloud-clipboard"] = "privacy",
             ["disable-delivery-optimization"] = "privacy",
             ["delivery-optimization-lan-only"] = "privacy",
             ["activity-history"] = "privacy",
@@ -63,6 +64,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["disable-consumer-features"] = "ads",
             ["disable-windows-tips"] = "ads",
             ["disable-content-suggestions"] = "ads",
+            ["disable-lock-screen-spotlight"] = "ads",
             ["remove-widgets"] = "ads",
             ["disable-gamedvr"] = "system",
             ["high-performance-plan"] = "system",
@@ -97,8 +99,13 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["search-indexing"] = "system",
             ["delivery-optimization"] = "system",
             ["enable-defender-pua-protection"] = "system",
+            ["disable-telemetry-scheduled-tasks"] = "system",
             ["disable-llmnr"] = "system",
+            ["disable-netbios"] = "system",
             ["disable-wpad-autodetect"] = "system",
+            ["disable-remote-assistance"] = "system",
+            ["disable-update-auto-restart"] = "system",
+            ["appx-package-inventory"] = "system",
             ["network-adapter-onboard-processor"] = "system",
             ["disable-ipv6"] = "system",
             ["prefer-ipv4-over-ipv6"] = "system",
@@ -109,6 +116,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             ["disable-wpbt"] = "system",
             ["enable-end-task-with-right-click"] = "system",
             ["edge-debloat"] = "superuser",
+            ["disable-edge-startup-boost"] = "superuser",
             ["brave-debloat"] = "superuser",
             ["adobe-network-block"] = "superuser",
             ["block-razer-software-installs"] = "superuser",
@@ -173,6 +181,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private bool _isEdgeInstalled;
 
     private string _search = string.Empty;
+    private string _scanSummary = "Scan not run.";
     private bool _dryRun;
     private string _selectedDnsProfile = DefaultDnsProfiles[0];
 
@@ -195,11 +204,14 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         Tweaks = new ObservableCollection<TweakDefinition>();
         Sections = new ObservableCollection<TweakSection>();
+        ScanFindings = new ObservableCollection<TweakScanFinding>();
 
         TweaksView = CollectionViewSource.GetDefaultView(Tweaks);
         TweaksView.Filter = FilterTweaks;
 
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync);
+        RunLightweightScanCommand = new AsyncRelayCommand(RunLightweightScanAsync);
+        ApplyRecommendedScanFixesCommand = new AsyncRelayCommand(ApplyRecommendedScanFixesAsync);
         ApplySelectedCommand = new AsyncRelayCommand(ApplySelectedAsync);
         UndoSelectedCommand = new AsyncRelayCommand(UndoSelectedAsync);
         ApplyBasicPresetCommand = new RelayCommand(() => ApplyPreset(RiskTier.Basic));
@@ -226,9 +238,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     public ObservableCollection<TweakDefinition> Tweaks { get; }
     public ObservableCollection<TweakSection> Sections { get; }
+    public ObservableCollection<TweakScanFinding> ScanFindings { get; }
     public ICollectionView TweaksView { get; }
 
     public AsyncRelayCommand RefreshStatusCommand { get; }
+    public AsyncRelayCommand RunLightweightScanCommand { get; }
+    public AsyncRelayCommand ApplyRecommendedScanFixesCommand { get; }
     public AsyncRelayCommand ApplySelectedCommand { get; }
     public AsyncRelayCommand UndoSelectedCommand { get; }
     public RelayCommand ApplyBasicPresetCommand { get; }
@@ -256,6 +271,12 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     {
         get => _dryRun;
         set => SetProperty(ref _dryRun, value);
+    }
+
+    public string ScanSummary
+    {
+        get => _scanSummary;
+        set => SetProperty(ref _scanSummary, value);
     }
 
     public bool ExpandAllSections
@@ -636,6 +657,85 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         RefreshTweaksView();
     }
 
+    private async Task RunLightweightScanAsync(CancellationToken cancellationToken)
+    {
+        await RefreshStatusAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await Application.Current.Dispatcher.InvokeAsync(() => Tweaks.ToList());
+        var findings = rows.Select(BuildScanFinding).ToList();
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            ScanFindings.Clear();
+            foreach (var finding in findings)
+            {
+                ScanFindings.Add(finding);
+            }
+
+            ScanSummary = BuildScanSummary(findings);
+        });
+
+        _console.Publish("Info", ScanSummary);
+    }
+
+    private async Task ApplyRecommendedScanFixesAsync(CancellationToken cancellationToken)
+    {
+        if (ScanFindings.Count == 0)
+        {
+            await RunLightweightScanAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var recommendedIds = ScanFindings
+            .Where(finding => finding.Classification.Equals("Recommended", StringComparison.OrdinalIgnoreCase))
+            .Select(finding => finding.TweakId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var targets = Tweaks
+            .Where(tweak => recommendedIds.Contains(tweak.Id))
+            .ToList();
+        if (targets.Count == 0)
+        {
+            _console.Publish("Info", "No recommended scan fixes to apply.");
+            return;
+        }
+
+        var operations = await BuildOperationsForDesiredStateAsync(targets, undo: false, cancellationToken).ConfigureAwait(false);
+        await RunOperationsAsync(operations, undo: false, cancellationToken).ConfigureAwait(false);
+        await RunLightweightScanAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static TweakScanFinding BuildScanFinding(TweakDefinition tweak)
+    {
+        var status = string.IsNullOrWhiteSpace(tweak.Status) ? "Unknown" : tweak.Status;
+        if (IsAppliedStatus(status))
+        {
+            return new TweakScanFinding(tweak.Id, tweak.Name, "Already optimized", status);
+        }
+
+        if (string.IsNullOrWhiteSpace(tweak.DetectScript) || tweak.IsActionButton)
+        {
+            return new TweakScanFinding(tweak.Id, tweak.Name, "Manual", status);
+        }
+
+        if (tweak.Destructive || tweak.RiskTier == RiskTier.Dangerous || !tweak.Reversible)
+        {
+            return new TweakScanFinding(tweak.Id, tweak.Name, "Risky", status);
+        }
+
+        return tweak.RiskTier == RiskTier.Basic
+            ? new TweakScanFinding(tweak.Id, tweak.Name, "Recommended", status)
+            : new TweakScanFinding(tweak.Id, tweak.Name, "Optional", status);
+    }
+
+    private static string BuildScanSummary(IReadOnlyCollection<TweakScanFinding> findings)
+    {
+        var counts = findings
+            .GroupBy(finding => finding.Classification, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+        int Count(string key) => counts.TryGetValue(key, out var value) ? value : 0;
+        return $"Scan: optimized={Count("Already optimized")}, recommended={Count("Recommended")}, optional={Count("Optional")}, risky={Count("Risky")}, manual={Count("Manual")}.";
+    }
+
     private async Task RefreshStatusAsync(CancellationToken cancellationToken)
     {
         var tweakRows = await Application.Current.Dispatcher.InvokeAsync(() => Tweaks.ToList());
@@ -904,42 +1004,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     }
 
     private OperationDefinition BuildApplyOperation(TweakDefinition tweak)
-    {
-        return new OperationDefinition
-        {
-            Id = $"tweak.{tweak.Id}",
-            Title = tweak.Name,
-            Description = tweak.Description,
-            RiskTier = tweak.RiskTier,
-            Reversible = tweak.Reversible,
-            Destructive = tweak.Destructive,
-            DetectScript = tweak.DetectScript,
-            Compatibility = tweak.Compatibility ?? Array.Empty<string>(),
-            Tags = ["tweak", tweak.Scope],
-            StateCaptureKeys = tweak.StateCaptureKeys,
-            StateCaptureScripts = tweak.StateCaptureKeys.Select(key => new PowerShellStep
-            {
-                Name = key,
-                Script = TweakStateScriptFactory.BuildCaptureScript(key)
-            }).ToArray(),
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "apply",
-                    Script = tweak.ApplyScript
-                }
-            ],
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "undo",
-                    Script = tweak.UndoScript
-                }
-            ]
-        };
-    }
+        => OperationDefinitionFactory.BuildTweakOperation(tweak);
 
     private bool FilterTweaks(object obj)
     {
@@ -1241,4 +1306,6 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             set => SetProperty(ref _isExpanded, value);
         }
     }
+
+    public sealed record TweakScanFinding(string TweakId, string Name, string Classification, string Status);
 }

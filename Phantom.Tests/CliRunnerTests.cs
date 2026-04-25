@@ -75,6 +75,33 @@ public sealed class CliRunnerTests
     }
 
     [Fact]
+    public async Task BuildOperationsAsync_UsesSharedFactories_ForStoreAndTweaks()
+    {
+        var cli = await CreateCliRunnerAsync();
+        var method = typeof(CliRunner).GetMethod("BuildOperationsAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var config = new AutomationConfig
+        {
+            StoreSelections = ["VS Code"],
+            Tweaks = ["disable-telemetry"]
+        };
+
+        var task = method!.Invoke(cli, [config, CancellationToken.None]) as Task<List<OperationDefinition>>;
+        Assert.NotNull(task);
+        var operations = await task!;
+
+        var store = Assert.Single(operations, o => o.Id == "store.install.vscode");
+        Assert.Equal(RiskTier.Advanced, store.RiskTier);
+        Assert.False(store.Reversible);
+
+        var tweak = Assert.Single(operations, o => o.Id == "tweak.disable-telemetry");
+        Assert.NotEmpty(tweak.StateCaptureKeys);
+        Assert.NotEmpty(tweak.StateCaptureScripts);
+        Assert.Equal(tweak.StateCaptureKeys.Length, tweak.StateCaptureScripts.Length);
+    }
+
+    [Fact]
     public async Task RunAsync_BlocksDangerousAutomationWithoutExplicitAcknowledgementToken()
     {
         var cli = await CreateCliRunnerAsync();

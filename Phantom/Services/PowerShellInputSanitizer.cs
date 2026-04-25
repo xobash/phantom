@@ -5,6 +5,7 @@ namespace Phantom.Services;
 public static class PowerShellInputSanitizer
 {
     private static readonly Regex PackageIdRegex = new("^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$", RegexOptions.Compiled);
+    private static readonly Regex EcosystemPackageIdRegex = new("^@?[A-Za-z0-9][A-Za-z0-9._+/-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex PackageQueryRegex = new("^[A-Za-z0-9.][A-Za-z0-9 ._()+/-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex FeatureNameRegex = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.Compiled);
     private static readonly Regex ServiceNameRegex = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.Compiled);
@@ -19,6 +20,22 @@ public static class PowerShellInputSanitizer
         }
 
         if (!PackageIdRegex.IsMatch(trimmed))
+        {
+            throw new ArgumentException($"{context}: invalid package identifier '{trimmed}'.");
+        }
+
+        return trimmed;
+    }
+
+    public static string EnsureEcosystemPackageId(string? value, string context)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException($"{context}: package identifier is required.");
+        }
+
+        if (!EcosystemPackageIdRegex.IsMatch(trimmed) || trimmed.Contains("//", StringComparison.Ordinal))
         {
             throw new ArgumentException($"{context}: invalid package identifier '{trimmed}'.");
         }

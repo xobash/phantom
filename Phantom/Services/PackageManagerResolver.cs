@@ -141,12 +141,105 @@ public sealed class PackageManagerResolver
         };
     }
 
+    public Task<PackageManagerResolution> ResolveScoopAsync(CancellationToken cancellationToken)
+        => ResolveFromPathWithMessageAsync(
+            "scoop",
+            "Resolved Scoop from PATH.",
+            "Scoop not available. Install Scoop or repair PATH.",
+            cancellationToken);
+
+    public Task<PackageManagerResolution> ResolvePipAsync(CancellationToken cancellationToken)
+        => ResolveFromPathWithMessageAsync(
+            "pip",
+            "Resolved pip from PATH.",
+            "pip not available. Install Python/pip or repair PATH.",
+            cancellationToken);
+
+    public Task<PackageManagerResolution> ResolveNpmAsync(CancellationToken cancellationToken)
+        => ResolveFromPathWithMessageAsync(
+            "npm",
+            "Resolved npm from PATH.",
+            "npm not available. Install Node.js/npm or repair PATH.",
+            cancellationToken);
+
+    public async Task<PackageManagerResolution> ResolveDotNetToolAsync(CancellationToken cancellationToken)
+    {
+        var dotnet = await _pathResolver("dotnet", cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(dotnet))
+        {
+            return new PackageManagerResolution
+            {
+                ExecutablePath = dotnet,
+                Source = "PATH(where)",
+                Message = "Resolved .NET SDK CLI from PATH."
+            };
+        }
+
+        return new PackageManagerResolution
+        {
+            Message = ".NET SDK CLI not available. Install .NET SDK or repair PATH."
+        };
+    }
+
+    public async Task<PackageManagerResolution> ResolvePowerShellGalleryAsync(CancellationToken cancellationToken)
+    {
+        var pwsh = await _pathResolver("pwsh", cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(pwsh))
+        {
+            return new PackageManagerResolution
+            {
+                ExecutablePath = pwsh,
+                Source = "PATH(where)",
+                Message = "Resolved PowerShell 7 for PowerShell Gallery operations."
+            };
+        }
+
+        var powershell = await _pathResolver("powershell", cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(powershell))
+        {
+            return new PackageManagerResolution
+            {
+                ExecutablePath = powershell,
+                Source = "PATH(where)",
+                Message = "Resolved Windows PowerShell for PowerShell Gallery operations."
+            };
+        }
+
+        return new PackageManagerResolution
+        {
+            Message = "PowerShell host not available for PowerShell Gallery operations."
+        };
+    }
+
+    private async Task<PackageManagerResolution> ResolveFromPathWithMessageAsync(
+        string executableName,
+        string availableMessage,
+        string unavailableMessage,
+        CancellationToken cancellationToken)
+    {
+        var fromPath = await _pathResolver(executableName, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(fromPath))
+        {
+            return new PackageManagerResolution
+            {
+                ExecutablePath = fromPath,
+                Source = "PATH(where)",
+                Message = availableMessage
+            };
+        }
+
+        return new PackageManagerResolution
+        {
+            Message = unavailableMessage
+        };
+    }
+
     private static async Task<string?> ResolveFromPathAsync(string executableName, CancellationToken cancellationToken)
     {
         var whereExe = OperatingSystem.IsWindows() ? "where.exe" : "which";
-        var request = executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? executableName
-            : executableName + ".exe";
+        var request = OperatingSystem.IsWindows() && !executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? executableName + ".exe"
+            : executableName;
 
         var psi = new ProcessStartInfo
         {

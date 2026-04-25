@@ -18,7 +18,7 @@ public static class CatalogTrustService
     private static readonly IReadOnlyDictionary<string, string> ExpectedDataFileHashes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["catalog.apps.json"] = "2A17C9685F1FA84939231E49B9AD063847055045A73F84A78C0A6C73CD148E79",
+            ["catalog.apps.json"] = "7F74DC740E1722B796F0BFBF47CA7A65A2C25F77C7A2DBFAF074301C939D3C46",
             ["tweaks.json"] = "C66D9A37EF748B3DCB4C54AB720D99C3BE2A9783F706557C2706EF0B22E90311",
             ["features.json"] = "2182F2172EF035A5CC2995DBCCD4172E5CCC91957F6DD1EFDFDDCEB5CBD87462",
             ["fixes.json"] = "2C63D665D1C959EF42E38F0425F12A8112EF6E16BDCD5B46A67EDF52F66DB904",

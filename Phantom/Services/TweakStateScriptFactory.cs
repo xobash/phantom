@@ -116,7 +116,7 @@ internal static class TweakStateScriptFactory
                "if(!(Test-Path $p)){ New-Item -Path $p -Force | Out-Null }; " +
                "$desired=@{}; " +
                "foreach($entry in @($state.Values)){ " +
-               "$name=[string]$entry.Name; if([string]::IsNullOrWhiteSpace($name)){ continue }; " +
+               "$name=[string]$entry.Name; " +
                "$kind=[string]$entry.Kind; $raw=$entry.Value; $desired[$name]=$true; " +
                "$value=$raw; " +
                "switch($kind){ " +

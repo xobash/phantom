@@ -194,11 +194,21 @@ public sealed class DefinitionCatalogService
 
         ValidateString(item, "category", ctx, errors, required: true, allowEmpty: false);
         var displayName = ValidateString(item, "displayName", ctx, errors, required: true, allowEmpty: false);
+        ValidateString(item, "description", ctx, errors, required: false, allowEmpty: true);
         var wingetId = ValidateString(item, "wingetId", ctx, errors, required: false, allowEmpty: true);
         var chocoId = ValidateString(item, "chocoId", ctx, errors, required: false, allowEmpty: true);
+        var scoopId = ValidateString(item, "scoopId", ctx, errors, required: false, allowEmpty: true);
+        var pipId = ValidateString(item, "pipId", ctx, errors, required: false, allowEmpty: true);
+        var npmId = ValidateString(item, "npmId", ctx, errors, required: false, allowEmpty: true);
+        var dotNetToolId = ValidateString(item, "dotNetToolId", ctx, errors, required: false, allowEmpty: true);
+        var powerShellGalleryId = ValidateString(item, "powerShellGalleryId", ctx, errors, required: false, allowEmpty: true);
         var silentArgs = ValidateString(item, "silentArgs", ctx, errors, required: false, allowEmpty: true);
         ValidateString(item, "homepage", ctx, errors, required: false, allowEmpty: true);
         ValidateStringArray(item, "tags", ctx, errors, required: false);
+        ValidateStringArray(item, "packageSourcePriority", ctx, errors, required: false);
+        ValidateBoolean(item, "manualOnly", ctx, errors, required: false);
+        var manualOnly = TryGetPropertyIgnoreCase(item, "manualOnly", out var manualOnlyProp) &&
+                         manualOnlyProp.ValueKind == JsonValueKind.True;
 
         if (!string.IsNullOrWhiteSpace(displayName) && displayName.Length > 128)
         {
@@ -220,9 +230,46 @@ public sealed class DefinitionCatalogService
             TryValidate(() => PowerShellInputSanitizer.EnsurePackageId(chocoId, $"{ctx}.chocoId"), errors);
         }
 
+        if (!string.IsNullOrWhiteSpace(scoopId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureEcosystemPackageId(scoopId, $"{ctx}.scoopId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(pipId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureEcosystemPackageId(pipId, $"{ctx}.pipId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(npmId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureEcosystemPackageId(npmId, $"{ctx}.npmId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dotNetToolId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureEcosystemPackageId(dotNetToolId, $"{ctx}.dotNetToolId"), errors);
+        }
+
+        if (!string.IsNullOrWhiteSpace(powerShellGalleryId))
+        {
+            TryValidate(() => PowerShellInputSanitizer.EnsureEcosystemPackageId(powerShellGalleryId, $"{ctx}.powerShellGalleryId"), errors);
+        }
+
         if (!string.IsNullOrWhiteSpace(silentArgs))
         {
             TryValidate(() => PowerShellInputSanitizer.EnsureSafeCliArguments(silentArgs, $"{ctx}.silentArgs"), errors);
+        }
+
+        var hasPackageSource = !string.IsNullOrWhiteSpace(wingetId) ||
+                               !string.IsNullOrWhiteSpace(chocoId) ||
+                               !string.IsNullOrWhiteSpace(scoopId) ||
+                               !string.IsNullOrWhiteSpace(pipId) ||
+                               !string.IsNullOrWhiteSpace(npmId) ||
+                               !string.IsNullOrWhiteSpace(dotNetToolId) ||
+                               !string.IsNullOrWhiteSpace(powerShellGalleryId);
+        if (!hasPackageSource && manualOnly != true)
+        {
+            errors.Add($"{ctx}: package source id is required unless manualOnly is true.");
         }
     }
 

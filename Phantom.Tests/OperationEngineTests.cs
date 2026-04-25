@@ -137,7 +137,6 @@ public sealed class OperationEngineTests
             DryRun = false,
             EnableDestructiveOperations = settings.EnableDestructiveOperations,
             ForceDangerous = true,
-            InteractiveDangerousPrompt = true,
             ConfirmDangerousAsync = prompt =>
             {
                 capturedPrompt = prompt;

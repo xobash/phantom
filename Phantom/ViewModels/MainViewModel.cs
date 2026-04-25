@@ -379,6 +379,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             disposableFeatures.Dispose();
         }
 
+        if (Store is IDisposable disposableStore)
+        {
+            disposableStore.Dispose();
+        }
+
         GC.SuppressFinalize(this);
     }
 }

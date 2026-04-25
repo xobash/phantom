@@ -29,7 +29,7 @@ public sealed class AppBootstrap : IDisposable
         Runner = new PowerShellRunner(Console, Log, Paths, () => SettingsProvider.Current);
         ProcessRunner = new ExternalProcessRunner(Console, Log);
         PackageManagers = new PackageManagerResolver();
-        StoreInstaller = new StoreInstallService(PackageManagers, ProcessRunner, Console);
+        StoreInstaller = new StoreInstallService(PackageManagers);
         Operations = new OperationEngine(Runner, UndoStore, Network, Console, Log, () => SettingsProvider.Current);
         Definitions = new DefinitionCatalogService(Paths);
         Prompt = new UserPromptService();
@@ -41,7 +41,7 @@ public sealed class AppBootstrap : IDisposable
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
         Apps = new AppsViewModel(HomeData, Console, Runner);
         Services = new ServicesViewModel(HomeData, Console, Runner, Operations, ExecutionCoordinator, Prompt, () => SettingsProvider.Current);
-        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, () => SettingsProvider.Current);
+        Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, Query, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);
         Fixes = new FixesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Runner, () => SettingsProvider.Current);

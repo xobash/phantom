@@ -4,13 +4,24 @@ public sealed class CatalogApp
 {
     public string Category { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
     public string WingetId { get; set; } = string.Empty;
     public string ChocoId { get; set; } = string.Empty;
+    public string ScoopId { get; set; } = string.Empty;
+    public string PipId { get; set; } = string.Empty;
+    public string NpmId { get; set; } = string.Empty;
+    public string DotNetToolId { get; set; } = string.Empty;
+    public string PowerShellGalleryId { get; set; } = string.Empty;
+    public string[] PackageSourcePriority { get; set; } = Array.Empty<string>();
     public string? SilentArgs { get; set; }
     public string? Homepage { get; set; }
     public string[] Tags { get; set; } = Array.Empty<string>();
+    public bool ManualOnly { get; set; }
     public bool Selected { get; set; }
     public string Status { get; set; } = "Unknown";
+    public string SourceSummary { get; set; } = string.Empty;
+    public string InstalledVersion { get; set; } = string.Empty;
+    public string AvailableVersion { get; set; } = string.Empty;
 }
 
 public sealed class TweakDefinition

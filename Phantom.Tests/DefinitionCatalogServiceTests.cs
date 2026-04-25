@@ -33,4 +33,27 @@ public sealed class DefinitionCatalogServiceTests
         var ex = await Assert.ThrowsAsync<InvalidDataException>(() => service.LoadTweaksAsync(CancellationToken.None));
         Assert.Contains("Schema validation failed", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task LoadCatalogAsync_RequiresPackageSourceOrManualOnly()
+    {
+        var paths = TestHelpers.CreateIsolatedPaths();
+        var dataDir = Path.Combine(paths.BaseDirectory, "Data");
+        Directory.CreateDirectory(dataDir);
+
+        var invalidCatalogJson = """
+        [
+          {
+            "category": "Utilities",
+            "displayName": "Missing Source"
+          }
+        ]
+        """;
+
+        await File.WriteAllTextAsync(Path.Combine(dataDir, "catalog.apps.json"), invalidCatalogJson);
+        var service = new DefinitionCatalogService(paths);
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(() => service.LoadCatalogAsync(CancellationToken.None));
+        Assert.Contains("manualOnly", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

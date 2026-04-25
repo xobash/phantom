@@ -142,7 +142,6 @@ public sealed class CliRunner
                 EnableDestructiveOperations = forceDangerousEnabled || settings.EnableDestructiveOperations,
                 ForceDangerous = forceDangerousEnabled,
                 SkipCaptureCheck = skipCaptureCheck,
-                InteractiveDangerousPrompt = false,
                 ConfirmDangerousAsync = prompt =>
                 {
                 _console.Publish("Warning", $"CLI dangerous confirmation: {prompt}");
@@ -242,7 +241,7 @@ public sealed class CliRunner
 
         var catalog = await _definitions.LoadCatalogAsync(cancellationToken).ConfigureAwait(false);
         var selectedApps = catalog.Where(a => config.StoreSelections.Contains(a.DisplayName, StringComparer.OrdinalIgnoreCase)).ToList();
-        operations.AddRange(selectedApps.Select(BuildStoreInstallOperation));
+        operations.AddRange(selectedApps.Select(app => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install)));
 
         var tweaks = await _definitions.LoadTweaksAsync(cancellationToken).ConfigureAwait(false);
         var tweakLookup = tweaks.ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
@@ -259,23 +258,7 @@ public sealed class CliRunner
 
         operations.AddRange(tweaks
             .Where(t => config.Tweaks.Contains(t.Id, StringComparer.OrdinalIgnoreCase))
-                .Select(t => new OperationDefinition
-                {
-                    Id = $"tweak.{t.Id}",
-                    Title = t.Name,
-                    Description = t.Description,
-                    RiskTier = t.RiskTier,
-                    Reversible = t.Reversible,
-                    Compatibility = t.Compatibility ?? Array.Empty<string>(),
-                    DetectScript = t.DetectScript,
-                    RunScripts = [new PowerShellStep { Name = "apply", Script = t.ApplyScript }],
-                    UndoScripts = [new PowerShellStep { Name = "undo", Script = t.UndoScript }],
-                    StateCaptureScripts = t.StateCaptureKeys.Select(k => new PowerShellStep
-                {
-                    Name = k,
-                    Script = BuildRegistryCaptureScript(k)
-                }).ToArray()
-            }));
+            .Select(OperationDefinitionFactory.BuildTweakOperation));
 
         var features = await _definitions.LoadFeaturesAsync(cancellationToken).ConfigureAwait(false);
         operations.AddRange(features
@@ -318,104 +301,4 @@ public sealed class CliRunner
         return operations;
     }
 
-    private static string BuildRegistryCaptureScript(string key)
-    {
-        var escaped = key.Replace("'", "''");
-        return $$"""
-$WarningPreference='Continue'
-$p='{{escaped}}'
-if (Test-Path $p) {
-  $item = Get-ItemProperty -Path $p -ErrorAction Stop
-  $out = [ordered]@{}
-  foreach ($prop in $item.PSObject.Properties) {
-    if ($prop.MemberType -ne 'NoteProperty' -or $prop.Name -like 'PS*') { continue }
-    $value = $prop.Value
-    $entry = [ordered]@{
-      Type  = 'Unknown'
-      Value = $null
-    }
-
-    if ($null -eq $value) {
-      $entry.Type = 'Null'
-      $entry.Value = $null
-    } elseif ($value -is [byte[]]) {
-      $entry.Type = 'Binary'
-      $entry.Value = [Convert]::ToBase64String($value)
-    } elseif ($value -is [int32]) {
-      $entry.Type = 'DWord'
-      $entry.Value = [int]$value
-    } elseif ($value -is [int64]) {
-      $entry.Type = 'QWord'
-      $entry.Value = [long]$value
-    } elseif ($value -is [string[]]) {
-      $entry.Type = 'MultiString'
-      $entry.Value = $value
-    } elseif ($value -is [string]) {
-      $entry.Type = 'String'
-      $entry.Value = $value
-    } else {
-      $entry.Type = $value.GetType().FullName
-      $entry.Value = $value
-    }
-
-    $out[$prop.Name] = $entry
-  }
-
-  $out | ConvertTo-Json -Depth 10 -Compress
-} else {
-  ''
-}
-""";
-    }
-
-    private static OperationDefinition BuildStoreInstallOperation(CatalogApp app)
-    {
-        var packageQuery = PowerShellInputSanitizer.EnsurePackageQuery(app.DisplayName, $"store app '{app.DisplayName}' displayName");
-        var wingetId = string.IsNullOrWhiteSpace(app.WingetId)
-            ? string.Empty
-            : PowerShellInputSanitizer.EnsurePackageId(app.WingetId, $"store app '{app.DisplayName}' wingetId");
-        var chocoId = string.IsNullOrWhiteSpace(app.ChocoId)
-            ? string.Empty
-            : PowerShellInputSanitizer.EnsurePackageId(app.ChocoId, $"store app '{app.DisplayName}' chocoId");
-
-        string winget = wingetId.Length == 0
-            ? $"winget install --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-source-agreements --accept-package-agreements --silent"
-            : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-source-agreements --accept-package-agreements --silent";
-        string choco = chocoId.Length == 0
-            ? string.Empty
-            : $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y";
-
-        var managerProbeScript =
-            "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); " +
-            "$hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); " +
-            "if (-not $hasChoco) { $hasChoco = Test-Path (Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe') }; ";
-
-        var script = !string.IsNullOrWhiteSpace(winget) && !string.IsNullOrWhiteSpace(choco)
-            ? $"{managerProbeScript}if($hasWinget){{ {winget} }} elseif($hasChoco){{ {choco} }} else {{ throw 'No package manager available' }}"
-            : !string.IsNullOrWhiteSpace(winget)
-                ? $"{managerProbeScript}if($hasWinget){{ {winget} }} else {{ throw 'winget missing' }}"
-                : $"{managerProbeScript}if($hasChoco){{ {choco} }} else {{ throw 'choco missing' }}";
-
-        return new OperationDefinition
-        {
-            Id = $"store.app.{new string(app.DisplayName.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant()}",
-            Title = $"Install {app.DisplayName}",
-            Description = "Install app from catalog",
-            RiskTier = RiskTier.Basic,
-            Reversible = true,
-            RunScripts = [new PowerShellStep { Name = "install", Script = script, RequiresNetwork = true }],
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "uninstall",
-                    Script = wingetId.Length == 0 && chocoId.Length > 0
-                        ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
-                        : wingetId.Length == 0
-                            ? $"winget uninstall --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --silent"
-                            : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent"
-                }
-            ]
-        };
-    }
 }

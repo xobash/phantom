@@ -36,6 +36,11 @@
                                FontSize="21"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource DarkTextBrush}"/>
+                    <TextBlock Text="{Binding ManagerSummary}"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap"
+                               FontSize="13"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                         <TextBlock Text="winget: " FontSize="18" Foreground="{DynamicResource MutedTextBrush}"/>
                         <TextBlock Text="{Binding WingetInstalled}" FontSize="18" FontWeight="SemiBold">
@@ -72,6 +77,7 @@
                     <Button Command="{Binding RefreshManagersCommand}"
                             Style="{StaticResource RefreshIconButtonStyle}"
                             ToolTip="Refresh package manager status"/>
+                    <Button Content="Refresh package state" Command="{Binding RefreshPackageStatusCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="{Binding WingetToggleLabel}" Command="{Binding ToggleWingetCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="{Binding ChocoToggleLabel}" Command="{Binding ToggleChocoCommand}" Style="{StaticResource DarkButtonStyle}"/>
                 </StackPanel>
@@ -87,6 +93,7 @@
                     <Button Content="Install selected" Command="{Binding InstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Uninstall selected" Command="{Binding UninstallSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
                     <Button Content="Upgrade selected" Command="{Binding UpgradeSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
+                    <Button Content="Discover selected" Command="{Binding DiscoverSelectedCommand}" Style="{StaticResource DarkButtonStyle}"/>
                 </StackPanel>
                 </Grid>
             </ScrollViewer>
@@ -140,6 +147,9 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="190"/>
+                    <DataGridTextColumn Header="Source" Binding="{Binding SourceSummary}" Width="220"/>
+                    <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="110"/>
+                    <DataGridTextColumn Header="Available" Binding="{Binding AvailableVersion}" Width="110"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

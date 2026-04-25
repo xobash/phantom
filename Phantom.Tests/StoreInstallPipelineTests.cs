@@ -1,4 +1,5 @@
 using Phantom.Services;
+using Phantom.Models;
 
 namespace Phantom.Tests;
 
@@ -64,59 +65,38 @@ public sealed class StoreInstallPipelineTests
     }
 
     [Fact]
-    public void BuildWingetInstallArguments_IncludesRequiredNonInteractiveFlags()
+    public async Task ResolveAdditionalManagersAsync_UsesPathResolver()
     {
-        var args = StoreCommandBuilder.BuildWingetInstallArguments("Microsoft.VisualStudioCode", ["--scope", "machine"]);
+        var resolver = new PackageManagerResolver(
+            fileExists: _ => false,
+            pathResolver: (name, _) => Task.FromResult<string?>($"/tools/{name}"));
 
-        Assert.Equal("install", args[0]);
-        Assert.Contains("--id", args);
-        Assert.Contains("Microsoft.VisualStudioCode", args);
-        Assert.Contains("--exact", args);
-        Assert.Contains("--accept-package-agreements", args);
-        Assert.Contains("--accept-source-agreements", args);
-        Assert.Contains("--disable-interactivity", args);
-        Assert.Contains("--scope", args);
-        Assert.Contains("machine", args);
+        Assert.True((await resolver.ResolveScoopAsync(CancellationToken.None)).IsAvailable);
+        Assert.True((await resolver.ResolvePipAsync(CancellationToken.None)).IsAvailable);
+        Assert.True((await resolver.ResolveNpmAsync(CancellationToken.None)).IsAvailable);
+        Assert.True((await resolver.ResolveDotNetToolAsync(CancellationToken.None)).IsAvailable);
+        Assert.True((await resolver.ResolvePowerShellGalleryAsync(CancellationToken.None)).IsAvailable);
     }
 
     [Fact]
-    public void BuildChocoInstallArguments_IncludesRequiredFlags()
+    public void BuildPackageOperation_UsesSourcePriorityAndMarksInstallsNonReversible()
     {
-        var args = StoreCommandBuilder.BuildChocoInstallArguments("7zip", ["--ignore-checksums"]);
+        var app = new CatalogApp
+        {
+            DisplayName = "Tool",
+            WingetId = "Vendor.Tool",
+            ScoopId = "tool",
+            PackageSourcePriority = ["scoop", "winget"]
+        };
 
-        Assert.Equal("install", args[0]);
-        Assert.Contains("7zip", args);
-        Assert.Contains("-y", args);
-        Assert.Contains("--no-progress", args);
-        Assert.Contains("--ignore-checksums", args);
-    }
+        var operation = OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install);
 
-    [Fact]
-    public void DescribeWingetExitCode_ReturnsMappedMessageForKnownCode()
-    {
-        var message = StoreCommandBuilder.DescribeWingetExitCode(-1978335212);
-        Assert.Contains("No package found", message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void OutputContainsWingetPackage_DetectsPackageInListOutput()
-    {
-        var output = """
-                     Name                  Id                           Version
-                     --------------------------------------------------------------
-                     Visual Studio Code    Microsoft.VisualStudioCode   1.99.0
-                     """;
-        Assert.True(StoreCommandBuilder.OutputContainsWingetPackage("Microsoft.VisualStudioCode", output));
-    }
-
-    [Fact]
-    public void OutputContainsChocoPackage_DetectsPackageInLimitOutput()
-    {
-        var output = """
-                     7zip|24.09
-                     git|2.49.0
-                     """;
-        Assert.True(StoreCommandBuilder.OutputContainsChocoPackage("7zip", output));
+        Assert.Equal(RiskTier.Advanced, operation.RiskTier);
+        Assert.False(operation.Reversible);
+        var script = Assert.Single(operation.RunScripts).Script;
+        Assert.Contains("scoop install 'tool'", script, StringComparison.OrdinalIgnoreCase);
+        Assert.True(script.IndexOf("scoop install", StringComparison.OrdinalIgnoreCase) <
+                    script.IndexOf("winget install", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

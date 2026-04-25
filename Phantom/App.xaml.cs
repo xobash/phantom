@@ -312,6 +312,10 @@ public partial class App : Application
                 return;
             }
 
+            // Clone the shared resource so the animated brush instance stays mutable.
+            appBrush = appBrush.CloneCurrentValue();
+            Resources["AppBgBrush"] = appBrush;
+
             var duration = new Duration(TimeSpan.FromSeconds(24));
             var easing = new SineEase { EasingMode = EasingMode.EaseInOut };
 

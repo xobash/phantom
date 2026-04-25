@@ -12,7 +12,6 @@ public sealed class OperationRequest
     public bool EnableDestructiveOperations { get; init; }
     public bool ForceDangerous { get; init; }
     public bool SkipCaptureCheck { get; init; }
-    public bool InteractiveDangerousPrompt { get; init; } = true;
     public required Func<string, Task<bool>> ConfirmDangerousAsync { get; init; }
 }
 

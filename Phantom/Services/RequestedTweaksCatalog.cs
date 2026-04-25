@@ -1140,6 +1140,137 @@ internal static class RequestedTweaksCatalog
                 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -Name AutoDetect -ErrorAction SilentlyContinue
                 """),
 
+            T("disable-cloud-clipboard", "Disable Cloud Clipboard", "Disables clipboard sync across devices.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Clipboard'
+                if((Get-ItemProperty -Path $p -Name EnableClipboardHistory -ErrorAction Stop).EnableClipboardHistory -eq 0 -and (Get-ItemProperty -Path $p -Name CloudClipboardAutomaticUpload -ErrorAction Stop).CloudClipboardAutomaticUpload -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Clipboard' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Clipboard' -Name EnableClipboardHistory -Type DWord -Value 0
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Clipboard' -Name CloudClipboardAutomaticUpload -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Clipboard' -Name EnableClipboardHistory -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Clipboard' -Name CloudClipboardAutomaticUpload -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-lock-screen-spotlight", "Disable Lock Screen Spotlight", "Disables Windows Spotlight and promotional lock-screen content.", RiskTier.Basic, "HKCU", true,
+                """
+                $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+                $a=(Get-ItemProperty -Path $p -Name RotatingLockScreenEnabled -ErrorAction Stop).RotatingLockScreenEnabled
+                $b=(Get-ItemProperty -Path $p -Name RotatingLockScreenOverlayEnabled -ErrorAction Stop).RotatingLockScreenOverlayEnabled
+                if($a -eq 0 -and $b -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Force | Out-Null
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name RotatingLockScreenEnabled -Type DWord -Value 0
+                Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name RotatingLockScreenOverlayEnabled -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name RotatingLockScreenEnabled -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name RotatingLockScreenOverlayEnabled -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-remote-assistance", "Disable Remote Assistance", "Disables unsolicited Windows Remote Assistance invitations.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance'
+                if((Get-ItemProperty -Path $p -Name fAllowToGetHelp -ErrorAction Stop).fAllowToGetHelp -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance' -Name fAllowToGetHelp -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance' -Name fAllowToGetHelp -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-update-auto-restart", "Disable Update Auto-Restart", "Prevents Windows Update from auto-restarting while users are signed in.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+                if((Get-ItemProperty -Path $p -Name NoAutoRebootWithLoggedOnUsers -ErrorAction Stop).NoAutoRebootWithLoggedOnUsers -eq 1){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name NoAutoRebootWithLoggedOnUsers -Type DWord -Value 1
+                """,
+                """
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name NoAutoRebootWithLoggedOnUsers -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-edge-startup-boost", "Disable Edge Startup Boost", "Disables Edge Startup Boost and background mode policies.", RiskTier.Advanced, "HKLM", true,
+                """
+                $p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+                $startup=(Get-ItemProperty -Path $p -Name StartupBoostEnabled -ErrorAction Stop).StartupBoostEnabled
+                $background=(Get-ItemProperty -Path $p -Name BackgroundModeEnabled -ErrorAction Stop).BackgroundModeEnabled
+                if($startup -eq 0 -and $background -eq 0){'Applied'} else {'Not Applied'}
+                """,
+                """
+                New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Force | Out-Null
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name StartupBoostEnabled -Type DWord -Value 0
+                Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name BackgroundModeEnabled -Type DWord -Value 0
+                """,
+                """
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name StartupBoostEnabled -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name BackgroundModeEnabled -ErrorAction SilentlyContinue
+                """),
+
+            T("disable-netbios", "Disable NetBIOS over TCP/IP", "Disables NetBIOS over TCP/IP on active IP-enabled adapters.", RiskTier.Advanced, "System", true,
+                """
+                $adapters=Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True'
+                if($null -eq $adapters){throw 'No IP-enabled adapters found.'}
+                $allDisabled=$true
+                foreach($adapter in $adapters){ if($adapter.TcpipNetbiosOptions -ne 2){ $allDisabled=$false; break } }
+                if($allDisabled){'Applied'} else {'Not Applied'}
+                """,
+                """
+                $adapters=Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True'
+                foreach($adapter in $adapters){ Invoke-CimMethod -InputObject $adapter -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 2 } | Out-Null }
+                """,
+                """
+                $adapters=Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True'
+                foreach($adapter in $adapters){ Invoke-CimMethod -InputObject $adapter -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 0 } | Out-Null }
+                """),
+
+            T("disable-telemetry-scheduled-tasks", "Disable Telemetry Scheduled Tasks", "Disables common CEIP/Application Experience telemetry tasks.", RiskTier.Advanced, "System", false,
+                """
+                $tasks=@(
+                  @{Path='\Microsoft\Windows\Application Experience\';Name='Microsoft Compatibility Appraiser'},
+                  @{Path='\Microsoft\Windows\Application Experience\';Name='ProgramDataUpdater'},
+                  @{Path='\Microsoft\Windows\Customer Experience Improvement Program\';Name='Consolidator'},
+                  @{Path='\Microsoft\Windows\Customer Experience Improvement Program\';Name='UsbCeip'}
+                )
+                $enabled=$false
+                foreach($task in $tasks){
+                  $item=Get-ScheduledTask -TaskPath $task.Path -TaskName $task.Name -ErrorAction SilentlyContinue
+                  if($item -and $item.State -ne 'Disabled'){ $enabled=$true; break }
+                }
+                if(-not $enabled){'Applied'} else {'Not Applied'}
+                """,
+                """
+                Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Application Experience\' -TaskName 'Microsoft Compatibility Appraiser' -ErrorAction SilentlyContinue | Out-Null
+                Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Application Experience\' -TaskName 'ProgramDataUpdater' -ErrorAction SilentlyContinue | Out-Null
+                Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program\' -TaskName 'Consolidator' -ErrorAction SilentlyContinue | Out-Null
+                Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program\' -TaskName 'UsbCeip' -ErrorAction SilentlyContinue | Out-Null
+                """,
+                """
+                Enable-ScheduledTask -TaskPath '\Microsoft\Windows\Application Experience\' -TaskName 'Microsoft Compatibility Appraiser' -ErrorAction SilentlyContinue | Out-Null
+                Enable-ScheduledTask -TaskPath '\Microsoft\Windows\Application Experience\' -TaskName 'ProgramDataUpdater' -ErrorAction SilentlyContinue | Out-Null
+                Enable-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program\' -TaskName 'Consolidator' -ErrorAction SilentlyContinue | Out-Null
+                Enable-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program\' -TaskName 'UsbCeip' -ErrorAction SilentlyContinue | Out-Null
+                """),
+
+            T("appx-package-inventory", "AppX Package Inventory", "Lists removable AppX/MSIX packages without removing them.", RiskTier.Basic, "System", false,
+                """
+                'Not Applied'
+                """,
+                """
+                Get-AppxPackage -AllUsers | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | Sort-Object Name | Select-Object Name, PackageFullName, NonRemovable | Format-Table -AutoSize
+                """,
+                """
+                Write-Output 'Inventory action has no undo because it does not modify packages.'
+                """),
+
             T("delivery-optimization-lan-only", "Delivery Optimization LAN Only", "Allows Delivery Optimization only from local-network peers instead of internet peers.", RiskTier.Advanced, "HKLM", true,
                 """
                 $p='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config'

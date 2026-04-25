@@ -115,7 +115,7 @@
                     <TextBlock Text="Tweaks" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
                     <TextBlock Margin="0,4,0,0"
                                Foreground="{DynamicResource MutedTextBrush}"
-                               Text="Use grouped sections. Persistent tweaks use switches; one-shot tweaks use action buttons."/>
+                               Text="{Binding ScanSummary}"/>
                 </StackPanel>
 
                 <TextBox Grid.Column="1"
@@ -128,6 +128,12 @@
                     <Button Command="{Binding RefreshStatusCommand}"
                             Style="{StaticResource RefreshIconButtonStyle}"
                             ToolTip="Refresh tweak status"/>
+                    <Button Content="Scan"
+                            Command="{Binding RunLightweightScanCommand}"
+                            Style="{StaticResource CompactButtonStyle}"/>
+                    <Button Content="Apply recommended"
+                            Command="{Binding ApplyRecommendedScanFixesCommand}"
+                            Style="{StaticResource CompactButtonStyle}"/>
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                         <CheckBox IsChecked="{Binding ExpandAllSections}" Style="{StaticResource ToggleSwitchCheckBoxStyle}"/>
                         <TextBlock Text="Expand all" Margin="8,2,0,0"/>

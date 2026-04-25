@@ -137,9 +137,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 
         var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
         var script = $"Stop-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
-        var undoScript = $"Start-Service -Name {serviceLiteral} -ErrorAction Stop";
-        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
-        return ExecuteManagedOperationAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true, undoScript, captureScript);
+        return ExecuteManagedOperationAsync("services.stop", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private Task RestartServiceAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -157,8 +155,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 
         var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
         var script = $"Restart-Service -Name {serviceLiteral} -Force -ErrorAction Stop";
-        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
-        return ExecuteManagedOperationAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true, "Write-Output 'No automated undo for restart.'", captureScript);
+        return ExecuteManagedOperationAsync("services.restart", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private Task BrowseServiceLocationAsync(ServiceInfoRow? service, CancellationToken cancellationToken)
@@ -223,8 +220,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 
         var serviceLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(safeName);
         var script = $"Set-Service -Name {serviceLiteral} -StartupType {safeMode} -ErrorAction Stop";
-        var captureScript = $"$svc=Get-Service -Name {serviceLiteral} -ErrorAction Stop; [PSCustomObject]@{{ Name=[string]$svc.Name; Status=[string]$svc.Status; StartType=[string]$svc.StartType }} | ConvertTo-Json -Compress";
-        return ExecuteManagedOperationAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true, "Write-Output 'Undo for service startup mode is not automatic.'", captureScript);
+        return ExecuteManagedOperationAsync($"services.mode.{safeMode.ToLowerInvariant()}", safeName, script, cancellationToken, refreshAfter: true);
     }
 
     private async Task ExecuteManagedOperationAsync(
@@ -232,9 +228,7 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         string serviceName,
         string script,
         CancellationToken cancellationToken,
-        bool refreshAfter,
-        string undoScript,
-        string stateCaptureScript)
+        bool refreshAfter)
     {
         CancellationToken coordinatorToken;
         try
@@ -257,29 +251,13 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
                 Title = $"{serviceName} ({operationId})",
                 Description = $"Service operation for {serviceName}.",
                 RiskTier = RiskTier.Advanced,
-                Reversible = true,
+                Reversible = false,
                 RunScripts =
                 [
                     new PowerShellStep
                     {
                         Name = serviceName,
                         Script = script
-                    }
-                ],
-                UndoScripts =
-                [
-                    new PowerShellStep
-                    {
-                        Name = "undo",
-                        Script = undoScript
-                    }
-                ],
-                StateCaptureScripts =
-                [
-                    new PowerShellStep
-                    {
-                        Name = "service-state",
-                        Script = stateCaptureScript
                     }
                 ]
             };

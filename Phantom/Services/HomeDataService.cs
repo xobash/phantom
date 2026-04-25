@@ -224,10 +224,17 @@ catch {
         }
 
         var trimmed = stdout.Trim();
-        if ((trimmed.StartsWith('{') && trimmed.EndsWith('}')) ||
-            (trimmed.StartsWith('[') && trimmed.EndsWith(']')))
+        if (IsValidJsonPayload(trimmed))
         {
             return trimmed;
+        }
+
+        foreach (var line in trimmed.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Reverse())
+        {
+            if (IsValidJsonPayload(line))
+            {
+                return line;
+            }
         }
 
         var objectStart = trimmed.IndexOf('{');
@@ -243,7 +250,38 @@ catch {
         }
 
         var end = Math.Max(trimmed.LastIndexOf('}'), trimmed.LastIndexOf(']'));
-        return end > start ? trimmed[start..(end + 1)] : string.Empty;
+        if (end <= start)
+        {
+            return string.Empty;
+        }
+
+        var candidate = trimmed[start..(end + 1)];
+        return IsValidJsonPayload(candidate) ? candidate : string.Empty;
+    }
+
+    private static bool IsValidJsonPayload(string candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return false;
+        }
+
+        var trimmed = candidate.Trim();
+        if (!((trimmed.StartsWith('{') && trimmed.EndsWith('}')) ||
+              (trimmed.StartsWith('[') && trimmed.EndsWith(']'))))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var _ = JsonDocument.Parse(trimmed);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static IReadOnlyList<T> DeserializeJsonList<T>(string json)

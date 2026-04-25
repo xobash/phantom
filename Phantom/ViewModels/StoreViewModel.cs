@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Data;
 using Phantom.Commands;
@@ -8,10 +9,8 @@ using Phantom.Services;
 
 namespace Phantom.ViewModels;
 
-public sealed class StoreViewModel : ObservableObject, ISectionViewModel
+public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
-    private const string ManagerProbeScript = "$hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue); $hasChoco = $null -ne (Get-Command choco -ErrorAction SilentlyContinue); if (-not $hasChoco) { $candidates=@((Join-Path $env:ProgramData 'chocolatey\\bin\\choco.exe'),(Join-Path $env:ProgramData 'chocolatey\\choco.exe')); if($env:ChocolateyInstall){ $candidates += (Join-Path $env:ChocolateyInstall 'bin\\choco.exe'); $candidates += (Join-Path $env:ChocolateyInstall 'choco.exe') }; foreach($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)){ if (Test-Path $candidate) { $hasChoco = $true; break } } }; ";
-
     private readonly DefinitionCatalogService _catalogService;
     private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
@@ -19,11 +18,14 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private readonly ConsoleStreamService _console;
     private readonly NetworkGuardService _networkGuard;
     private readonly StoreInstallService _storeInstallService;
+    private readonly PowerShellQueryService _queryService;
     private readonly Func<AppSettings> _settingsAccessor;
 
     private bool _wingetInstalled;
     private bool _chocoInstalled;
+    private string _managerSummary = "Package managers: unknown";
     private string _search = string.Empty;
+    private bool _disposed;
 
     public StoreViewModel(
         DefinitionCatalogService catalogService,
@@ -33,6 +35,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         ConsoleStreamService console,
         NetworkGuardService networkGuard,
         StoreInstallService storeInstallService,
+        PowerShellQueryService queryService,
         Func<AppSettings> settingsAccessor)
     {
         _catalogService = catalogService;
@@ -42,6 +45,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         _console = console;
         _networkGuard = networkGuard;
         _storeInstallService = storeInstallService;
+        _queryService = queryService;
         _settingsAccessor = settingsAccessor;
 
         Catalog = new ObservableCollection<CatalogApp>();
@@ -62,6 +66,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync, CanRunStoreOperation);
         ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync, CanRunStoreOperation);
         ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync, CanRunStoreOperation);
+        RefreshPackageStatusCommand = new AsyncRelayCommand(RefreshPackageStatusAsync, CanRunStoreOperation);
+        DiscoverSelectedCommand = new AsyncRelayCommand(DiscoverSelectedAsync, CanRunStoreOperation);
         InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync, CanRunStoreOperation);
         UninstallSelectedCommand = new AsyncRelayCommand(UninstallSelectedAsync, CanRunStoreOperation);
         UpgradeSelectedCommand = new AsyncRelayCommand(UpgradeSelectedAsync, CanRunStoreOperation);
@@ -82,6 +88,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     public AsyncRelayCommand UninstallChocoCommand { get; }
     public AsyncRelayCommand ToggleWingetCommand { get; }
     public AsyncRelayCommand ToggleChocoCommand { get; }
+    public AsyncRelayCommand RefreshPackageStatusCommand { get; }
+    public AsyncRelayCommand DiscoverSelectedCommand { get; }
     public AsyncRelayCommand InstallSelectedCommand { get; }
     public AsyncRelayCommand UninstallSelectedCommand { get; }
     public AsyncRelayCommand UpgradeSelectedCommand { get; }
@@ -117,6 +125,12 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     public string WingetToggleLabel => WingetInstalled ? "Uninstall winget" : "Install winget";
     public string ChocoToggleLabel => ChocoInstalled ? "Uninstall choco" : "Install choco";
 
+    public string ManagerSummary
+    {
+        get => _managerSummary;
+        set => SetProperty(ref _managerSummary, value);
+    }
+
     public string Search
     {
         get => _search;
@@ -137,6 +151,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             Catalog.Clear();
             foreach (var app in apps)
             {
+                app.SourceSummary = BuildSourceSummary(app);
+                app.Status = app.ManualOnly ? "Manual-only" : "Ready";
                 Catalog.Add(app);
             }
         });
@@ -149,13 +165,14 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         var availability = await _storeInstallService.GetManagerAvailabilityAsync(cancellationToken).ConfigureAwait(false);
         WingetInstalled = availability.Winget.IsAvailable;
         ChocoInstalled = availability.Chocolatey.IsAvailable;
+        ManagerSummary = BuildManagerSummary(availability);
         if (echoToConsole)
         {
             _console.Publish("Trace", $"winget resolver: {(WingetInstalled ? availability.Winget.ExecutablePath : availability.Winget.Message)}");
             _console.Publish("Trace", $"choco resolver: {(ChocoInstalled ? availability.Chocolatey.ExecutablePath : availability.Chocolatey.Message)}");
         }
 
-        _console.Publish("Info", $"Package managers: winget={(WingetInstalled ? "present" : "missing")}, choco={(ChocoInstalled ? "present" : "missing")}");
+        _console.Publish("Info", ManagerSummary);
     }
 
     private async Task InstallMissingManagersAsync(CancellationToken cancellationToken)
@@ -229,63 +246,32 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     private async Task InstallSelectedAsync(CancellationToken cancellationToken)
     {
         var selected = Catalog.Where(x => x.Selected).ToList();
+        var operations = BuildOperationsForSelected(selected, app => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install));
+        await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DiscoverSelectedAsync(CancellationToken cancellationToken)
+    {
+        var selected = await Application.Current.Dispatcher.InvokeAsync(() => Catalog.Where(x => x.Selected).ToList());
         if (selected.Count == 0)
         {
             _console.Publish("Info", "No items selected.");
             return;
         }
 
-        if (!_networkGuard.IsOnline())
+        foreach (var app in selected)
         {
-            _console.Publish("Error", "Offline detected. Store install blocked before execution.");
-            return;
-        }
-
-        CancellationToken token;
-        try
-        {
-            token = _executionCoordinator.Begin();
-        }
-        catch (InvalidOperationException ex)
-        {
-            _console.Publish("Warning", ex.Message);
-            return;
-        }
-
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken);
-        try
-        {
-            foreach (var app in selected)
+            try
             {
-                await UpdateAppStatusAsync(app, "Running").ConfigureAwait(false);
-                _console.Publish("Info", $"Store install started: {app.DisplayName}");
-                var result = await _storeInstallService.InstallAsync(app, linked.Token).ConfigureAwait(false);
-                if (result.Success)
-                {
-                    await UpdateAppStatusAsync(app, "Succeeded").ConfigureAwait(false);
-                    _console.Publish("Info", $"{app.DisplayName}: {result.Message}");
-                }
-                else
-                {
-                    await UpdateAppStatusAsync(app, "Failed").ConfigureAwait(false);
-                    PublishInstallFailure(app, result);
-                }
+                var script = OperationDefinitionFactory.BuildPackageDiscoveryScript(app);
+                var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                var output = (result.Stdout + Environment.NewLine + result.Stderr).Trim();
+                _console.Publish(result.ExitCode == 0 ? "Info" : "Error", $"{app.DisplayName} discovery: {output}");
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _console.Publish("Warning", "Store install cancelled.");
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _console.Publish("Error", $"Store install failed: {ex}");
-            throw;
-        }
-        finally
-        {
-            _executionCoordinator.Complete();
-            await RefreshManagersAsync(CancellationToken.None).ConfigureAwait(false);
+            catch (Exception ex)
+            {
+                _console.Publish("Error", $"{app.DisplayName} discovery failed: {ex.Message}");
+            }
         }
     }
 
@@ -301,6 +287,47 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         var selected = Catalog.Where(x => x.Selected).ToList();
         var operations = BuildOperationsForSelected(selected, BuildUpgradeOperation);
         await ExecuteStoreOperationsAsync(operations, dryRun: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RefreshPackageStatusAsync(CancellationToken cancellationToken)
+    {
+        var apps = await Application.Current.Dispatcher.InvokeAsync(() => Catalog.ToList());
+        var updates = new List<(CatalogApp App, PackageStatusResult Status)>(apps.Count);
+
+        foreach (var app in apps)
+        {
+            try
+            {
+                var script = OperationDefinitionFactory.BuildPackageStatusScript(app);
+                var result = await _queryService.InvokeAsync(script, cancellationToken, echoToConsole: false).ConfigureAwait(false);
+                var output = (result.Stdout + Environment.NewLine + result.Stderr).Trim();
+                var status = result.ExitCode == 0 && !string.IsNullOrWhiteSpace(output)
+                    ? JsonSerializer.Deserialize<PackageStatusResult>(output, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? PackageStatusResult.Unknown("Empty package status JSON.")
+                    : PackageStatusResult.Unknown(string.IsNullOrWhiteSpace(output) ? "No package status output." : output);
+                updates.Add((app, status));
+            }
+            catch (Exception ex)
+            {
+                updates.Add((app, PackageStatusResult.Unknown(ex.Message)));
+            }
+        }
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var update in updates)
+            {
+                update.App.Status = update.Status.Status;
+                update.App.InstalledVersion = update.Status.InstalledVersion;
+                update.App.AvailableVersion = update.Status.AvailableVersion;
+                update.App.SourceSummary = string.IsNullOrWhiteSpace(update.Status.Manager)
+                    ? BuildSourceSummary(update.App)
+                    : $"{update.Status.Manager}:{update.Status.PackageId}";
+            }
+
+            CatalogView.Refresh();
+        });
+
+        _console.Publish("Info", $"Package state refreshed: {updates.Count} catalog entries.");
     }
 
     private async Task<bool> ExecuteStoreOperationsAsync(IReadOnlyList<OperationDefinition> operations, bool dryRun, CancellationToken externalToken)
@@ -351,7 +378,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
             foreach (var op in response.Results)
             {
                 _console.Publish(op.Success ? "Info" : "Error", $"{op.OperationId}: {op.Message}");
-                var item = Catalog.FirstOrDefault(x => $"store.app.{SanitizeId(x.DisplayName)}" == op.OperationId);
+                var item = Catalog.FirstOrDefault(x =>
+                    op.OperationId.EndsWith("." + SanitizeId(x.DisplayName), StringComparison.OrdinalIgnoreCase));
                 if (item is not null)
                 {
                     item.Status = op.Success ? "Done" : "Failed";
@@ -399,6 +427,8 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         UninstallChocoCommand.RaiseCanExecuteChanged();
         ToggleWingetCommand.RaiseCanExecuteChanged();
         ToggleChocoCommand.RaiseCanExecuteChanged();
+        RefreshPackageStatusCommand.RaiseCanExecuteChanged();
+        DiscoverSelectedCommand.RaiseCanExecuteChanged();
         InstallSelectedCommand.RaiseCanExecuteChanged();
         UninstallSelectedCommand.RaiseCanExecuteChanged();
         UpgradeSelectedCommand.RaiseCanExecuteChanged();
@@ -559,140 +589,13 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
     }
 
     private OperationDefinition BuildInstallOperation(CatalogApp app)
-    {
-        var context = $"store app '{app.DisplayName}'";
-        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
-        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
-        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-
-        var silentArgs = NormalizeSilentArgs(app.SilentArgs, $"{context} silentArgs");
-        var silentArgsSegment = silentArgs.Length == 0 ? string.Empty : $" {silentArgs}";
-
-        var wingetScript = wingetId.Length == 0
-            ? $"winget install --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}"
-            : $"winget install --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements --silent{silentArgsSegment}";
-
-        var chocoScript = chocoId.Length > 0
-            ? $"choco install {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y{silentArgsSegment}"
-            : string.Empty;
-
-        var wingetUninstallScript = wingetId.Length == 0
-            ? $"winget uninstall --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --silent"
-            : $"winget uninstall --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --silent";
-
-        return new OperationDefinition
-        {
-            Id = $"store.app.{SanitizeId(app.DisplayName)}",
-            Title = $"Install {app.DisplayName}",
-            Description = "Install app from catalog.",
-            RiskTier = RiskTier.Advanced,
-            Reversible = false,
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "install",
-                    RequiresNetwork = true,
-                    Script = BuildManagerFallbackScript(wingetScript, chocoScript)
-                }
-            ],
-            UndoScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "uninstall",
-                    RequiresNetwork = false,
-                    Script = BuildManagerFallbackScript(
-                        wingetUninstallScript,
-                        chocoId.Length > 0 ? $"choco uninstall {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y" : string.Empty)
-                }
-            ]
-        };
-    }
+        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Install);
 
     private OperationDefinition BuildUninstallOperation(CatalogApp app)
-    {
-        var operation = BuildInstallOperation(app);
-        operation.Title = $"Uninstall {app.DisplayName}";
-        operation.RunScripts = operation.UndoScripts;
-        operation.UndoScripts = Array.Empty<PowerShellStep>();
-        operation.Reversible = false;
-        operation.RiskTier = RiskTier.Advanced;
-        return operation;
-    }
+        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Uninstall);
 
     private OperationDefinition BuildUpgradeOperation(CatalogApp app)
-    {
-        var context = $"store app '{app.DisplayName}'";
-        var packageQuery = NormalizePackageQuery(app.DisplayName, $"{context} displayName");
-        var wingetId = NormalizePackageId(app.WingetId, $"{context} wingetId");
-        var chocoId = NormalizePackageId(app.ChocoId, $"{context} chocoId");
-
-        var wingetScript = wingetId.Length == 0
-            ? $"winget upgrade --name {PowerShellInputSanitizer.ToSingleQuotedLiteral(packageQuery)} --exact --accept-package-agreements --accept-source-agreements"
-            : $"winget upgrade --id {PowerShellInputSanitizer.ToSingleQuotedLiteral(wingetId)} -e --accept-package-agreements --accept-source-agreements";
-
-        var chocoScript = chocoId.Length > 0
-            ? $"choco upgrade {PowerShellInputSanitizer.ToSingleQuotedLiteral(chocoId)} -y"
-            : string.Empty;
-
-        return new OperationDefinition
-        {
-            Id = $"store.upgrade.{SanitizeId(app.DisplayName)}",
-            Title = $"Upgrade {app.DisplayName}",
-            Description = "Upgrade app from catalog.",
-            RiskTier = RiskTier.Advanced,
-            Reversible = false,
-            RunScripts =
-            [
-                new PowerShellStep
-                {
-                    Name = "upgrade",
-                    RequiresNetwork = true,
-                    Script = BuildManagerFallbackScript(wingetScript, chocoScript)
-                }
-            ]
-        };
-    }
-
-    private static string BuildManagerFallbackScript(string wingetScript, string chocoScript)
-    {
-        var hasWinget = !string.IsNullOrWhiteSpace(wingetScript);
-        var hasChoco = !string.IsNullOrWhiteSpace(chocoScript);
-        if (hasWinget && hasChoco)
-        {
-            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} elseif ($hasChoco) {{ {chocoScript} }} else {{ throw 'Neither winget nor choco is installed.' }}";
-        }
-
-        if (hasWinget)
-        {
-            return $"{ManagerProbeScript}if ($hasWinget) {{ {wingetScript} }} else {{ throw 'winget is not installed.' }}";
-        }
-
-        if (hasChoco)
-        {
-            return $"{ManagerProbeScript}if ($hasChoco) {{ {chocoScript} }} else {{ throw 'Chocolatey is not installed.' }}";
-        }
-
-        return "throw 'No installer metadata defined for this app.'";
-    }
-
-    private static string NormalizePackageId(string? raw, string context)
-    {
-        return string.IsNullOrWhiteSpace(raw)
-            ? string.Empty
-            : PowerShellInputSanitizer.EnsurePackageId(raw, context);
-    }
-
-    private static string NormalizePackageQuery(string? raw, string context)
-    {
-        return PowerShellInputSanitizer.EnsurePackageQuery(raw, context);
-    }
-
-    private static string NormalizeSilentArgs(string? raw, string context)
-    {
-        return PowerShellInputSanitizer.EnsureSafeCliArguments(raw, context);
-    }
+        => OperationDefinitionFactory.BuildPackageOperation(app, PackageAction.Upgrade);
 
     private async Task UpdateAppStatusAsync(CatalogApp app, string status)
     {
@@ -717,47 +620,37 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
         CatalogView.Refresh();
     }
 
-    private void PublishInstallFailure(CatalogApp app, StoreInstallResult result)
+    private static string BuildManagerSummary(StoreManagerAvailability availability)
     {
-        var managerText = result.Manager?.ToString() ?? "unknown";
-        if (result.InstallExecution is { } install)
-        {
-            _console.Publish("Error", $"{app.DisplayName}: manager={managerText}, exitCode={install.ExitCode}, durationMs={install.DurationMs}, exe={install.FilePath}, args={install.Arguments}");
-            var stderrTail = GetLastLines(install.Stderr, 6);
-            if (!string.IsNullOrWhiteSpace(stderrTail))
-            {
-                _console.Publish("Error", $"{app.DisplayName} stderr: {stderrTail}");
-            }
-        }
-
-        if (result.VerificationExecution is { } verify)
-        {
-            _console.Publish("Error", $"{app.DisplayName}: verificationExitCode={verify.ExitCode}, verificationDurationMs={verify.DurationMs}");
-            var verificationTail = GetLastLines(string.Concat(verify.Stderr, Environment.NewLine, verify.Stdout), 6);
-            if (!string.IsNullOrWhiteSpace(verificationTail))
-            {
-                _console.Publish("Error", $"{app.DisplayName} verification output: {verificationTail}");
-            }
-        }
-
-        _console.Publish("Error", $"{app.DisplayName}: {result.Message}");
-        if (!string.IsNullOrWhiteSpace(result.Suggestion))
-        {
-            _console.Publish("Warning", $"{app.DisplayName}: {result.Suggestion}");
-        }
+        var parts = availability.All()
+            .Select(item => $"{item.Manager.ToString().ToLowerInvariant()}={(item.Resolution.IsAvailable ? "present" : "missing")}");
+        return "Package managers: " + string.Join(", ", parts);
     }
 
-    private static string GetLastLines(string text, int maxLines)
+    private static string BuildSourceSummary(CatalogApp app)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (app.ManualOnly)
         {
-            return string.Empty;
+            return "manual";
         }
 
-        return string.Join(
-            " | ",
-            text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .TakeLast(Math.Max(1, maxLines)));
+        var sources = new List<string>();
+        AddSource(sources, "winget", app.WingetId);
+        AddSource(sources, "scoop", app.ScoopId);
+        AddSource(sources, "choco", app.ChocoId);
+        AddSource(sources, "pip", app.PipId);
+        AddSource(sources, "npm", app.NpmId);
+        AddSource(sources, "dotnet", app.DotNetToolId);
+        AddSource(sources, "psgallery", app.PowerShellGalleryId);
+        return sources.Count == 0 ? "missing source" : string.Join(", ", sources);
+    }
+
+    private static void AddSource(ICollection<string> sources, string name, string? id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            sources.Add($"{name}:{id}");
+        }
     }
 
     private bool FilterCatalog(object obj)
@@ -774,6 +667,36 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel
 
         return app.DisplayName.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                app.Category.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+               app.SourceSummary.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                app.Tags.Any(tag => tag.Contains(Search, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _executionCoordinator.RunningChanged -= OnExecutionCoordinatorRunningChanged;
+        GC.SuppressFinalize(this);
+    }
+
+    private sealed class PackageStatusResult
+    {
+        public string Status { get; set; } = "Unknown";
+        public string Manager { get; set; } = string.Empty;
+        public string PackageId { get; set; } = string.Empty;
+        public bool Installed { get; set; }
+        public string InstalledVersion { get; set; } = string.Empty;
+        public string AvailableVersion { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+
+        public static PackageStatusResult Unknown(string message) => new()
+        {
+            Status = "Unknown",
+            Message = message
+        };
     }
 }
