@@ -9,7 +9,7 @@
         <Style x:Key="StoreGridTextStyle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontSize" Value="16"/>
             <Setter Property="Foreground" Value="{DynamicResource DarkTextBrush}"/>
         </Style>
         <Style x:Key="StoreInfoChipStyle" TargetType="Border">
@@ -145,19 +145,20 @@
                 <DataGrid.Columns>
                     <DataGridCheckBoxColumn Header="Sel"
                                             Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                            Width="64"/>
-                    <DataGridTemplateColumn Header="App" Width="*">
+                                            Width="48"/>
+                    <DataGridTemplateColumn Header="App" Width="*" MinWidth="260">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="30"/>
+                                        <ColumnDefinition Width="34"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0"
                                                Text="{Binding DisplayName}"
-                                               Style="{StaticResource StoreGridTextStyle}"/>
+                                               Style="{StaticResource StoreGridTextStyle}"
+                                               Margin="0,0,8,0"/>
 
                                     <Border Grid.Column="1"
                                             Style="{StaticResource StoreInfoChipStyle}"
@@ -177,6 +178,7 @@
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource DarkTextBrush}"/>
                                                     <TextBlock Text="{Binding SourceSummary}"
+                                                               FontSize="13"
                                                                Margin="0,4,0,0"
                                                                TextWrapping="Wrap"
                                                                Foreground="{DynamicResource DarkTextBrush}"/>
@@ -193,9 +195,6 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="190"/>
-                    <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="110"/>
-                    <DataGridTextColumn Header="Available" Binding="{Binding AvailableVersion}" Width="110"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
