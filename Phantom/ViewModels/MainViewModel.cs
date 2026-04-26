@@ -346,6 +346,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void AppendConsoleMessage(PowerShellOutputEvent evt)
     {
+        if (evt.Stream.Equals("Trace", StringComparison.OrdinalIgnoreCase) &&
+            evt.Text.StartsWith("Navigation selected:", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         ConsoleMessages.Add(evt);
         if (ConsoleMessages.Count > 4000)
         {

@@ -22,6 +22,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
 
     private bool _wingetInstalled;
     private bool _chocoInstalled;
+    private bool _managerInstallerExpanded;
     private string _managerSummary = "Package managers: unknown";
     private string _search = string.Empty;
     private bool _disposed;
@@ -48,6 +49,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         _settingsAccessor = settingsAccessor;
 
         Catalog = new ObservableCollection<CatalogApp>();
+        PackageManagers = new ObservableCollection<StorePackageManagerOption>();
         CatalogView = CollectionViewSource.GetDefaultView(Catalog);
         CatalogView.Filter = FilterCatalog;
         using (CatalogView.DeferRefresh())
@@ -58,13 +60,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         }
 
         RefreshManagersCommand = new AsyncRelayCommand(ct => RefreshManagersAsync(ct, echoToConsole: true), CanRunStoreOperation);
-        InstallMissingManagersCommand = new AsyncRelayCommand(InstallMissingManagersAsync, CanRunStoreOperation);
-        InstallWingetCommand = new AsyncRelayCommand(InstallWingetAsync, CanRunStoreOperation);
-        UninstallWingetCommand = new AsyncRelayCommand(UninstallWingetAsync, CanRunStoreOperation);
-        InstallChocoCommand = new AsyncRelayCommand(InstallChocoAsync, CanRunStoreOperation);
-        UninstallChocoCommand = new AsyncRelayCommand(UninstallChocoAsync, CanRunStoreOperation);
-        ToggleWingetCommand = new AsyncRelayCommand(ToggleWingetAsync, CanRunStoreOperation);
-        ToggleChocoCommand = new AsyncRelayCommand(ToggleChocoAsync, CanRunStoreOperation);
+        InstallSelectedManagersCommand = new AsyncRelayCommand(InstallSelectedManagersAsync, CanRunStoreOperation);
         RefreshPackageStatusCommand = new AsyncRelayCommand(RefreshPackageStatusAsync, CanRunStoreOperation);
         DiscoverSelectedCommand = new AsyncRelayCommand(DiscoverSelectedAsync, CanRunStoreOperation);
         InstallSelectedCommand = new AsyncRelayCommand(InstallSelectedAsync, CanRunStoreOperation);
@@ -77,16 +73,11 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
     public string Title => "Store";
 
     public ObservableCollection<CatalogApp> Catalog { get; }
+    public ObservableCollection<StorePackageManagerOption> PackageManagers { get; }
     public ICollectionView CatalogView { get; }
 
     public AsyncRelayCommand RefreshManagersCommand { get; }
-    public AsyncRelayCommand InstallMissingManagersCommand { get; }
-    public AsyncRelayCommand InstallWingetCommand { get; }
-    public AsyncRelayCommand UninstallWingetCommand { get; }
-    public AsyncRelayCommand InstallChocoCommand { get; }
-    public AsyncRelayCommand UninstallChocoCommand { get; }
-    public AsyncRelayCommand ToggleWingetCommand { get; }
-    public AsyncRelayCommand ToggleChocoCommand { get; }
+    public AsyncRelayCommand InstallSelectedManagersCommand { get; }
     public AsyncRelayCommand RefreshPackageStatusCommand { get; }
     public AsyncRelayCommand DiscoverSelectedCommand { get; }
     public AsyncRelayCommand InstallSelectedCommand { get; }
@@ -102,8 +93,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             {
                 return;
             }
-
-            Notify(nameof(WingetToggleLabel));
         }
     }
 
@@ -116,18 +105,27 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             {
                 return;
             }
-
-            Notify(nameof(ChocoToggleLabel));
         }
     }
 
-    public string WingetToggleLabel => WingetInstalled ? "Uninstall winget" : "Install winget";
-    public string ChocoToggleLabel => ChocoInstalled ? "Uninstall choco" : "Install choco";
+    public string ManagerInstallerChevron => ManagerInstallerExpanded ? "▾" : "▸";
 
     public string ManagerSummary
     {
         get => _managerSummary;
         set => SetProperty(ref _managerSummary, value);
+    }
+
+    public bool ManagerInstallerExpanded
+    {
+        get => _managerInstallerExpanded;
+        set
+        {
+            if (SetProperty(ref _managerInstallerExpanded, value))
+            {
+                Notify(nameof(ManagerInstallerChevron));
+            }
+        }
     }
 
     public string Search
@@ -166,32 +164,70 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         WingetInstalled = availability.Winget.IsAvailable;
         ChocoInstalled = availability.Chocolatey.IsAvailable;
         ManagerSummary = BuildManagerSummary(availability);
+        await Application.Current.Dispatcher.InvokeAsync(() => UpdateManagerOptions(availability));
         if (echoToConsole)
         {
-            _console.Publish("Trace", $"winget resolver: {(WingetInstalled ? availability.Winget.ExecutablePath : availability.Winget.Message)}");
-            _console.Publish("Trace", $"choco resolver: {(ChocoInstalled ? availability.Chocolatey.ExecutablePath : availability.Chocolatey.Message)}");
+            foreach (var (manager, resolution) in availability.All())
+            {
+                _console.Publish(
+                    "Trace",
+                    $"{GetManagerDisplayName(manager)} resolver: {(resolution.IsAvailable ? resolution.ExecutablePath : resolution.Message)}");
+            }
         }
 
         _console.Publish("Info", ManagerSummary);
+        InstallSelectedManagersCommand.RaiseCanExecuteChanged();
     }
 
     private async Task InstallMissingManagersAsync(CancellationToken cancellationToken)
     {
-        var operations = new List<OperationDefinition>();
+        await InstallSelectedManagersAsync(cancellationToken).ConfigureAwait(false);
+    }
 
-        if (!WingetInstalled)
+    private async Task InstallSelectedManagersAsync(CancellationToken cancellationToken)
+    {
+        var selectedManagers = await Application.Current.Dispatcher.InvokeAsync(() =>
+            PackageManagers
+                .Where(option => option.Selected && option.CanInstall)
+                .Select(option => option.Manager)
+                .Distinct()
+                .ToList());
+
+        if (selectedManagers.Count == 0)
+        {
+            _console.Publish("Info", "No missing package managers selected.");
+            return;
+        }
+
+        var availability = await _storeInstallService.GetManagerAvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        var installed = availability.All()
+            .Where(item => item.Resolution.IsAvailable)
+            .Select(item => item.Manager)
+            .ToHashSet();
+
+        var operations = new List<OperationDefinition>();
+        var needsWinget = selectedManagers.Any(RequiresWingetInstaller) &&
+                          !installed.Contains(StorePackageManager.Winget) &&
+                          !selectedManagers.Contains(StorePackageManager.Winget);
+
+        if (needsWinget)
         {
             operations.Add(BuildInstallWingetOperation());
         }
 
-        if (!ChocoInstalled)
+        foreach (var manager in selectedManagers)
         {
-            operations.Add(BuildInstallChocoOperation());
+            if (installed.Contains(manager))
+            {
+                continue;
+            }
+
+            operations.Add(BuildInstallManagerOperation(manager));
         }
 
         if (operations.Count == 0)
         {
-            _console.Publish("Info", "Nothing to install. winget and Chocolatey are already present.");
+            _console.Publish("Info", "Selected package managers are already installed.");
             return;
         }
 
@@ -452,6 +488,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
     private void OnExecutionCoordinatorRunningChanged(object? sender, bool _)
     {
         RefreshManagersCommand.RaiseCanExecuteChanged();
+        InstallSelectedManagersCommand.RaiseCanExecuteChanged();
         InstallMissingManagersCommand.RaiseCanExecuteChanged();
         InstallWingetCommand.RaiseCanExecuteChanged();
         UninstallWingetCommand.RaiseCanExecuteChanged();
@@ -466,6 +503,157 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         UpgradeSelectedCommand.RaiseCanExecuteChanged();
     }
 
+    private void UpdateManagerOptions(StoreManagerAvailability availability)
+    {
+        var selected = PackageManagers
+            .Where(option => option.Selected)
+            .Select(option => option.Manager)
+            .ToHashSet();
+
+        PackageManagers.Clear();
+        foreach (var (manager, resolution) in availability.All())
+        {
+            var isInstalled = resolution.IsAvailable;
+            PackageManagers.Add(new StorePackageManagerOption(manager)
+            {
+                DisplayName = GetManagerDisplayName(manager),
+                Description = GetManagerDescription(manager),
+                Status = isInstalled ? "Present" : "Missing",
+                Source = isInstalled ? resolution.Source : resolution.Message,
+                IsInstalled = isInstalled,
+                CanInstall = !isInstalled,
+                Selected = !isInstalled && selected.Contains(manager)
+            });
+        }
+    }
+
+    private static OperationDefinition BuildInstallManagerOperation(StorePackageManager manager)
+    {
+        return manager switch
+        {
+            StorePackageManager.Winget => BuildInstallWingetOperation(),
+            StorePackageManager.Scoop => BuildWingetPackageInstallOperation(
+                manager,
+                "Install Scoop",
+                "Installs Scoop package manager for user-scoped CLI packages.",
+                "ScoopInstaller.Scoop",
+                "scoop"),
+            StorePackageManager.Chocolatey => BuildInstallChocoOperation(),
+            StorePackageManager.Pip => BuildWingetPackageInstallOperation(
+                manager,
+                "Install Python and pip",
+                "Installs Python 3.12, which includes pip package management.",
+                "Python.Python.3.12",
+                "pip"),
+            StorePackageManager.Npm => BuildWingetPackageInstallOperation(
+                manager,
+                "Install Node.js and npm",
+                "Installs Node.js LTS, which includes npm package management.",
+                "OpenJS.NodeJS.LTS",
+                "npm"),
+            StorePackageManager.DotNetTool => BuildWingetPackageInstallOperation(
+                manager,
+                "Install .NET SDK",
+                "Installs .NET SDK 8 for dotnet tool package management.",
+                "Microsoft.DotNet.SDK.8",
+                "dotnet"),
+            StorePackageManager.PowerShellGallery => BuildWingetPackageInstallOperation(
+                manager,
+                "Install PowerShell",
+                "Installs PowerShell 7 for PowerShell Gallery operations.",
+                "Microsoft.PowerShell",
+                "pwsh"),
+            _ => throw new ArgumentOutOfRangeException(nameof(manager), manager, "Unsupported package manager.")
+        };
+    }
+
+    private static bool RequiresWingetInstaller(StorePackageManager manager) => manager != StorePackageManager.Winget;
+
+    private static string GetManagerDisplayName(StorePackageManager manager)
+    {
+        return manager switch
+        {
+            StorePackageManager.Winget => "WinGet",
+            StorePackageManager.Scoop => "Scoop",
+            StorePackageManager.Chocolatey => "Chocolatey",
+            StorePackageManager.Pip => "pip",
+            StorePackageManager.Npm => "npm",
+            StorePackageManager.DotNetTool => ".NET tools",
+            StorePackageManager.PowerShellGallery => "PowerShell Gallery",
+            _ => manager.ToString()
+        };
+    }
+
+    private static string GetManagerDescription(StorePackageManager manager)
+    {
+        return manager switch
+        {
+            StorePackageManager.Winget => "Microsoft's Windows package manager. Used as Phantom's preferred installer source.",
+            StorePackageManager.Scoop => "User-scoped command-line package manager for portable tools and developer utilities.",
+            StorePackageManager.Chocolatey => "Machine-wide Windows package manager used as a fallback for supported catalog items.",
+            StorePackageManager.Pip => "Python package manager. Phantom installs Python 3.12 when pip is selected.",
+            StorePackageManager.Npm => "Node.js package manager. Phantom installs Node.js LTS when npm is selected.",
+            StorePackageManager.DotNetTool => ".NET SDK tooling for installing dotnet global tools.",
+            StorePackageManager.PowerShellGallery => "PowerShell module source used for PowerShell Gallery package operations.",
+            _ => "Package manager used by Store catalog entries."
+        };
+    }
+
+    private static OperationDefinition BuildWingetPackageInstallOperation(
+        StorePackageManager manager,
+        string title,
+        string description,
+        string wingetId,
+        string validationCommand)
+    {
+        var safeId = manager.ToString().ToLowerInvariant();
+        return new OperationDefinition
+        {
+            Id = $"store.manager.install.{safeId}",
+            Title = title,
+            Description = description,
+            RiskTier = RiskTier.Advanced,
+            Reversible = false,
+            RunScripts =
+            [
+                new PowerShellStep
+                {
+                    Name = "install",
+                    RequiresNetwork = true,
+                    Script = $$"""
+                             $ErrorActionPreference='Stop'
+                             Set-StrictMode -Version Latest
+
+                             function Resolve-PhantomWinget {
+                               $cmd = Get-Command winget -ErrorAction SilentlyContinue
+                               if($null -ne $cmd){ return $cmd.Source }
+                               $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+                               if(-not [string]::IsNullOrWhiteSpace($localAppData)){
+                                 $candidate = Join-Path $localAppData 'Microsoft\WindowsApps\winget.exe'
+                                 if(Test-Path $candidate){ return $candidate }
+                               }
+                               throw 'winget is required for this package manager installer. Install WinGet first, then retry.'
+                             }
+
+                             if($null -ne (Get-Command '{{validationCommand}}' -ErrorAction SilentlyContinue)){
+                               Write-Output '{{title}} skipped: already installed.'
+                               return
+                             }
+
+                             $winget = Resolve-PhantomWinget
+                             & $winget install --id '{{wingetId}}' --exact --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
+                             $phantomExit = $LASTEXITCODE
+                             if($null -ne $phantomExit -and $phantomExit -ne 0){
+                               throw '{{title}} failed with exit code ' + $phantomExit
+                             }
+
+                             Write-Output '{{title}} completed. Restart Phantom if PATH changes are not visible immediately.'
+                             """
+                }
+            ]
+        };
+    }
+
     private static OperationDefinition BuildInstallWingetOperation()
     {
         return new OperationDefinition
@@ -473,7 +661,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             Id = "store.manager.install.winget",
             Title = "Install winget",
             Description = "Installs winget using Microsoft App Installer package.",
-            RiskTier = RiskTier.Dangerous,
+            RiskTier = RiskTier.Advanced,
             Reversible = false,
             RunScripts =
             [
@@ -515,7 +703,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             Id = "store.manager.install.choco",
             Title = "Install Chocolatey",
             Description = "Installs Chocolatey package manager.",
-            RiskTier = RiskTier.Dangerous,
+            RiskTier = RiskTier.Advanced,
             Reversible = false,
             RunScripts =
             [
@@ -550,7 +738,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
                              if(-not $wingetPresent){
                                throw 'winget is required to install Chocolatey in safe mode.'
                              }
-                             $wingetOut = (winget install --id Chocolatey.Chocolatey -e --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-String)
+                             $wingetOut = (winget install --id Chocolatey.Chocolatey --exact --source winget --accept-source-agreements --accept-package-agreements --silent --disable-interactivity 2>&1 | Out-String)
                              $wingetExit = $LASTEXITCODE
                              $alreadyInstalled = $wingetOut -match '(?im)already installed|No available upgrade found|No newer package versions are available'
                              if($wingetExit -ne 0 -and -not $alreadyInstalled){
@@ -691,5 +879,65 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         _disposed = true;
         _executionCoordinator.RunningChanged -= OnExecutionCoordinatorRunningChanged;
         GC.SuppressFinalize(this);
+    }
+}
+
+public sealed class StorePackageManagerOption : ObservableObject
+{
+    private bool _selected;
+    private bool _isInstalled;
+    private bool _canInstall;
+    private string _displayName = string.Empty;
+    private string _description = string.Empty;
+    private string _status = string.Empty;
+    private string _source = string.Empty;
+
+    public StorePackageManagerOption(StorePackageManager manager)
+    {
+        Manager = manager;
+    }
+
+    public StorePackageManager Manager { get; }
+
+    public bool Selected
+    {
+        get => _selected;
+        set => SetProperty(ref _selected, value);
+    }
+
+    public bool IsInstalled
+    {
+        get => _isInstalled;
+        set => SetProperty(ref _isInstalled, value);
+    }
+
+    public bool CanInstall
+    {
+        get => _canInstall;
+        set => SetProperty(ref _canInstall, value);
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set => SetProperty(ref _displayName, value);
+    }
+
+    public string Description
+    {
+        get => _description;
+        set => SetProperty(ref _description, value);
+    }
+
+    public string Status
+    {
+        get => _status;
+        set => SetProperty(ref _status, value);
+    }
+
+    public string Source
+    {
+        get => _source;
+        set => SetProperty(ref _source, value);
     }
 }

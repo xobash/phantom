@@ -15,6 +15,7 @@ public sealed class HomeDataService
     private const string VmBenchmarkTooltipText = "Virtual machine benchmark uses Phantom's in-process CPU, memory, and disk sample because WinSAT is blocked by many VM platforms.";
     private const int DirectorySizeFileLimit = 5000;
     private static readonly TimeSpan DirectorySizeTimeLimit = TimeSpan.FromMilliseconds(35);
+    private static readonly TimeSpan BenchmarkRuntimeLimit = TimeSpan.FromSeconds(60);
 
     private readonly ConsoleStreamService _console;
     private readonly TelemetryStore _telemetryStore;
@@ -102,24 +103,35 @@ public sealed class HomeDataService
             return "Unavailable";
         }
 
-        if (IsVirtualMachine())
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(BenchmarkRuntimeLimit);
+        var benchmarkToken = timeout.Token;
+        try
         {
-            return await RunVmBenchmarkScoreAsync(cancellationToken).ConfigureAwait(false);
-        }
+            if (IsVirtualMachine())
+            {
+                return await RunVmBenchmarkScoreAsync(benchmarkToken).ConfigureAwait(false);
+            }
 
-        if (!File.Exists(GetWinsatPath()))
+            if (!File.Exists(GetWinsatPath()))
+            {
+                _console.Publish("Warning", "WinSAT is not available on this system.");
+                return "Unavailable";
+            }
+
+            var ranFormal = await RunWinsatFormalAsync(benchmarkToken).ConfigureAwait(false);
+            if (!ranFormal)
+            {
+                return "Unavailable";
+            }
+
+            return await ReadLatestWinsatScoreAsync(benchmarkToken).ConfigureAwait(false) ?? "Unavailable";
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            _console.Publish("Warning", "WinSAT is not available on this system.");
+            _console.Publish("Warning", "Performance benchmark stopped after the 60 second runtime limit.");
             return "Unavailable";
         }
-
-        var ranFormal = await RunWinsatFormalAsync(cancellationToken).ConfigureAwait(false);
-        if (!ranFormal)
-        {
-            return "Unavailable";
-        }
-
-        return await ReadLatestWinsatScoreAsync(cancellationToken).ConfigureAwait(false) ?? "Unavailable";
     }
 
     private async Task<string?> ReadLatestWinsatScoreAsync(CancellationToken cancellationToken)
