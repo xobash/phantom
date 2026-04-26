@@ -599,29 +599,6 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         };
     }
 
-    private async Task UpdateAppStatusAsync(CatalogApp app, string status)
-    {
-        if (Application.Current?.Dispatcher is { } dispatcher)
-        {
-            if (dispatcher.CheckAccess())
-            {
-                app.Status = status;
-                CatalogView.Refresh();
-                return;
-            }
-
-            await dispatcher.InvokeAsync(() =>
-            {
-                app.Status = status;
-                CatalogView.Refresh();
-            });
-            return;
-        }
-
-        app.Status = status;
-        CatalogView.Refresh();
-    }
-
     private static string BuildManagerSummary(StoreManagerAvailability availability)
     {
         var parts = availability.All()

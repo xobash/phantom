@@ -13,7 +13,7 @@ namespace Phantom.ViewModels;
 
 public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
-    private static readonly TimeSpan ToggleBatchDelay = TimeSpan.FromMilliseconds(350);
+    private static readonly TimeSpan ToggleBatchDelay = TimeSpan.FromMilliseconds(750);
 
     private static readonly IReadOnlyDictionary<string, (string Title, string Description)> SectionMetadata =
         new Dictionary<string, (string Title, string Description)>(StringComparer.OrdinalIgnoreCase)
@@ -177,6 +177,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     private readonly SemaphoreSlim _toggleApplyLock = new(1, 1);
     private readonly object _toggleBatchSync = new();
     private readonly Dictionary<string, PendingToggle> _pendingToggleStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ActiveToggle> _activeToggleStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _sectionExpansionState = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _toggleBatchDelayCts;
     private bool _disposed;
@@ -214,7 +215,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         TweaksView = CollectionViewSource.GetDefaultView(Tweaks);
         TweaksView.Filter = FilterTweaks;
 
-        RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync);
+        RefreshStatusCommand = new AsyncRelayCommand(ct => RefreshStatusAsync(ct));
         RunLightweightScanCommand = new AsyncRelayCommand(RunLightweightScanAsync);
         ApplyRecommendedScanFixesCommand = new AsyncRelayCommand(ApplyRecommendedScanFixesAsync);
         ApplySelectedCommand = new AsyncRelayCommand(ApplySelectedAsync);
@@ -621,7 +622,6 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
         tweak.Selected = enabled;
         tweak.Status = enabled ? "Queued apply" : "Queued undo";
-        RefreshTweaksView();
 
         _ = RunQueuedToggleBatchAfterDelayAsync(delayCts);
     }
@@ -667,7 +667,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     private async Task ExecuteQueuedToggleBatchAsync(IReadOnlyList<PendingToggle> batch)
     {
-        await _toggleApplyLock.WaitAsync().ConfigureAwait(false);
+        SetActiveToggleStates(batch);
         try
         {
             var applyTargets = batch
@@ -684,22 +684,36 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
             _console.Publish("Info", $"Applying {batch.Count} queued tweak change{(batch.Count == 1 ? string.Empty : "s")}.");
 
-            if (applyTargets.Count > 0)
+            var fallback = await RunCompiledToggleBatchAsync(batch).ConfigureAwait(false);
+            var fallbackApplyTargets = fallback
+                .Where(item => item.Enabled)
+                .Select(item => item.Tweak)
+                .ToList();
+            var fallbackUndoTargets = fallback
+                .Where(item => !item.Enabled)
+                .Select(item => item.Tweak)
+                .ToList();
+
+            if (fallbackApplyTargets.Count > 0)
             {
-                await RunToggleBatchOperationsAsync(applyTargets, undo: false).ConfigureAwait(false);
+                await RunToggleBatchOperationsAsync(fallbackApplyTargets, undo: false).ConfigureAwait(false);
             }
 
-            if (undoTargets.Count > 0)
+            if (fallbackUndoTargets.Count > 0)
             {
-                await RunToggleBatchOperationsAsync(undoTargets, undo: true).ConfigureAwait(false);
+                await RunToggleBatchOperationsAsync(fallbackUndoTargets, undo: true).ConfigureAwait(false);
             }
-
-            await RefreshStatusAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
-            _toggleApplyLock.Release();
+            ClearActiveToggleStates(batch);
         }
+
+        var targetIds = batch
+            .Select(item => item.Tweak.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await RefreshStatusAsync(CancellationToken.None, targetIds).ConfigureAwait(false);
     }
 
     private async Task MarkToggleTargetsAsync(IReadOnlyList<TweakDefinition> tweaks, string status)
@@ -715,9 +729,96 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             {
                 tweak.Status = status;
             }
-
-            RefreshTweaksView();
         });
+    }
+
+    private async Task<IReadOnlyList<PendingToggle>> RunCompiledToggleBatchAsync(IReadOnlyList<PendingToggle> batch)
+    {
+        var compiledItems = new List<PendingToggle>();
+        var fallbackItems = new List<PendingToggle>();
+        foreach (var item in batch)
+        {
+            var script = item.Enabled ? item.Tweak.ApplyScript : item.Tweak.UndoScript;
+            if (CanUseCompiledToggleFastPath(item) &&
+                CompiledTweakScriptService.TryExecuteMutation(script, dryRun: true, out _))
+            {
+                compiledItems.Add(item);
+            }
+            else
+            {
+                fallbackItems.Add(item);
+            }
+        }
+
+        if (compiledItems.Count == 0)
+        {
+            return fallbackItems;
+        }
+
+        var maxParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8);
+        using var throttle = new SemaphoreSlim(maxParallelism, maxParallelism);
+        var tasks = compiledItems.Select(async item =>
+        {
+            await throttle.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await Task.Run(() => ExecuteCompiledToggle(item)).ConfigureAwait(false);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var result in results)
+            {
+                if (result.Success)
+                {
+                    result.Tweak.Selected = result.Enabled;
+                    result.Tweak.Status = result.Enabled ? "Applied" : "Not Applied";
+                }
+                else
+                {
+                    result.Tweak.Status = "Failed";
+                }
+            }
+        });
+
+        var successes = results.Count(result => result.Success);
+        _console.Publish("Info", $"Compiled tweak batch completed: {successes}/{results.Length} fast-path changes.");
+        foreach (var result in results.Where(result => !result.Success))
+        {
+            _console.Publish("Error", $"{result.Tweak.Name}: {result.Message}");
+        }
+
+        return fallbackItems;
+    }
+
+    private static bool CanUseCompiledToggleFastPath(PendingToggle item)
+    {
+        return item.Tweak.Reversible &&
+               !item.Tweak.Destructive &&
+               item.Tweak.RiskTier != RiskTier.Dangerous;
+    }
+
+    private static ToggleExecutionResult ExecuteCompiledToggle(PendingToggle item)
+    {
+        var script = item.Enabled ? item.Tweak.ApplyScript : item.Tweak.UndoScript;
+        if (!CompiledTweakScriptService.TryExecuteMutation(script, dryRun: false, out var message))
+        {
+            return new ToggleExecutionResult(item.Tweak, item.Enabled, false, "Compiled path did not support this tweak.");
+        }
+
+        if (CompiledTweakScriptService.TryEvaluateDetect(item.Tweak.DetectScript, out var status) &&
+            IsAppliedStatus(status) != item.Enabled)
+        {
+            return new ToggleExecutionResult(item.Tweak, item.Enabled, false, $"Verification returned '{status}'.");
+        }
+
+        return new ToggleExecutionResult(item.Tweak, item.Enabled, true, message);
     }
 
     private async Task RunToggleBatchOperationsAsync(IReadOnlyList<TweakDefinition> tweaks, bool undo)
@@ -858,9 +959,11 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         return $"Scan: optimized={Count("Already optimized")}, recommended={Count("Recommended")}, optional={Count("Optional")}, risky={Count("Risky")}, manual={Count("Manual")}.";
     }
 
-    private async Task RefreshStatusAsync(CancellationToken cancellationToken)
+    private async Task RefreshStatusAsync(CancellationToken cancellationToken, IReadOnlySet<string>? targetIds = null)
     {
-        var tweakRows = await Application.Current.Dispatcher.InvokeAsync(() => Tweaks.ToList());
+        var tweakRows = await Application.Current.Dispatcher.InvokeAsync(() => targetIds is null
+            ? Tweaks.ToList()
+            : Tweaks.Where(tweak => targetIds.Contains(tweak.Id)).ToList());
         var updates = new List<(string Id, string Status, bool Selected)>(tweakRows.Count);
 
         foreach (var tweak in tweakRows)
@@ -909,12 +1012,63 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
                     continue;
                 }
 
+                if (TryGetTransientToggleState(update.Id, out var transientEnabled, out var transientStatus))
+                {
+                    tweak.Selected = transientEnabled;
+                    tweak.Status = transientStatus;
+                    continue;
+                }
+
                 tweak.Status = update.Status;
                 tweak.Selected = update.Selected;
             }
-
-            RefreshTweaksView();
         });
+    }
+
+    private void SetActiveToggleStates(IReadOnlyList<PendingToggle> batch)
+    {
+        lock (_toggleBatchSync)
+        {
+            foreach (var item in batch)
+            {
+                _activeToggleStates[item.Tweak.Id] = new ActiveToggle(item.Enabled);
+            }
+        }
+    }
+
+    private void ClearActiveToggleStates(IReadOnlyList<PendingToggle> batch)
+    {
+        lock (_toggleBatchSync)
+        {
+            foreach (var item in batch)
+            {
+                _activeToggleStates.Remove(item.Tweak.Id);
+            }
+        }
+    }
+
+    private bool TryGetTransientToggleState(string tweakId, out bool enabled, out string status)
+    {
+        lock (_toggleBatchSync)
+        {
+            if (_pendingToggleStates.TryGetValue(tweakId, out var pending))
+            {
+                enabled = pending.Enabled;
+                status = pending.Enabled ? "Queued apply" : "Queued undo";
+                return true;
+            }
+
+            if (_activeToggleStates.TryGetValue(tweakId, out var active))
+            {
+                enabled = active.Enabled;
+                status = active.Enabled ? "Applying..." : "Undoing...";
+                return true;
+            }
+        }
+
+        enabled = false;
+        status = string.Empty;
+        return false;
     }
 
     private async Task ApplySelectedAsync(CancellationToken cancellationToken)
@@ -1456,4 +1610,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
     public sealed record TweakScanFinding(string TweakId, string Name, string Classification, string Status);
 
     private sealed record PendingToggle(TweakDefinition Tweak, bool Enabled);
+
+    private sealed record ActiveToggle(bool Enabled);
+
+    private sealed record ToggleExecutionResult(TweakDefinition Tweak, bool Enabled, bool Success, string Message);
 }

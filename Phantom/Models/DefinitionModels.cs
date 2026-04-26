@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace Phantom.Models;
 
 public sealed class CatalogApp
@@ -24,8 +27,13 @@ public sealed class CatalogApp
     public string AvailableVersion { get; set; } = string.Empty;
 }
 
-public sealed class TweakDefinition
+public sealed class TweakDefinition : INotifyPropertyChanged
 {
+    private bool _selected;
+    private string _status = "Unknown";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
@@ -38,10 +46,31 @@ public sealed class TweakDefinition
     public string[] StateCaptureKeys { get; set; } = Array.Empty<string>();
     public string[] Compatibility { get; set; } = Array.Empty<string>();
     public bool Destructive { get; set; }
-    public bool Selected { get; set; }
-    public string Status { get; set; } = "Unknown";
+    public bool Selected
+    {
+        get => _selected;
+        set => SetProperty(ref _selected, value);
+    }
+
+    public string Status
+    {
+        get => _status;
+        set => SetProperty(ref _status, value);
+    }
+
     public bool IsActionButton { get; set; }
     public string ActionButtonText { get; set; } = "Run";
+
+    private void SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
 
 public sealed class FeatureDefinition

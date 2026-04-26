@@ -84,16 +84,6 @@ public static class OperationDefinitionFactory
         };
     }
 
-    public static string BuildPackageStatusScript(CatalogApp app)
-    {
-        return PackageCommandPlan.FromCatalogApp(app).BuildStatusScript();
-    }
-
-    public static string BuildPackageDiscoveryScript(CatalogApp app)
-    {
-        return PackageCommandPlan.FromCatalogApp(app).BuildDiscoveryScript();
-    }
-
     private static string BuildPackageDescription(CatalogApp app, PackageAction action)
     {
         if (app.ManualOnly)
@@ -189,31 +179,6 @@ public static class OperationDefinitionFactory
             return string.Join(" ", branches) + " Write-Output 'Not Applied'";
         }
 
-        public string BuildStatusScript()
-        {
-            if (ManualOnly && Managers.Count == 0)
-            {
-                return "[PSCustomObject]@{ Status='Manual'; Manager='manual'; PackageId=''; Installed=$false; InstalledVersion=''; AvailableVersion=''; Message='Manual-only catalog entry.' } | ConvertTo-Json -Compress";
-            }
-
-            var branches = Managers.Select(source =>
-                $"if({source.AvailabilityExpression}){{ {source.StatusCommand}; return }}");
-            return string.Join(" ", branches) +
-                   " [PSCustomObject]@{ Status='Unavailable'; Manager=''; PackageId=''; Installed=$false; InstalledVersion=''; AvailableVersion=''; Message='No configured package manager is available.' } | ConvertTo-Json -Compress";
-        }
-
-        public string BuildDiscoveryScript()
-        {
-            if (ManualOnly && Managers.Count == 0)
-            {
-                return "Write-Output 'Manual-only catalog entry: no package manager discovery target is configured.'";
-            }
-
-            var branches = Managers.Select(source =>
-                $"if({source.AvailabilityExpression}){{ Write-Output '== {source.DisplayName}: {source.PackageId} =='; {source.DiscoveryCommand} }}");
-            return string.Join(" ", branches) + " Write-Output 'Discovery complete.'";
-        }
-
         private string BuildFallbackScript(string action, Func<PackageSourceRef, string> commandSelector)
         {
             if (ManualOnly && Managers.Count == 0)
@@ -273,9 +238,7 @@ public static class OperationDefinitionFactory
         string InstallCommand,
         string UninstallCommand,
         string UpgradeCommand,
-        string DetectCommand,
-        string DiscoveryCommand,
-        string StatusCommand)
+        string DetectCommand)
     {
         public static PackageSourceRef Create(string manager, string packageId)
         {
@@ -290,9 +253,7 @@ public static class OperationDefinitionFactory
                     $"winget install --id {id} --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity",
                     $"winget uninstall --id {id} --exact --source winget --accept-source-agreements --disable-interactivity",
                     $"winget upgrade --id {id} --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity",
-                    $"winget list --id {id} --exact --source winget --disable-interactivity 2>&1 | Out-Null",
-                    $"winget search --id {id} --exact --source winget --disable-interactivity 2>&1 | Out-String",
-                    BuildStatusCommand("winget", packageId, $"$out=(winget list --id {id} --exact --source winget --disable-interactivity 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match [regex]::Escape({id})); $available=''")),
+                    $"winget list --id {id} --exact --source winget --disable-interactivity 2>&1 | Out-Null"),
                 "scoop" => new PackageSourceRef(
                     "scoop",
                     "Scoop",
@@ -301,9 +262,7 @@ public static class OperationDefinitionFactory
                     $"scoop install {id}",
                     $"scoop uninstall {id}",
                     $"scoop update {id}",
-                    $"scoop list {id} 2>&1 | Out-Null",
-                    $"scoop search {id} 2>&1 | Out-String",
-                    BuildStatusCommand("scoop", packageId, $"$out=(scoop list {id} 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match [regex]::Escape({id})); $available=''")),
+                    $"scoop list {id} 2>&1 | Out-Null"),
                 "choco" => new PackageSourceRef(
                     "choco",
                     "Chocolatey",
@@ -312,9 +271,7 @@ public static class OperationDefinitionFactory
                     $"choco install {id} -y --no-progress",
                     $"choco uninstall {id} -y --no-progress",
                     $"choco upgrade {id} -y --no-progress",
-                    $"choco list --local-only --exact {id} --limit-output --no-color 2>&1 | Out-Null",
-                    $"choco search {id} --exact --no-color 2>&1 | Out-String",
-                    BuildStatusCommand("choco", packageId, $"$out=(choco list --local-only --exact {id} --limit-output --no-color 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match ('^' + [regex]::Escape({id}) + '\\|')); $upgrade=(choco outdated --limit-output --no-color 2>$null | Out-String); $available=if($upgrade -match ('^' + [regex]::Escape({id}) + '\\|')){{'Update available'}}else{{''}}")),
+                    $"choco list --local-only --exact {id} --limit-output --no-color 2>&1 | Out-Null"),
                 "pip" => new PackageSourceRef(
                     "pip",
                     "pip",
@@ -323,9 +280,7 @@ public static class OperationDefinitionFactory
                     $"pip install --upgrade {id}",
                     $"pip uninstall -y {id}",
                     $"pip install --upgrade {id}",
-                    $"pip show {id} 2>&1 | Out-Null",
-                    $"pip index versions {id} 2>&1 | Out-String",
-                    BuildStatusCommand("pip", packageId, $"$out=(pip show {id} 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match '^Name:\\s*' + [regex]::Escape({id})); $available=''")),
+                    $"pip show {id} 2>&1 | Out-Null"),
                 "npm" => new PackageSourceRef(
                     "npm",
                     "npm",
@@ -334,9 +289,7 @@ public static class OperationDefinitionFactory
                     $"npm install -g {id}",
                     $"npm uninstall -g {id}",
                     $"npm update -g {id}",
-                    $"npm list -g {id} --depth=0 2>&1 | Out-Null",
-                    $"npm view {id} version 2>&1 | Out-String",
-                    BuildStatusCommand("npm", packageId, $"$out=(npm list -g {id} --depth=0 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match [regex]::Escape({id})); $available=''")),
+                    $"npm list -g {id} --depth=0 2>&1 | Out-Null"),
                 "dotnet" => new PackageSourceRef(
                     "dotnet",
                     ".NET Tool",
@@ -345,9 +298,7 @@ public static class OperationDefinitionFactory
                     $"dotnet tool install --global {id}",
                     $"dotnet tool uninstall --global {id}",
                     $"dotnet tool update --global {id}",
-                    $"dotnet tool list --global | Select-String -SimpleMatch {id} | Out-Null",
-                    $"dotnet tool search {id} 2>&1 | Out-String",
-                    BuildStatusCommand("dotnet", packageId, $"$out=(dotnet tool list --global 2>&1 | Out-String); $installed=($LASTEXITCODE -eq 0 -and $out -match [regex]::Escape({id})); $available=''")),
+                    $"dotnet tool list --global | Select-String -SimpleMatch {id} | Out-Null"),
                 "psgallery" => new PackageSourceRef(
                     "psgallery",
                     "PowerShell Gallery",
@@ -356,18 +307,9 @@ public static class OperationDefinitionFactory
                     $"Install-Module -Name {id} -Scope CurrentUser -Force -AllowClobber",
                     $"Uninstall-Module -Name {id} -AllVersions -Force",
                     $"Update-Module -Name {id} -Force",
-                    $"Get-InstalledModule -Name {id} -ErrorAction Stop | Out-Null",
-                    $"Find-Module -Name {id} -ErrorAction SilentlyContinue | Select-Object Name, Version, Repository | Format-Table -AutoSize | Out-String",
-                    BuildStatusCommand("psgallery", packageId, $"$module=Get-InstalledModule -Name {id} -ErrorAction SilentlyContinue; $installed=$null -ne $module; $available=''")),
+                    $"Get-InstalledModule -Name {id} -ErrorAction Stop | Out-Null"),
                 _ => throw new ArgumentOutOfRangeException(nameof(manager), manager, "Unsupported package manager.")
             };
-        }
-
-        private static string BuildStatusCommand(string manager, string packageId, string body)
-        {
-            var managerLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(manager);
-            var idLiteral = PowerShellInputSanitizer.ToSingleQuotedLiteral(packageId);
-            return $"{body}; [PSCustomObject]@{{ Status=if($installed){{if([string]::IsNullOrWhiteSpace($available)){{'Installed'}}else{{'Update available'}}}}else{{'Not installed'}}; Manager={managerLiteral}; PackageId={idLiteral}; Installed=[bool]$installed; InstalledVersion=''; AvailableVersion=$available; Message='' }} | ConvertTo-Json -Compress";
         }
     }
 }

@@ -13,12 +13,8 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
 {
     private readonly HomeDataService _homeData;
     private readonly ConsoleStreamService _console;
-    private readonly IPowerShellRunner _runner;
     private readonly ExternalProcessRunner _processRunner;
-    private readonly OperationEngine _operationEngine;
     private readonly ExecutionCoordinator _executionCoordinator;
-    private readonly IUserPromptService _promptService;
-    private readonly Func<AppSettings> _settingsAccessor;
 
     private string _search = string.Empty;
     private bool _isRefreshing;
@@ -27,21 +23,13 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
     public ServicesViewModel(
         HomeDataService homeData,
         ConsoleStreamService console,
-        IPowerShellRunner runner,
         ExternalProcessRunner processRunner,
-        OperationEngine operationEngine,
-        ExecutionCoordinator executionCoordinator,
-        IUserPromptService promptService,
-        Func<AppSettings> settingsAccessor)
+        ExecutionCoordinator executionCoordinator)
     {
         _homeData = homeData;
         _console = console;
-        _runner = runner;
         _processRunner = processRunner;
-        _operationEngine = operationEngine;
         _executionCoordinator = executionCoordinator;
-        _promptService = promptService;
-        _settingsAccessor = settingsAccessor;
 
         Services = new ObservableCollection<ServiceInfoRow>();
         ServicesView = CollectionViewSource.GetDefaultView(Services);
@@ -284,105 +272,6 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
         }
     }
 
-    private async Task ExecuteManagedOperationAsync(
-        string operationId,
-        string serviceName,
-        string script,
-        CancellationToken cancellationToken,
-        bool refreshAfter)
-    {
-        CancellationToken coordinatorToken;
-        try
-        {
-            coordinatorToken = _executionCoordinator.Begin();
-        }
-        catch (InvalidOperationException ex)
-        {
-            _console.Publish("Warning", ex.Message);
-            return;
-        }
-
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(coordinatorToken, cancellationToken);
-
-        try
-        {
-            var operation = new OperationDefinition
-            {
-                Id = operationId,
-                Title = $"{serviceName} ({operationId})",
-                Description = $"Service operation for {serviceName}.",
-                RiskTier = RiskTier.Advanced,
-                Reversible = false,
-                RunScripts =
-                [
-                    new PowerShellStep
-                    {
-                        Name = serviceName,
-                        Script = script
-                    }
-                ]
-            };
-
-            var precheck = await _operationEngine.RunBatchPrecheckAsync([operation], linked.Token).ConfigureAwait(false);
-            if (!precheck.IsSuccess)
-            {
-                _console.Publish("Error", precheck.Message);
-                return;
-            }
-
-            var batch = await _operationEngine.ExecuteBatchAsync(new OperationRequest
-            {
-                Operations = [operation],
-                Undo = false,
-                DryRun = false,
-                EnableDestructiveOperations = _settingsAccessor().EnableDestructiveOperations,
-                ForceDangerous = false,
-                SkipCaptureCheck = false,
-                ConfirmDangerousAsync = _promptService.ConfirmDangerousAsync
-            }, linked.Token).ConfigureAwait(false);
-
-            var result = batch.Results.FirstOrDefault(r => string.Equals(r.OperationId, operationId, StringComparison.OrdinalIgnoreCase));
-            if (result is null || !result.Success)
-            {
-                _console.Publish("Error", $"{operationId} failed for {serviceName}.");
-            }
-
-            if (refreshAfter)
-            {
-                await RefreshAsync(linked.Token).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            _console.Publish("Warning", $"{operationId}: operation cancelled.");
-        }
-        finally
-        {
-            _executionCoordinator.Complete();
-        }
-    }
-
-    private async Task ExecuteTransientScriptAsync(string operationId, string serviceName, string script, CancellationToken cancellationToken, bool refreshAfter)
-    {
-        var result = await _runner.ExecuteAsync(new PowerShellExecutionRequest
-        {
-            OperationId = operationId,
-            StepName = serviceName,
-            Script = script,
-            DryRun = false
-        }, cancellationToken).ConfigureAwait(false);
-
-        if (!result.Success)
-        {
-            _console.Publish("Error", $"{operationId} failed for {serviceName}.");
-        }
-
-        if (refreshAfter)
-        {
-            await RefreshAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
     private bool FilterService(object obj)
     {
         if (obj is not ServiceInfoRow service)
@@ -437,8 +326,6 @@ public sealed class ServicesViewModel : ObservableObject, ISectionViewModel
             UseShellExecute = true
         });
     }
-
-    private static string EscapeSingleQuotes(string text) => PowerShellInputSanitizer.EscapeSingleQuotes(text);
 
     private string? TryGetSafeServiceName(ServiceInfoRow service, string context)
     {

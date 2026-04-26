@@ -42,7 +42,7 @@ public sealed class AppBootstrap : IDisposable
         Apps = new AppsViewModel(HomeData, Console, Runner);
         PackageExecution = new PackageExecutionService(PackageManagers, ProcessRunner, Console);
 
-        Services = new ServicesViewModel(HomeData, Console, Runner, ProcessRunner, Operations, ExecutionCoordinator, Prompt, () => SettingsProvider.Current);
+        Services = new ServicesViewModel(HomeData, Console, ProcessRunner, ExecutionCoordinator);
         Store = new StoreViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Network, StoreInstaller, PackageExecution, () => SettingsProvider.Current);
         Tweaks = new TweaksViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, () => SettingsProvider.Current);
         Features = new FeaturesViewModel(Definitions, Operations, ExecutionCoordinator, Prompt, Console, Query, Runner, () => SettingsProvider.Current);

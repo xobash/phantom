@@ -1,6 +1,7 @@
 # Build outputs
 **/bin/
 **/obj/
+app/
 
 # Local .NET CLI state
 .dotnet-home/
