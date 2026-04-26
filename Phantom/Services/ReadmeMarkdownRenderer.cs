@@ -15,23 +15,17 @@ public static class ReadmeMarkdownRenderer
     private static readonly Regex OrderedListRegex = new(@"^\s*\d+(?:\.|\))\s+(.{0,1000})$", RegexOptions.Compiled, RegexTimeout);
     private static readonly Regex UnorderedListRegex = new(@"^\s*[-\*\+]\s+(.{0,1000})$", RegexOptions.Compiled, RegexTimeout);
 
-    private static readonly Brush DocumentForeground = BrushFromHex("#F2F2F2");
-    private static readonly Brush MutedForeground = BrushFromHex("#CECECE");
-    private static readonly Brush LinkForeground = BrushFromHex("#7EB7FF");
-    private static readonly Brush CodeBackground = BrushFromHex("#1A1A1A");
-    private static readonly Brush CodeBorder = BrushFromHex("#3D3D3D");
-
     public static FlowDocument Render(string markdown, Action<Uri> openLink)
     {
         var document = new FlowDocument
         {
             FontFamily = new FontFamily("Segoe UI"),
             FontSize = 14,
-            Foreground = DocumentForeground,
             Background = Brushes.Transparent,
             PagePadding = new Thickness(0),
             TextAlignment = TextAlignment.Left
         };
+        document.SetResourceReference(TextElement.ForegroundProperty, "DarkTextBrush");
 
         var normalized = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
         var lines = normalized.Split('\n');
@@ -173,8 +167,8 @@ public static class ReadmeMarkdownRenderer
             MarkerStyle = buffer.Style,
             Margin = new Thickness(22, 0, 0, 10),
             Padding = new Thickness(0),
-            Foreground = DocumentForeground
         };
+        list.SetResourceReference(TextElement.ForegroundProperty, "DarkTextBrush");
 
         foreach (var item in buffer.Items)
         {
@@ -213,9 +207,9 @@ public static class ReadmeMarkdownRenderer
         {
             Margin = new Thickness(0, 8, 0, 6),
             FontWeight = FontWeights.SemiBold,
-            FontSize = fontSize,
-            Foreground = DocumentForeground
+            FontSize = fontSize
         };
+        paragraph.SetResourceReference(TextElement.ForegroundProperty, "DarkTextBrush");
 
         foreach (var inline in ParseInlines(text, openLink))
         {
@@ -230,9 +224,9 @@ public static class ReadmeMarkdownRenderer
         var paragraph = new Paragraph
         {
             Margin = new Thickness(0, 0, 0, 10),
-            LineHeight = 20,
-            Foreground = muted ? MutedForeground : DocumentForeground
+            LineHeight = 20
         };
+        paragraph.SetResourceReference(TextElement.ForegroundProperty, muted ? "MutedTextBrush" : "DarkTextBrush");
 
         foreach (var inline in ParseInlines(text, openLink))
         {
@@ -257,21 +251,21 @@ public static class ReadmeMarkdownRenderer
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             BorderThickness = new Thickness(0),
             Background = Brushes.Transparent,
-            Foreground = DocumentForeground,
             FontFamily = new FontFamily("Consolas"),
             FontSize = 13,
             Padding = new Thickness(10)
         };
+        textBox.SetResourceReference(Control.ForegroundProperty, "DarkTextBrush");
 
         var border = new Border
         {
-            Background = CodeBackground,
-            BorderBrush = CodeBorder,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Margin = new Thickness(0, 2, 0, 12),
             Child = textBox
         };
+        border.SetResourceReference(Border.BackgroundProperty, "DarkCard2Brush");
+        border.SetResourceReference(Border.BorderBrushProperty, "DarkBorderBrush");
 
         return new BlockUIContainer(border)
         {
@@ -311,9 +305,9 @@ public static class ReadmeMarkdownRenderer
                     var codeRun = new Run(codeText)
                     {
                         FontFamily = new FontFamily("Consolas"),
-                        Background = CodeBackground,
-                        Foreground = DocumentForeground
                     };
+                    codeRun.SetResourceReference(TextElement.BackgroundProperty, "DarkCard2Brush");
+                    codeRun.SetResourceReference(TextElement.ForegroundProperty, "DarkTextBrush");
 
                     inlines.Add(codeRun);
                     cursor = closeCode + 1;
@@ -336,10 +330,10 @@ public static class ReadmeMarkdownRenderer
                             var hyperlink = new Hyperlink
                             {
                                 Cursor = Cursors.Hand,
-                                Foreground = LinkForeground,
                                 TextDecorations = TextDecorations.Underline,
                                 ToolTip = uri.AbsoluteUri
                             };
+                            hyperlink.SetResourceReference(TextElement.ForegroundProperty, "AccentBrush");
 
                             hyperlink.Inlines.Add(new Run(label));
                             hyperlink.Click += (_, _) => openLink(uri);
@@ -371,13 +365,6 @@ public static class ReadmeMarkdownRenderer
         }
 
         return Math.Min(codeIndex, linkIndex);
-    }
-
-    private static SolidColorBrush BrushFromHex(string hex)
-    {
-        var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(hex)!;
-        brush.Freeze();
-        return brush;
     }
 
     private sealed class ListBuffer

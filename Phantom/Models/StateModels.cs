@@ -4,6 +4,8 @@ public sealed class AppSettings
 {
     public bool UseDarkMode { get; set; } = true;
     public string ThemeMode { get; set; } = AppThemeModes.Auto;
+    public string AccentMode { get; set; } = AppAccentModes.Windows;
+    public string CustomAccentColor { get; set; } = string.Empty;
     public bool EnableDestructiveOperations { get; set; }
     public bool CreateRestorePointBeforeDangerousOperations { get; set; }
     public int HomeRefreshSeconds { get; set; } = 5;
@@ -30,6 +32,19 @@ public static class AppThemeModes
         }
 
         return Auto;
+    }
+}
+
+public static class AppAccentModes
+{
+    public const string Windows = "Windows";
+    public const string Custom = "Custom";
+
+    public static string Normalize(string? mode)
+    {
+        return string.Equals(mode, Custom, StringComparison.OrdinalIgnoreCase)
+            ? Custom
+            : Windows;
     }
 }
 

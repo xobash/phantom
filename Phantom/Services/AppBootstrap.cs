@@ -113,6 +113,8 @@ public sealed class AppBootstrap : IDisposable
             disposableRunner.Dispose();
         }
 
+        Theme.Dispose();
+
         GC.SuppressFinalize(this);
     }
 }

@@ -38,7 +38,13 @@
                         <DataGridTextColumn Header="Fix" Binding="{Binding Name}" Width="280"/>
                         <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
                         <DataGridTextColumn Header="Risk" Binding="{Binding RiskTier}" Width="80"/>
-                        <DataGridCheckBoxColumn Header="Rev" Binding="{Binding Reversible}" Width="52"/>
+                        <DataGridCheckBoxColumn Binding="{Binding Reversible}" Width="74">
+                            <DataGridCheckBoxColumn.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="Undo" ToolTip="Checked fixes have a reversible undo operation."/>
+                                </DataTemplate>
+                            </DataGridCheckBoxColumn.HeaderTemplate>
+                        </DataGridCheckBoxColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>

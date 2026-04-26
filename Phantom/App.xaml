@@ -31,8 +31,8 @@
         <SolidColorBrush x:Key="DarkBorderBrush" po:Freeze="False" Color="#34413D"/>
         <SolidColorBrush x:Key="DarkTextBrush" po:Freeze="False" Color="#F3F4F1"/>
         <SolidColorBrush x:Key="MutedTextBrush" po:Freeze="False" Color="#B9C2BC"/>
-        <SolidColorBrush x:Key="AccentBrush" po:Freeze="False" Color="#B98543"/>
-        <SolidColorBrush x:Key="AccentBorderBrush" po:Freeze="False" Color="#D49C57"/>
+        <SolidColorBrush x:Key="AccentBrush" po:Freeze="False" Color="#0078D4"/>
+        <SolidColorBrush x:Key="AccentBorderBrush" po:Freeze="False" Color="#3B9DFF"/>
 
         <SolidColorBrush x:Key="NavItemBackgroundBrush" po:Freeze="False" Color="#1B2221"/>
         <SolidColorBrush x:Key="NavItemHoverBrush" po:Freeze="False" Color="#212927"/>

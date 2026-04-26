@@ -92,7 +92,7 @@ public partial class App : Application
             }
 
             _bootstrap.SettingsProvider.Update(initialSettings);
-            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode));
+            await Dispatcher.InvokeAsync(() => _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode, initialSettings.AccentMode, initialSettings.CustomAccentColor));
             _bootstrap.Console.Publish("Trace", $"App startup started at {DateTimeOffset.Now:O}");
             _bootstrap.Console.Publish("Trace", $"Startup args: {string.Join(' ', e.Args ?? Array.Empty<string>())}");
             await _bootstrap.Log.WriteAsync("Trace", "App bootstrap created.");
@@ -136,7 +136,7 @@ public partial class App : Application
 
                 MainWindow = window;
                 window.Show();
-                _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode);
+                _bootstrap.Theme.ApplyThemeMode(initialSettings.ThemeMode, initialSettings.AccentMode, initialSettings.CustomAccentColor);
             });
             _bootstrap.Console.Publish("Trace", "MainWindow shown.");
             await _bootstrap.Main.InitializeAsync(CancellationToken.None);

@@ -401,24 +401,21 @@ public sealed class FeaturesViewModel : ObservableObject, ISectionViewModel, IDi
     private async Task SetFastStartupAsync(bool enabled, CancellationToken cancellationToken)
     {
         var script = enabled
-            ? "powercfg /hibernate on | Out-Null; New-Item -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name HiberbootEnabled -Type DWord -Value 1"
+            ? BuildPowerCfgHibernateScript(enabled: true) + "; New-Item -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name HiberbootEnabled -Type DWord -Value 1"
             : "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name HiberbootEnabled -Type DWord -Value 0";
         await ExecuteScriptAsync("feature.fast-startup", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
     private async Task SetHibernationAsync(bool enabled, CancellationToken cancellationToken)
     {
-        var script = enabled
-            ? "powercfg /hibernate on"
-            : "powercfg /hibernate off";
+        var script = BuildPowerCfgHibernateScript(enabled);
         await ExecuteScriptAsync("feature.hibernation", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
     private async Task SetDriveOptimizationAsync(bool enabled, CancellationToken cancellationToken)
     {
-        var script = enabled
-            ? "Enable-ScheduledTask -TaskPath '\\Microsoft\\Windows\\Defrag\\' -TaskName 'ScheduledDefrag' -ErrorAction Stop"
-            : "Disable-ScheduledTask -TaskPath '\\Microsoft\\Windows\\Defrag\\' -TaskName 'ScheduledDefrag' -ErrorAction Stop";
+        var action = enabled ? "/ENABLE" : "/DISABLE";
+        var script = $"schtasks.exe /Change /TN \"\\Microsoft\\Windows\\Defrag\\ScheduledDefrag\" {action}; $phantomExit=$LASTEXITCODE; if($phantomExit -ne 0){{ throw 'schtasks drive optimization toggle failed with exit code ' + $phantomExit }}";
         await ExecuteScriptAsync("feature.drive-optimization", "toggle", script, cancellationToken, refreshSystemState: true).ConfigureAwait(false);
     }
 
@@ -893,6 +890,12 @@ if ($null -eq $storageSense) { $storageSense = 0 }
     private static string BuildFeatureStateScript(FeatureDefinition feature)
     {
         return $"$f=Get-WindowsOptionalFeature -Online -FeatureName {GetFeatureNameLiteral(feature)} -ErrorAction Stop; if($f){{$f.State}} else {{'Unknown'}}";
+    }
+
+    private static string BuildPowerCfgHibernateScript(bool enabled)
+    {
+        var state = enabled ? "on" : "off";
+        return $"powercfg /hibernate {state}; $phantomExit=$LASTEXITCODE; if($phantomExit -ne 0){{ throw 'powercfg /hibernate {state} failed with exit code ' + $phantomExit }}";
     }
 
     private static string GetFeatureNameLiteral(FeatureDefinition feature)

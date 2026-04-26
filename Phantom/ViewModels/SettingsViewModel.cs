@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Text;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Media;
 using Phantom.Commands;
 using Phantom.Models;
 using Phantom.Services;
@@ -22,6 +23,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 {
     private const int MaxLogPreviewBytes = 256 * 1024;
     private static readonly IReadOnlyList<string> ThemeModeOptions = new[] { AppThemeModes.Auto, AppThemeModes.Light, AppThemeModes.Dark };
+    private static readonly IReadOnlyList<string> AccentModeOptions = new[] { AppAccentModes.Windows, AppAccentModes.Custom };
 
     private readonly SettingsStore _store;
     private readonly LogService _logService;
@@ -34,8 +36,8 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     private string _selectedLog = string.Empty;
     private string _selectedLogContent = string.Empty;
     private bool _isAboutExpanded;
-    private string _readmeMarkdown = string.Empty;
     private FlowDocument _readmeDocument = new();
+    private SolidColorBrush _accentPreviewBrush = new(Color.FromRgb(0, 120, 212));
     private AboutReadmeLoadState _readmeLoadState = AboutReadmeLoadState.NotLoaded;
     private string _readmeErrorText = string.Empty;
 
@@ -56,6 +58,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         RefreshLogsCommand = new AsyncRelayCommand(RefreshLogsAsync);
         OpenLogCommand = new AsyncRelayCommand(OpenSelectedLogAsync);
+        _theme.ThemeChanged += (_, _) => RefreshAccentPreview();
     }
 
     public string Title => "Settings";
@@ -67,6 +70,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     public ObservableCollection<string> LogFiles { get; }
 
     public IReadOnlyList<string> ThemeModes => ThemeModeOptions;
+    public IReadOnlyList<string> AccentModes => AccentModeOptions;
 
     public string AppDisplayName { get; }
     public string AppVersion { get; }
@@ -92,12 +96,6 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     }
 
     public string AboutChevronGlyph => _isAboutExpanded ? "\uE70E" : "\uE70D";
-
-    public string ReadmeMarkdown
-    {
-        get => _readmeMarkdown;
-        private set => SetProperty(ref _readmeMarkdown, value);
-    }
 
     public FlowDocument ReadmeDocument
     {
@@ -162,6 +160,58 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
             }
         }
     }
+
+    public string SelectedAccentMode
+    {
+        get => AppAccentModes.Normalize(_settings.AccentMode);
+        set
+        {
+            var normalized = AppAccentModes.Normalize(value);
+            if (string.Equals(_settings.AccentMode, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _settings.AccentMode = normalized;
+            if (string.Equals(normalized, AppAccentModes.Custom, StringComparison.Ordinal) &&
+                string.IsNullOrWhiteSpace(_settings.CustomAccentColor))
+            {
+                _settings.CustomAccentColor = _theme.CurrentAccentHex;
+                Notify(nameof(CustomAccentColor));
+            }
+
+            ApplyThemeSelection();
+            Notify();
+            Notify(nameof(IsCustomAccentSelected));
+        }
+    }
+
+    public string CustomAccentColor
+    {
+        get => _settings.CustomAccentColor;
+        set
+        {
+            var colorText = value?.Trim() ?? string.Empty;
+            if (string.Equals(_settings.CustomAccentColor, colorText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _settings.CustomAccentColor = colorText;
+            if (string.Equals(SelectedAccentMode, AppAccentModes.Custom, StringComparison.Ordinal) &&
+                ThemeService.TryParseAccentColor(colorText, out _, out _))
+            {
+                ApplyThemeSelection();
+            }
+
+            Notify();
+        }
+    }
+
+    public bool IsCustomAccentSelected => string.Equals(SelectedAccentMode, AppAccentModes.Custom, StringComparison.Ordinal);
+
+    public Brush AccentPreviewBrush => _accentPreviewBrush;
+    public string CurrentAccentColor => _theme.CurrentAccentHex;
 
     public bool EnableDestructiveOperations
     {
@@ -263,6 +313,10 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         _provider.Update(_settings);
         Notify(nameof(SelectedThemeMode));
         Notify(nameof(UseDarkMode));
+        Notify(nameof(SelectedAccentMode));
+        Notify(nameof(CustomAccentColor));
+        Notify(nameof(IsCustomAccentSelected));
+        RefreshAccentPreview();
         Notify(nameof(EnableDestructiveOperations));
         Notify(nameof(CreateRestorePointBeforeDangerousOperations));
         Notify(nameof(HomeRefreshSeconds));
@@ -285,8 +339,17 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
     private void ApplyThemeSelection()
     {
         _settings.ThemeMode = AppThemeModes.Normalize(_settings.ThemeMode);
-        _theme.ApplyThemeMode(_settings.ThemeMode);
+        _settings.AccentMode = AppAccentModes.Normalize(_settings.AccentMode);
+        _theme.ApplyThemeMode(_settings.ThemeMode, _settings.AccentMode, _settings.CustomAccentColor);
+        if (string.Equals(_settings.AccentMode, AppAccentModes.Custom, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(_theme.CurrentCustomAccentColor))
+        {
+            _settings.CustomAccentColor = _theme.CurrentCustomAccentColor;
+            Notify(nameof(CustomAccentColor));
+        }
+
         _settings.UseDarkMode = _theme.IsDarkMode;
+        RefreshAccentPreview();
     }
 
     private async Task RefreshLogsAsync(CancellationToken cancellationToken)
@@ -416,7 +479,6 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
 
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                ReadmeMarkdown = markdown;
                 ReadmeDocument = document;
                 ReadmeErrorText = string.Empty;
                 ReadmeLoadState = AboutReadmeLoadState.Loaded;
@@ -509,5 +571,18 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         return version.Build >= 0
             ? $"{version.Major}.{version.Minor}.{version.Build}"
             : $"{version.Major}.{version.Minor}";
+    }
+
+    private void RefreshAccentPreview()
+    {
+        var brush = new SolidColorBrush(_theme.CurrentAccentColor);
+        if (brush.CanFreeze)
+        {
+            brush.Freeze();
+        }
+
+        _accentPreviewBrush = brush;
+        Notify(nameof(AccentPreviewBrush));
+        Notify(nameof(CurrentAccentColor));
     }
 }

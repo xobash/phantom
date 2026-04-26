@@ -69,6 +69,39 @@
                                   SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   Style="{StaticResource DarkComboBoxStyle}"/>
                     </Grid>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Accent color" FontWeight="SemiBold" Foreground="{DynamicResource DarkTextBrush}"/>
+                            <TextBlock Text="Windows follows the current system accent color." Margin="0,6,0,0" Foreground="{DynamicResource MutedTextBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <Border Width="34"
+                                    Height="34"
+                                    Margin="0,0,8,0"
+                                    CornerRadius="17"
+                                    Background="{Binding AccentPreviewBrush}"
+                                    BorderBrush="{DynamicResource AccentBorderBrush}"
+                                    BorderThickness="1"
+                                    ToolTip="{Binding CurrentAccentColor}"/>
+                            <ComboBox Width="130"
+                                      Margin="0,0,8,0"
+                                      ItemsSource="{Binding AccentModes}"
+                                      SelectedItem="{Binding SelectedAccentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{StaticResource DarkComboBoxStyle}"/>
+                            <TextBox Width="112"
+                                     Text="{Binding CustomAccentColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding IsCustomAccentSelected}"
+                                     ToolTip="Hex color, for example #0078D4"
+                                     Style="{StaticResource DarkTextBoxStyle}"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Border>
 
@@ -308,15 +341,13 @@
                                     BorderThickness="1"
                                     CornerRadius="8"
                                     Visibility="{Binding HasReadmeContent, Converter={StaticResource BoolToVisibilityConverter}}">
-                                <ScrollViewer MaxHeight="420"
-                                              VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Disabled"
-                                              Padding="12,10,12,6">
-                                    <TextBlock Text="{Binding ReadmeMarkdown}"
-                                               TextWrapping="Wrap"
-                                               FontSize="13"
-                                               Foreground="{DynamicResource DarkTextBrush}"/>
-                                </ScrollViewer>
+                                <FlowDocumentScrollViewer Document="{Binding ReadmeDocument}"
+                                                          MaxHeight="420"
+                                                          Padding="12,10,12,6"
+                                                          IsToolBarVisible="False"
+                                                          Foreground="{DynamicResource DarkTextBrush}"
+                                                          Background="{DynamicResource InputBackgroundBrush}"
+                                                          VerticalScrollBarVisibility="Auto"/>
                             </Border>
                         </Grid>
                     </Border>
