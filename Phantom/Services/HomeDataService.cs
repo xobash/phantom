@@ -39,11 +39,15 @@ public sealed class HomeDataService
 
         _telemetry ??= await _telemetryStore.LoadAsync(cancellationToken).ConfigureAwait(false);
 
-        var snapshot = await Task.Run(() => BuildCompiledSnapshot(includeDetails), cancellationToken).ConfigureAwait(false);
+        var snapshot = await Task.Run(() => BuildCompiledSnapshot(countInventory: !includeDetails), cancellationToken).ConfigureAwait(false);
         if (includeDetails)
         {
-            snapshot.Apps = (await GetInstalledAppsAsync(cancellationToken).ConfigureAwait(false)).ToList();
-            snapshot.Services = (await GetServicesAsync(cancellationToken).ConfigureAwait(false)).ToList();
+            var appsTask = GetInstalledAppsAsync(cancellationToken);
+            var servicesTask = GetServicesAsync(cancellationToken);
+            await Task.WhenAll(appsTask, servicesTask).ConfigureAwait(false);
+
+            snapshot.Apps = (await appsTask.ConfigureAwait(false)).ToList();
+            snapshot.Services = (await servicesTask.ConfigureAwait(false)).ToList();
             snapshot.AppsCount = snapshot.Apps.Count;
             snapshot.ServicesCount = snapshot.Services.Count;
         }
@@ -139,26 +143,29 @@ public sealed class HomeDataService
         }
     }
 
-    private HomeSnapshot BuildCompiledSnapshot(bool includeDetails)
+    private HomeSnapshot BuildCompiledSnapshot(bool countInventory)
     {
         var appsCount = 0;
-        var services = Array.Empty<ServiceInfoRow>() as IReadOnlyList<ServiceInfoRow>;
-        try
+        var servicesCount = 0;
+        if (countInventory)
         {
-            appsCount = EnumerateInstalledApps().Count;
-        }
-        catch
-        {
-            appsCount = 0;
-        }
+            try
+            {
+                appsCount = CountInstalledApps();
+            }
+            catch
+            {
+                appsCount = 0;
+            }
 
-        try
-        {
-            services = EnumerateServices();
-        }
-        catch
-        {
-            services = Array.Empty<ServiceInfoRow>();
+            try
+            {
+                servicesCount = CountServices();
+            }
+            catch
+            {
+                servicesCount = 0;
+            }
         }
 
         return new HomeSnapshot
@@ -174,12 +181,12 @@ public sealed class HomeDataService
             Windows = BuildWindowsSummary(),
             AppsCount = appsCount,
             ProcessesCount = SafeProcessCount(),
-            ServicesCount = services.Count,
+            ServicesCount = servicesCount,
             CpuUsage = GetCpuUsagePercent(),
             GpuUsage = 0,
             MemoryUsage = GetMemoryUsagePercent(),
-            Apps = includeDetails ? EnumerateInstalledApps().ToList() : [],
-            Services = includeDetails ? services.ToList() : []
+            Apps = [],
+            Services = []
         };
     }
 
@@ -383,6 +390,68 @@ public sealed class HomeDataService
         }
     }
 
+    private static int CountServices()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return 0;
+        }
+
+        var manager = OpenSCManager(null, null, SC_MANAGER_ENUMERATE_SERVICE);
+        if (manager == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var resume = 0;
+            _ = EnumServicesStatusEx(
+                manager,
+                SC_ENUM_PROCESS_INFO,
+                SERVICE_WIN32,
+                SERVICE_STATE_ALL,
+                IntPtr.Zero,
+                0,
+                out var bytesNeeded,
+                out _,
+                ref resume,
+                null);
+
+            if (bytesNeeded <= 0)
+            {
+                return 0;
+            }
+
+            var buffer = Marshal.AllocHGlobal(bytesNeeded);
+            try
+            {
+                resume = 0;
+                return EnumServicesStatusEx(
+                    manager,
+                    SC_ENUM_PROCESS_INFO,
+                    SERVICE_WIN32,
+                    SERVICE_STATE_ALL,
+                    buffer,
+                    bytesNeeded,
+                    out _,
+                    out var servicesReturned,
+                    ref resume,
+                    null)
+                    ? servicesReturned
+                    : 0;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(manager);
+        }
+    }
+
     private static ServiceRegistryInfo ReadServiceRegistry(string serviceName)
     {
         const string root = @"SYSTEM\CurrentControlSet\Services";
@@ -561,6 +630,88 @@ public sealed class HomeDataService
         return apps.Values
             .OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static int CountInstalledApps()
+    {
+        const string uninstallSubKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        var apps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            foreach (var view in GetRegistryViewsToScan())
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    using var uninstallRoot = baseKey.OpenSubKey(uninstallSubKey, writable: false);
+                    if (uninstallRoot is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var subKeyName in uninstallRoot.GetSubKeyNames())
+                    {
+                        using var appKey = uninstallRoot.OpenSubKey(subKeyName, writable: false);
+                        if (appKey is null || IsHiddenUninstallEntry(appKey))
+                        {
+                            continue;
+                        }
+
+                        var name = GetRegistryString(appKey, "DisplayName");
+                        if (string.IsNullOrWhiteSpace(name))
+                        {
+                            continue;
+                        }
+
+                        var version = GetRegistryString(appKey, "DisplayVersion");
+                        var publisher = GetRegistryString(appKey, "Publisher");
+                        apps.Add($"{name}|{version}|{publisher}");
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        CountAppxPackages(apps);
+        return apps.Count;
+    }
+
+    private static void CountAppxPackages(ISet<string> apps)
+    {
+        const string currentUserRepository = @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+        CountAppxPackagesFromKey(apps, RegistryHive.CurrentUser, RegistryView.Default, currentUserRepository);
+        CountAppxPackagesFromKey(apps, RegistryHive.LocalMachine, RegistryView.Registry64, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications");
+    }
+
+    private static void CountAppxPackagesFromKey(
+        ISet<string> apps,
+        RegistryHive hive,
+        RegistryView view,
+        string subKey)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var root = baseKey.OpenSubKey(subKey, writable: false);
+            if (root is null)
+            {
+                return;
+            }
+
+            foreach (var packageFullName in root.GetSubKeyNames())
+            {
+                if (!string.IsNullOrWhiteSpace(packageFullName))
+                {
+                    apps.Add($"appx|{packageFullName}");
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static void AddAppxPackages(IDictionary<string, InstalledAppInfo> apps)

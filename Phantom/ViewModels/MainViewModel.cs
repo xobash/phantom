@@ -18,10 +18,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly EventHandler<PowerShellOutputEvent> _consoleMessageReceivedHandler;
     private readonly EventHandler<bool> _runningChangedHandler;
     private readonly NavigationItem _settingsNavigationItem;
+    private readonly Dictionary<AppSection, Func<CancellationToken, Task>> _sectionInitializers;
+    private readonly Dictionary<AppSection, Task> _sectionInitializationTasks = new();
+    private readonly object _sectionInitializationGate = new();
 
     private NavigationItem? _selectedNavigation;
     private object? _currentSectionViewModel;
     private bool _isOperationRunning;
+    private bool _initializationActivated;
     private bool _disposed;
     private int _pendingConsoleDispatches;
 
@@ -54,6 +58,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _executionCoordinator = executionCoordinator;
         _paths = paths;
         _console = console;
+        _sectionInitializers = new Dictionary<AppSection, Func<CancellationToken, Task>>
+        {
+            [AppSection.Home] = Home.InitializeAsync,
+            [AppSection.Apps] = Apps.InitializeAsync,
+            [AppSection.Services] = Services.InitializeAsync,
+            [AppSection.Store] = Store.InitializeAsync,
+            [AppSection.Tweaks] = Tweaks.InitializeAsync,
+            [AppSection.Features] = Features.InitializeAsync,
+            [AppSection.Fixes] = Fixes.InitializeAsync,
+            [AppSection.Updates] = Updates.InitializeAsync,
+            [AppSection.Settings] = Settings.InitializeAsync
+        };
 
         Navigation = new ObservableCollection<NavigationItem>
         {
@@ -166,6 +182,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     AppSection.Settings => Settings,
                     _ => Home
                 };
+                StartSectionInitialization(value.Section);
             }
         }
     }
@@ -186,27 +203,125 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
+        _initializationActivated = true;
         _console.Publish("Trace", "Main initialization started.");
 
         // Settings must load first (other VMs depend on it), then Home (visible tab).
-        _console.Publish("Trace", "Initializing Settings view model.");
-        await Settings.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _console.Publish("Trace", "Initializing Home view model.");
-        await Home.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureSectionInitializedAsync(AppSection.Settings, cancellationToken).ConfigureAwait(false);
+        await EnsureSectionInitializedAsync(AppSection.Home, cancellationToken).ConfigureAwait(false);
 
-        // Remaining tabs are independent — initialize concurrently for faster startup.
-        _console.Publish("Trace", "Initializing remaining view models in parallel.");
-        await Task.WhenAll(
-            Apps.InitializeAsync(cancellationToken),
-            Services.InitializeAsync(cancellationToken),
-            Store.InitializeAsync(cancellationToken),
-            Tweaks.InitializeAsync(cancellationToken),
-            Features.InitializeAsync(cancellationToken),
-            Fixes.InitializeAsync(cancellationToken),
-            Updates.InitializeAsync(cancellationToken)
-        ).ConfigureAwait(false);
+        _ = InitializeRemainingSectionsAsync();
 
         _console.Publish("Trace", "Main initialization completed.");
+    }
+
+    private void StartSectionInitialization(AppSection section)
+    {
+        if (!_initializationActivated)
+        {
+            return;
+        }
+
+        var task = EnsureSectionInitializedAsync(section, CancellationToken.None);
+        if (!task.IsCompletedSuccessfully)
+        {
+            _ = ObserveSectionInitializationAsync(section, task);
+        }
+    }
+
+    private async Task InitializeRemainingSectionsAsync()
+    {
+        try
+        {
+            _console.Publish("Trace", "Initializing remaining view models in background.");
+            foreach (var section in new[]
+                     {
+                         AppSection.Tweaks,
+                         AppSection.Store,
+                         AppSection.Services,
+                         AppSection.Apps,
+                         AppSection.Features,
+                         AppSection.Fixes,
+                         AppSection.Updates
+                     })
+            {
+                try
+                {
+                    await EnsureSectionInitializedAsync(section, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _console.Publish("Error", $"{section} initialization failed: {ex.Message}");
+                }
+            }
+
+            _console.Publish("Trace", "Background view model initialization completed.");
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"Background initialization failed: {ex.Message}");
+        }
+    }
+
+    private Task EnsureSectionInitializedAsync(AppSection section, CancellationToken cancellationToken)
+    {
+        if (!_sectionInitializers.TryGetValue(section, out var initializer))
+        {
+            return Task.CompletedTask;
+        }
+
+        lock (_sectionInitializationGate)
+        {
+            if (_sectionInitializationTasks.TryGetValue(section, out var existing))
+            {
+                return existing;
+            }
+
+            var task = InitializeSectionAsync(section, initializer, cancellationToken);
+            _sectionInitializationTasks[section] = task;
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    if (!completed.IsFaulted && !completed.IsCanceled)
+                    {
+                        return;
+                    }
+
+                    lock (_sectionInitializationGate)
+                    {
+                        _sectionInitializationTasks.Remove(section);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return task;
+        }
+    }
+
+    private async Task InitializeSectionAsync(
+        AppSection section,
+        Func<CancellationToken, Task> initializer,
+        CancellationToken cancellationToken)
+    {
+        _console.Publish("Trace", $"Initializing {section} view model.");
+        await initializer(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ObserveSectionInitializationAsync(AppSection section, Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _console.Publish("Warning", $"{section} initialization cancelled.");
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"{section} initialization failed: {ex.Message}");
+        }
     }
 
     private void OpenLogsFolder()

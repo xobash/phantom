@@ -1,12 +1,22 @@
+param(
+    [switch]$Force
+)
+
 $ErrorActionPreference = 'Stop'
 
-$RepoZip  = "https://github.com/xobash/phantom/archive/refs/heads/main.zip"
+$RepoOwner = "xobash"
+$RepoName = "phantom"
+$RepoBranch = "main"
+$RepoCommitApi = "https://api.github.com/repos/$RepoOwner/$RepoName/commits/$RepoBranch"
+$RepoZip  = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/$RepoBranch.zip"
 $InstallDir = "$env:LOCALAPPDATA\Phantom"
 $BuildDir   = "$InstallDir\source"
 $AppDir     = "$InstallDir\app"
+$InstallStatePath = Join-Path $AppDir "install-state.json"
 $LaunchLogsDir = "$InstallDir\launch-logs"
 $LaunchLogPath = Join-Path $LaunchLogsDir ("launch-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
 $script:TranscriptStarted = $false
+$script:ForceInstall = $Force -or ($env:PHANTOM_FORCE_UPDATE -eq "1")
 
 function Write-Step($msg) {
     Write-Host "`n>> $msg" -ForegroundColor Cyan
@@ -118,6 +128,78 @@ function Save-LaunchLogToApp {
     }
 }
 
+function Get-RemoteCommitSha {
+    try {
+        $response = Invoke-RestMethod `
+            -Uri $RepoCommitApi `
+            -Headers @{ "User-Agent" = "PhantomLauncher" } `
+            -TimeoutSec 12 `
+            -UseBasicParsing
+
+        if ($response -and $response.sha) {
+            return [string]$response.sha
+        }
+    } catch {
+        Write-Host "   Update check skipped: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    return ""
+}
+
+function Read-InstallState {
+    if (-not (Test-Path $InstallStatePath)) {
+        return $null
+    }
+
+    try {
+        return Get-Content -Path $InstallStatePath -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "   Install state unreadable; rebuild may be required. $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
+}
+
+function Write-InstallState([string]$commitSha) {
+    try {
+        New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+        [PSCustomObject]@{
+            Repo = "$RepoOwner/$RepoName"
+            Branch = $RepoBranch
+            CommitSha = $commitSha
+            InstalledAt = (Get-Date).ToString("o")
+            ReadyToRun = $true
+        } | ConvertTo-Json -Depth 4 | Set-Content -Path $InstallStatePath -Encoding UTF8
+    } catch {
+        Write-Host "   Install state write failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+function Start-InstalledPhantom([string]$reason) {
+    $exe = Join-Path $AppDir "Phantom.exe"
+    if (-not (Test-Path $exe)) {
+        return $false
+    }
+
+    Write-Step "Launching installed Phantom..."
+    if (-not [string]::IsNullOrWhiteSpace($reason)) {
+        Write-OK $reason
+    }
+
+    try {
+        Start-Process -FilePath $exe -Verb RunAs
+    } catch {
+        Write-Fail ("Failed to start Phantom.exe: " + $_.Exception.Message)
+        Stop-LaunchTranscript
+        Save-LaunchLogToApp
+        return $true
+    }
+
+    Write-OK "Phantom launched."
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
+    return $true
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LaunchLogsDir | Out-Null
 try {
@@ -151,6 +233,31 @@ Write-Host "  ██╔═══╝ ██╔══██║██╔══█�
 Write-Host "  ██║     ██║  ██║██║  ██║██║ ╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║" -ForegroundColor DarkMagenta
 Write-Host "  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝" -ForegroundColor DarkMagenta
 Write-Host ""
+
+Write-Step "Checking installed Phantom..."
+$remoteCommitSha = Get-RemoteCommitSha
+$installState = Read-InstallState
+$installedCommitSha = if ($installState -and $installState.CommitSha) { [string]$installState.CommitSha } else { "" }
+
+if (-not $script:ForceInstall -and (Test-Path (Join-Path $AppDir "Phantom.exe"))) {
+    if ([string]::IsNullOrWhiteSpace($remoteCommitSha)) {
+        if (Start-InstalledPhantom "Update check unavailable; using the existing install.") {
+            return
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($installedCommitSha) -and $installedCommitSha -eq $remoteCommitSha) {
+        if (Start-InstalledPhantom "Installed build is current ($($remoteCommitSha.Substring(0, 7))).") {
+            return
+        }
+    }
+
+    Write-OK "Update available or install state missing; rebuilding Phantom."
+} elseif ($script:ForceInstall) {
+    Write-OK "Forced rebuild requested."
+} else {
+    Write-OK "No installed build found."
+}
 
 # ── .NET SDK check ─────────────────────────────────────────────────────────────
 Write-Step "Checking for .NET 8 SDK..."
@@ -202,8 +309,13 @@ if (-not $hasNet8) {
 # ── Download source ────────────────────────────────────────────────────────────
 Write-Step "Downloading Phantom source from GitHub..."
 $zip = "$InstallDir\phantom-main.zip"
+$repoZipToDownload = if ([string]::IsNullOrWhiteSpace($remoteCommitSha)) {
+    $RepoZip
+} else {
+    "https://github.com/$RepoOwner/$RepoName/archive/$remoteCommitSha.zip"
+}
 
-Invoke-WebRequest -Uri $RepoZip -OutFile $zip -UseBasicParsing
+Invoke-WebRequest -Uri $repoZipToDownload -OutFile $zip -UseBasicParsing
 Write-OK "Downloaded."
 
 # ── Extract ────────────────────────────────────────────────────────────────────
@@ -280,6 +392,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-OK "Build complete. Output: $AppDir"
+Write-InstallState $remoteCommitSha
 
 # ── Launch ─────────────────────────────────────────────────────────────────────
 Write-Step "Launching Phantom..."
