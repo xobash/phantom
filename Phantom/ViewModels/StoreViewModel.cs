@@ -151,6 +151,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
             foreach (var app in apps)
             {
                 app.SourceSummary = BuildSourceSummary(app);
+                app.PurposeSummary = BuildPurposeSummary(app);
                 app.Status = app.ManualOnly ? "Manual-only" : "Ready";
                 Catalog.Add(app);
             }
@@ -624,6 +625,35 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         return sources.Count == 0 ? "missing source" : string.Join(", ", sources);
     }
 
+    private static string BuildPurposeSummary(CatalogApp app)
+    {
+        if (!string.IsNullOrWhiteSpace(app.Description))
+        {
+            return app.Description.Trim();
+        }
+
+        var name = string.IsNullOrWhiteSpace(app.DisplayName) ? "This app" : app.DisplayName.Trim();
+        var category = app.Category.Trim();
+        var tagText = app.Tags.Length == 0
+            ? string.Empty
+            : string.Join(", ", app.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag)).Distinct(StringComparer.OrdinalIgnoreCase));
+
+        return category switch
+        {
+            "Browsers" => $"{name} is a web browser for browsing sites, signing in to web apps, and managing web workflows.",
+            "Communications" => $"{name} is used for messaging, voice/video calls, collaboration, or community chat.",
+            "Development" => $"{name} supports software development, terminals, code editing, version control, runtime tooling, or developer workflows.",
+            "Document" => $"{name} is used to create, edit, read, convert, or manage documents and office files.",
+            "Games" => $"{name} is a game, game launcher, or gaming-related utility.",
+            "Microsoft Tools" => $"{name} is a Microsoft utility or runtime used to manage Windows, developer tooling, or Microsoft services.",
+            "Multimedia Tools" => $"{name} is used for media playback, recording, streaming, image work, video, or audio workflows.",
+            "Pro Tools" => $"{name} is a professional or creator utility for advanced productivity, design, media, or system work.",
+            "Utilities" => $"{name} is a general-purpose utility for system maintenance, file management, security, or everyday desktop tasks.",
+            _ when !string.IsNullOrWhiteSpace(tagText) => $"{name} is listed for {tagText} workflows.",
+            _ => $"{name} installs from the configured package source for this catalog entry."
+        };
+    }
+
     private static void AddSource(ICollection<string> sources, string name, string? id)
     {
         if (!string.IsNullOrWhiteSpace(id))
@@ -647,6 +677,7 @@ public sealed class StoreViewModel : ObservableObject, ISectionViewModel, IDispo
         return app.DisplayName.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                app.Category.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                app.SourceSummary.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+               app.PurposeSummary.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
                app.Tags.Any(tag => tag.Contains(Search, StringComparison.OrdinalIgnoreCase));
     }
 

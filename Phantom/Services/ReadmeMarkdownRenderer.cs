@@ -239,30 +239,38 @@ public static class ReadmeMarkdownRenderer
     private static Block CreateCodeBlock(string code)
     {
         var codeText = code.TrimEnd('\r', '\n');
+        var isBanner = codeText.Contains('█') ||
+                       codeText.Contains('▓') ||
+                       codeText.Contains('▒');
 
-        var textBox = new TextBox
+        var textBlock = new TextBlock
         {
             Text = codeText,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            TextWrapping = TextWrapping.NoWrap,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
             FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
+            FontSize = isBanner ? 16 : 13,
+            TextWrapping = isBanner ? TextWrapping.NoWrap : TextWrapping.Wrap,
             Padding = new Thickness(10)
         };
-        textBox.SetResourceReference(Control.ForegroundProperty, "DarkTextBrush");
+        textBlock.SetResourceReference(TextElement.ForegroundProperty, "DarkTextBrush");
+
+        UIElement codeContent = textBlock;
+        if (isBanner)
+        {
+            codeContent = new Viewbox
+            {
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = textBlock
+            };
+        }
 
         var border = new Border
         {
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Margin = new Thickness(0, 2, 0, 12),
-            Child = textBox
+            Child = codeContent
         };
         border.SetResourceReference(Border.BackgroundProperty, "DarkCard2Brush");
         border.SetResourceReference(Border.BorderBrushProperty, "DarkBorderBrush");

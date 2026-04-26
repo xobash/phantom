@@ -6,6 +6,8 @@ public sealed class HomeCard
     public string Value { get; set; } = string.Empty;
     public string? Tooltip { get; set; }
     public string IconGlyph { get; set; } = string.Empty;
+    public bool IsUnavailable { get; set; }
+    public bool CanRunAction { get; set; }
 }
 
 public sealed class KpiTile
@@ -22,8 +24,8 @@ public sealed class InstalledAppInfo
     public string Name { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
     public string Publisher { get; set; } = string.Empty;
-    public string InstallDate { get; set; } = "Unknown";
-    public string SizeOnDisk { get; set; } = "Unknown";
+    public string InstallDate { get; set; } = string.Empty;
+    public string SizeOnDisk { get; set; } = string.Empty;
     public string InstallLocation { get; set; } = string.Empty;
     public string UninstallCommand { get; set; } = string.Empty;
     public string DisplayIcon { get; set; } = string.Empty;
@@ -50,16 +52,18 @@ public sealed class ServiceInfoRow
 
 public sealed class HomeSnapshot
 {
-    public string Motherboard { get; set; } = "Unknown";
-    public string Graphics { get; set; } = "Unknown";
-    public string GraphicsDriverVersion { get; set; } = "Unknown";
-    public string GraphicsDriverDate { get; set; } = "Unknown";
-    public string Storage { get; set; } = "Unknown";
-    public string Uptime { get; set; } = "Unknown";
-    public string Processor { get; set; } = "Unknown";
-    public string Memory { get; set; } = "Unknown";
-    public string Windows { get; set; } = "Unknown";
+    public string Motherboard { get; set; } = string.Empty;
+    public string Graphics { get; set; } = string.Empty;
+    public string GraphicsDriverVersion { get; set; } = string.Empty;
+    public string GraphicsDriverDate { get; set; } = string.Empty;
+    public string Storage { get; set; } = string.Empty;
+    public string Uptime { get; set; } = string.Empty;
+    public string Processor { get; set; } = string.Empty;
+    public string Memory { get; set; } = string.Empty;
+    public string Windows { get; set; } = string.Empty;
     public string PerformanceScore { get; set; } = "Unavailable";
+    public string PerformanceTooltip { get; set; } = string.Empty;
+    public bool IsPerformanceAvailable { get; set; }
 
     public int AppsCount { get; set; }
     public int ProcessesCount { get; set; }

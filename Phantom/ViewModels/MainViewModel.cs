@@ -210,8 +210,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await EnsureSectionInitializedAsync(AppSection.Settings, cancellationToken).ConfigureAwait(false);
         await EnsureSectionInitializedAsync(AppSection.Home, cancellationToken).ConfigureAwait(false);
 
-        _ = InitializeRemainingSectionsAsync();
-
+        _console.Publish("Trace", "Deferred remaining view model initialization until section navigation.");
         _console.Publish("Trace", "Main initialization completed.");
     }
 
@@ -226,40 +225,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (!task.IsCompletedSuccessfully)
         {
             _ = ObserveSectionInitializationAsync(section, task);
-        }
-    }
-
-    private async Task InitializeRemainingSectionsAsync()
-    {
-        try
-        {
-            _console.Publish("Trace", "Initializing remaining view models in background.");
-            foreach (var section in new[]
-                     {
-                         AppSection.Tweaks,
-                         AppSection.Store,
-                         AppSection.Services,
-                         AppSection.Apps,
-                         AppSection.Features,
-                         AppSection.Fixes,
-                         AppSection.Updates
-                     })
-            {
-                try
-                {
-                    await EnsureSectionInitializedAsync(section, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _console.Publish("Error", $"{section} initialization failed: {ex.Message}");
-                }
-            }
-
-            _console.Publish("Trace", "Background view model initialization completed.");
-        }
-        catch (Exception ex)
-        {
-            _console.Publish("Error", $"Background initialization failed: {ex.Message}");
         }
     }
 

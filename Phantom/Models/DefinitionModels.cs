@@ -21,8 +21,9 @@ public sealed class CatalogApp
     public string[] Tags { get; set; } = Array.Empty<string>();
     public bool ManualOnly { get; set; }
     public bool Selected { get; set; }
-    public string Status { get; set; } = "Unknown";
+    public string Status { get; set; } = string.Empty;
     public string SourceSummary { get; set; } = string.Empty;
+    public string PurposeSummary { get; set; } = string.Empty;
     public string InstalledVersion { get; set; } = string.Empty;
     public string AvailableVersion { get; set; } = string.Empty;
 }
@@ -30,7 +31,7 @@ public sealed class CatalogApp
 public sealed class TweakDefinition : INotifyPropertyChanged
 {
     private bool _selected;
-    private string _status = "Unknown";
+    private string _status = string.Empty;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -81,7 +82,7 @@ public sealed class FeatureDefinition
     public string Description { get; set; } = string.Empty;
     public string[] Compatibility { get; set; } = Array.Empty<string>();
     public bool Selected { get; set; }
-    public string Status { get; set; } = "Unknown";
+    public string Status { get; set; } = string.Empty;
 }
 
 public sealed class FixDefinition

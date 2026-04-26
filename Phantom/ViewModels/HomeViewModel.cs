@@ -10,7 +10,7 @@ namespace Phantom.ViewModels;
 
 public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDisposable
 {
-    private const string PerformanceTooltipText = "Windows Experience Index (WinSAT). Base score is the lowest subscore, max 9.9.";
+    private const string PerformanceTooltipText = "Bare-metal systems use WinSAT. Virtual machines use Phantom's VM-compatible CPU, memory, and disk sample.";
 
     private readonly HomeDataService _homeData;
     private readonly TelemetryStore _telemetryStore;
@@ -32,6 +32,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
     private long? _uptimeSeconds;
     private long? _uptimeSeedSeconds;
     private DateTimeOffset? _uptimeSeededAt;
+    private bool _performanceCanRun = true;
 
     public HomeViewModel(HomeDataService homeData, TelemetryStore telemetryStore, Func<AppSettings> settingsAccessor, ConsoleStreamService console)
     {
@@ -47,7 +48,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
         RefreshCommand = new RelayCommand(() => RequestRefresh(forceIfBusy: true));
         RefreshCardCommand = new RelayCommand<string>(card => RequestCardRefresh(card));
-        RunWinsatCommand = new AsyncRelayCommand(RunWinsatAsync, () => !_isRefreshing);
+        RunWinsatCommand = new AsyncRelayCommand(RunWinsatAsync, () => !_isRefreshing && _performanceCanRun);
 
         _timer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -223,7 +224,13 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
                 UpsertTopCard("Processor", snapshot.Processor);
                 UpsertTopCard("Memory", snapshot.Memory);
                 UpsertTopCard("Windows", snapshot.Windows);
-                UpsertTopCard("Performance", snapshot.PerformanceScore, PerformanceTooltipText);
+                UpdatePerformanceAvailability(snapshot.IsPerformanceAvailable);
+                UpsertTopCard(
+                    "Performance",
+                    snapshot.PerformanceScore,
+                    string.IsNullOrWhiteSpace(snapshot.PerformanceTooltip) ? PerformanceTooltipText : snapshot.PerformanceTooltip,
+                    isUnavailable: !snapshot.IsPerformanceAvailable,
+                    canRunAction: snapshot.IsPerformanceAvailable);
 
                 UpsertKpiTile("Apps", snapshot.AppsCount.ToString());
                 UpsertKpiTile("Processes", snapshot.ProcessesCount.ToString());
@@ -295,7 +302,7 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         UpsertTopCard("Processor", "Loading...");
         UpsertTopCard("Memory", "Loading...");
         UpsertTopCard("Windows", "Loading...");
-        UpsertTopCard("Performance", "Unavailable", PerformanceTooltipText);
+        UpsertTopCard("Performance", "Checking...", PerformanceTooltipText, isUnavailable: false, canRunAction: true);
         UpsertKpiTile("Apps", "...");
         UpsertKpiTile("Processes", "...");
         UpsertKpiTile("Services", "...");
@@ -313,7 +320,9 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             var score = await _homeData.RunWinsatScoreAsync(cancellationToken).ConfigureAwait(false);
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                UpsertTopCard("Performance", score, PerformanceTooltipText);
+                var available = !string.Equals(score, "Unavailable", StringComparison.OrdinalIgnoreCase);
+                UpdatePerformanceAvailability(available);
+                UpsertTopCard("Performance", score, PerformanceTooltipText, isUnavailable: !available, canRunAction: available);
             });
         }
         catch (Exception ex)
@@ -393,7 +402,23 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
 
     private bool ContainsKpiTile(string title) => IndexOfKpiTile(title) >= 0;
 
-    private void UpsertTopCard(string title, string value, string? tooltip = null)
+    private void UpdatePerformanceAvailability(bool canRun)
+    {
+        if (_performanceCanRun == canRun)
+        {
+            return;
+        }
+
+        _performanceCanRun = canRun;
+        RunWinsatCommand.RaiseCanExecuteChanged();
+    }
+
+    private void UpsertTopCard(
+        string title,
+        string value,
+        string? tooltip = null,
+        bool isUnavailable = false,
+        bool canRunAction = false)
     {
         var index = IndexOfTopCard(title);
         var next = new HomeCard
@@ -401,11 +426,23 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
             Title = title,
             Value = value,
             Tooltip = tooltip,
-            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph(title)
+            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph(title),
+            IsUnavailable = isUnavailable,
+            CanRunAction = canRunAction
         };
 
         if (index >= 0)
         {
+            var current = TopCards[index];
+            if (current.Value == next.Value &&
+                current.Tooltip == next.Tooltip &&
+                current.IconGlyph == next.IconGlyph &&
+                current.IsUnavailable == next.IsUnavailable &&
+                current.CanRunAction == next.CanRunAction)
+            {
+                return;
+            }
+
             TopCards[index] = next;
             return;
         }
@@ -677,7 +714,10 @@ public sealed class HomeViewModel : ObservableObject, ISectionViewModel, IDispos
         {
             Title = "Uptime",
             Value = FormatUptime(safeSeconds),
-            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph("Uptime")
+            IconGlyph = HomeCardIconCatalog.GetTopCardGlyph("Uptime"),
+            IsUnavailable = TopCards[uptimeIndex].IsUnavailable,
+            CanRunAction = TopCards[uptimeIndex].CanRunAction,
+            Tooltip = TopCards[uptimeIndex].Tooltip
         };
     }
 }

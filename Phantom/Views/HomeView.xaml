@@ -44,11 +44,20 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Style="{StaticResource HomeCompactCardStyle}"
-                                ToolTip="{Binding Tooltip}"
-                                Cursor="Hand"
+                        <Border ToolTip="{Binding Tooltip}"
                                 Tag="{Binding Title}"
                                 PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown">
+                            <Border.Style>
+                                <Style TargetType="Border" BasedOn="{StaticResource HomeCompactCardStyle}">
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
+                                            <Setter Property="Opacity" Value="0.48"/>
+                                            <Setter Property="Cursor" Value="Arrow"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <Grid MinHeight="72">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -78,8 +87,9 @@
                                         Height="30"
                                         Padding="0"
                                         Margin="8,0,0,0"
+                                        IsEnabled="{Binding CanRunAction}"
                                         Command="{Binding DataContext.RunWinsatCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        ToolTip="Run Windows Experience Index benchmark (WinSAT)">
+                                        ToolTip="{Binding Tooltip}">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
                                             <Setter Property="Visibility" Value="Collapsed"/>

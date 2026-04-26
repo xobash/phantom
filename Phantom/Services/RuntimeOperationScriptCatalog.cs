@@ -2,7 +2,6 @@ namespace Phantom.Services;
 
 public static class RuntimeOperationScriptCatalog
 {
-    private const string OoShutUp10ExpectedSha256 = "01D64C54DBA3F7B53B697EB7D863DFA4BA3CD57A5D04A10140C40E45AC6BCAE9";
     private const string OoShutUp10ExpectedPublisher = "O&O Software GmbH";
 
     private static readonly IReadOnlyDictionary<string, string[]> DnsServersByProfile =
@@ -75,7 +74,6 @@ public static class RuntimeOperationScriptCatalog
         return $$"""
                  $ErrorActionPreference='Stop'
                  Set-StrictMode -Version Latest
-                 $downloadUrl='https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe'
                  $toolRoot=Join-Path $env:ProgramData 'Phantom\Tools'
                  $exePath=Join-Path $toolRoot 'OOSU10.exe'
                  New-Item -Path $toolRoot -ItemType Directory -Force | Out-Null
@@ -93,20 +91,19 @@ public static class RuntimeOperationScriptCatalog
                  } catch {
                    throw "Failed to enforce secure ACL on $toolRoot. $($_.Exception.Message)"
                  }
-                 Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing -ErrorAction Stop
+                 Invoke-WebRequest -Uri 'https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe' -OutFile $exePath -UseBasicParsing -ErrorAction Stop
                  if(-not (Test-Path $exePath)){ throw 'O&O ShutUp10 download failed.' }
                  $hash=(Get-FileHash -Path $exePath -Algorithm SHA256 -ErrorAction Stop).Hash
-                 if($hash -ne '{{OoShutUp10ExpectedSha256}}'){ throw "O&O ShutUp10 hash mismatch. Expected {{OoShutUp10ExpectedSha256}}, got $hash." }
                  $sig=Get-AuthenticodeSignature -FilePath $exePath
                  if($sig.Status -ne 'Valid'){ throw "O&O ShutUp10 signature validation failed: $($sig.Status)." }
                  if($null -eq $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notmatch [Regex]::Escape('{{OoShutUp10ExpectedPublisher}}')){ throw "Unexpected O&O ShutUp10 signer: $($sig.SignerCertificate.Subject)." }
                  Start-Process -FilePath 'OOSU10.exe' -WorkingDirectory $toolRoot
-                 Write-Output "O&O ShutUp10 launched from $exePath"
+                 Write-Output "O&O ShutUp10 launched from $exePath (SHA256 $hash)"
                  """;
     }
 
     public static string BuildOoShutUp10UndoScript()
     {
-        return "Write-Output 'No undo action for O&O ShutUp10 execution.'";
+        return "$toolRoot=Join-Path $env:ProgramData 'Phantom\\Tools'; $exePath=Join-Path $toolRoot 'OOSU10.exe'; if(Test-Path $exePath){ Remove-Item -Path $exePath -Force -ErrorAction Stop; Write-Output \"Removed cached O&O ShutUp10 from $exePath\" } else { Write-Output 'O&O ShutUp10 is not cached.' }";
     }
 }

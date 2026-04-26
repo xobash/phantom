@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -50,7 +51,7 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         _paths = paths;
 
         AppDisplayName = ResolveAppDisplayName();
-        AppVersion = ResolveAppVersion();
+        AppVersion = ResolveAppVersion(_paths);
         AppDisplayWithVersion = $"{AppDisplayName} {AppVersion}";
         AboutSummary = "Local-first Windows admin utility focused on safe, reversible system operations.";
 
@@ -322,10 +323,19 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
         Notify(nameof(HomeRefreshSeconds));
         Notify(nameof(MaxLogFiles));
         Notify(nameof(MaxTotalLogSizeBytes));
-        await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public AppSettings Current => _settings;
+
+    public async Task EnsureLogsLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (LogFiles.Count > 0 || !string.IsNullOrWhiteSpace(SelectedLog))
+        {
+            return;
+        }
+
+        await RefreshLogsAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
@@ -553,24 +563,79 @@ public sealed class SettingsViewModel : ObservableObject, ISectionViewModel
                ?? "Phantom";
     }
 
-    private static string ResolveAppVersion()
+    private static string ResolveAppVersion(AppPaths paths)
     {
+        var installStateVersion = TryResolveInstallStateVersion(paths);
+        if (!string.IsNullOrWhiteSpace(installStateVersion))
+        {
+            return installStateVersion;
+        }
+
         var assembly = Assembly.GetEntryAssembly() ?? typeof(SettingsViewModel).Assembly;
         var infoVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!string.IsNullOrWhiteSpace(infoVersion))
         {
-            return infoVersion.Split('+')[0].Trim();
+            var cleanInfoVersion = infoVersion.Split('+')[0].Trim();
+            if (!IsDefaultAssemblyVersion(cleanInfoVersion))
+            {
+                return cleanInfoVersion;
+            }
         }
 
         var version = assembly.GetName().Version;
         if (version is null)
         {
-            return "0.0.0";
+            return "source build";
         }
 
-        return version.Build >= 0
+        var cleanVersion = version.Build >= 0
             ? $"{version.Major}.{version.Minor}.{version.Build}"
             : $"{version.Major}.{version.Minor}";
+        return IsDefaultAssemblyVersion(cleanVersion) ? "source build" : cleanVersion;
+    }
+
+    private static string TryResolveInstallStateVersion(AppPaths paths)
+    {
+        var installStatePath = Path.Combine(paths.BaseDirectory, "install-state.json");
+        if (!File.Exists(installStatePath))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(installStatePath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("ReleaseTag", out var releaseTagElement))
+            {
+                var releaseTag = releaseTagElement.GetString();
+                if (!string.IsNullOrWhiteSpace(releaseTag))
+                {
+                    return releaseTag.Trim();
+                }
+            }
+
+            if (root.TryGetProperty("CommitSha", out var commitShaElement))
+            {
+                var commitSha = commitShaElement.GetString();
+                if (!string.IsNullOrWhiteSpace(commitSha))
+                {
+                    var clean = commitSha.Trim();
+                    return clean.Length > 7 ? $"source {clean[..7]}" : $"source {clean}";
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsDefaultAssemblyVersion(string version)
+    {
+        return string.Equals(version, "1.0.0", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(version, "1.0.0.0", StringComparison.OrdinalIgnoreCase);
     }
 
     private void RefreshAccentPreview()

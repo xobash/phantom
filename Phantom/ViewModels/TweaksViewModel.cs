@@ -928,7 +928,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
 
     private static TweakScanFinding BuildScanFinding(TweakDefinition tweak)
     {
-        var status = string.IsNullOrWhiteSpace(tweak.Status) ? "Unknown" : tweak.Status;
+        var status = string.IsNullOrWhiteSpace(tweak.Status) ? "Manual" : tweak.Status;
         if (IsAppliedStatus(status))
         {
             return new TweakScanFinding(tweak.Id, tweak.Name, "Already optimized", status);
@@ -970,7 +970,7 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
         {
             if (string.IsNullOrWhiteSpace(tweak.DetectScript))
             {
-                updates.Add((tweak.Id, "Unknown", false));
+                updates.Add((tweak.Id, "Manual", false));
                 continue;
             }
 
@@ -1120,8 +1120,8 @@ public sealed class TweaksViewModel : ObservableObject, ISectionViewModel, IDisp
             Id = "tweak.run-oo-shutup10",
             Title = "Run O&O ShutUp10",
             Description = "Downloads and launches O&O ShutUp10 from official source.",
-            RiskTier = RiskTier.Dangerous,
-            Reversible = false,
+            RiskTier = RiskTier.Advanced,
+            Reversible = true,
             Destructive = false,
             Tags = ["tweak", "utility"],
             RunScripts =

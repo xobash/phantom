@@ -11,6 +11,11 @@ namespace Phantom.Services;
 
 public sealed class HomeDataService
 {
+    private const string WinsatTooltipText = "Bare-metal benchmark uses Windows System Assessment Tool (WinSAT). Base score is the lowest subscore, max 9.9.";
+    private const string VmBenchmarkTooltipText = "Virtual machine benchmark uses Phantom's in-process CPU, memory, and disk sample because WinSAT is blocked by many VM platforms.";
+    private const int DirectorySizeFileLimit = 5000;
+    private static readonly TimeSpan DirectorySizeTimeLimit = TimeSpan.FromMilliseconds(35);
+
     private readonly ConsoleStreamService _console;
     private readonly TelemetryStore _telemetryStore;
     private readonly object _cpuSampleSync = new();
@@ -97,12 +102,28 @@ public sealed class HomeDataService
             return "Unavailable";
         }
 
+        if (IsVirtualMachine())
+        {
+            return await RunVmBenchmarkScoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!File.Exists(GetWinsatPath()))
+        {
+            _console.Publish("Warning", "WinSAT is not available on this system.");
+            return "Unavailable";
+        }
+
         var ranFormal = await RunWinsatFormalAsync(cancellationToken).ConfigureAwait(false);
         if (!ranFormal)
         {
             return "Unavailable";
         }
 
+        return await ReadLatestWinsatScoreAsync(cancellationToken).ConfigureAwait(false) ?? "Unavailable";
+    }
+
+    private async Task<string?> ReadLatestWinsatScoreAsync(CancellationToken cancellationToken)
+    {
         try
         {
             var dataStorePath = Path.Combine(
@@ -132,17 +153,18 @@ public sealed class HomeDataService
                 .FirstOrDefault(element => element.Name.LocalName.Equals("SystemScore", StringComparison.OrdinalIgnoreCase))
                 ?.Value
                 ?.Trim();
-            return string.IsNullOrWhiteSpace(score) ? "Unavailable" : score;
+            return string.IsNullOrWhiteSpace(score) ? null : score;
         }
         catch (Exception ex)
         {
             _console.Publish("Error", $"WinSAT parse failed: {ex.Message}");
-            return "Unavailable";
+            return null;
         }
     }
 
     private HomeSnapshot BuildCompiledSnapshot(bool countInventory)
     {
+        var performance = BuildPerformanceSummary();
         var appsCount = 0;
         var servicesCount = 0;
         if (countInventory)
@@ -168,15 +190,18 @@ public sealed class HomeDataService
 
         return new HomeSnapshot
         {
-            Motherboard = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "BaseBoardProduct", "Unknown"),
-            Graphics = "Unknown",
-            GraphicsDriverVersion = "Unknown",
-            GraphicsDriverDate = "Unknown",
+            Motherboard = ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "BaseBoardProduct", string.Empty),
+            Graphics = string.Empty,
+            GraphicsDriverVersion = string.Empty,
+            GraphicsDriverDate = string.Empty,
             Storage = BuildStorageSummary(),
             Uptime = FormatUptime(TimeSpan.FromMilliseconds(Math.Max(0, Environment.TickCount64))),
             Processor = BuildProcessorSummary(),
             Memory = BuildMemorySummary(),
             Windows = BuildWindowsSummary(),
+            PerformanceScore = performance.DisplayText,
+            PerformanceTooltip = performance.Tooltip,
+            IsPerformanceAvailable = performance.IsAvailable,
             AppsCount = appsCount,
             ProcessesCount = SafeProcessCount(),
             ServicesCount = servicesCount,
@@ -186,6 +211,60 @@ public sealed class HomeDataService
             Apps = [],
             Services = []
         };
+    }
+
+    private HomePerformanceInfo BuildPerformanceSummary()
+    {
+        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+        {
+            return new HomePerformanceInfo("Unavailable", "Performance benchmark is available only on Windows.", IsAvailable: false);
+        }
+
+        if (IsVirtualMachine())
+        {
+            return new HomePerformanceInfo("VM benchmark ready", VmBenchmarkTooltipText, IsAvailable: true);
+        }
+
+        if (!File.Exists(GetWinsatPath()))
+        {
+            return new HomePerformanceInfo("Unavailable", "WinSAT is not installed or is unavailable on this Windows image.", IsAvailable: false);
+        }
+
+        try
+        {
+            var dataStorePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Performance",
+                "WinSAT",
+                "DataStore");
+            if (Directory.Exists(dataStorePath))
+            {
+                var latestXml = Directory
+                    .EnumerateFiles(dataStorePath, "*Formal*.WinSAT.xml", SearchOption.TopDirectoryOnly)
+                    .Select(path => new FileInfo(path))
+                    .OrderByDescending(file => file.LastWriteTimeUtc)
+                    .FirstOrDefault();
+                if (latestXml is not null)
+                {
+                    var document = XDocument.Load(latestXml.FullName);
+                    var score = document
+                        .Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName.Equals("SystemScore", StringComparison.OrdinalIgnoreCase))
+                        ?.Value
+                        ?.Trim();
+                    if (!string.IsNullOrWhiteSpace(score))
+                    {
+                        return new HomePerformanceInfo(score, WinsatTooltipText, IsAvailable: true);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Keep the home snapshot fast. Manual benchmark execution reports detailed failures.
+        }
+
+        return new HomePerformanceInfo("Run benchmark", WinsatTooltipText, IsAvailable: true);
     }
 
     private static string BuildStorageSummary()
@@ -210,7 +289,7 @@ public sealed class HomeDataService
         }
 
         return total <= 0
-            ? "Unknown"
+            ? string.Empty
             : $"Total {Math.Round(total / 1024d / 1024d / 1024d, 2)} GB, Free {Math.Round(free / 1024d / 1024d / 1024d, 2)} GB";
     }
 
@@ -226,7 +305,7 @@ public sealed class HomeDataService
     {
         return TryGetMemoryStatus(out var status)
             ? $"{Math.Round(status.ullTotalPhys / 1024d / 1024d / 1024d, 2)} GB"
-            : "Unknown";
+            : string.Empty;
     }
 
     private static string BuildWindowsSummary()
@@ -242,6 +321,42 @@ public sealed class HomeDataService
         return string.IsNullOrWhiteSpace(displayVersion)
             ? $"{product} (Build {buildText})"
             : $"{product} {displayVersion} (Build {buildText})";
+    }
+
+    private static string GetWinsatPath()
+        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "winsat.exe");
+
+    private static bool IsVirtualMachine()
+    {
+        var fields = new[]
+        {
+            ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "SystemManufacturer", string.Empty),
+            ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "SystemProductName", string.Empty),
+            ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System\BIOS", "BIOSVendor", string.Empty),
+            ReadRegistryString(RegistryHive.LocalMachine, RegistryView.Registry64, @"HARDWARE\DESCRIPTION\System", "SystemBiosVersion", string.Empty)
+        };
+
+        foreach (var field in fields)
+        {
+            if (string.IsNullOrWhiteSpace(field))
+            {
+                continue;
+            }
+
+            if (field.Contains("virtual", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("vmware", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("virtualbox", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("hyper-v", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("qemu", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("kvm", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("parallels", StringComparison.OrdinalIgnoreCase) ||
+                field.Contains("xen", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int SafeProcessCount()
@@ -459,7 +574,7 @@ public sealed class HomeDataService
             using var key = hklm.OpenSubKey($@"{root}\{serviceName}", writable: false);
             if (key is null)
             {
-                return new ServiceRegistryInfo("Unknown", string.Empty, string.Empty, string.Empty);
+                return new ServiceRegistryInfo(string.Empty, string.Empty, string.Empty, string.Empty);
             }
 
             return new ServiceRegistryInfo(
@@ -470,7 +585,7 @@ public sealed class HomeDataService
         }
         catch
         {
-            return new ServiceRegistryInfo("Unknown", string.Empty, string.Empty, string.Empty);
+            return new ServiceRegistryInfo(string.Empty, string.Empty, string.Empty, string.Empty);
         }
     }
 
@@ -483,8 +598,16 @@ public sealed class HomeDataService
         }
 
         parts.Add($"Service name: {service.Name}");
-        parts.Add($"Status: {service.Status}");
-        parts.Add($"Startup: {service.StartupType}");
+        if (!string.IsNullOrWhiteSpace(service.Status))
+        {
+            parts.Add($"Status: {service.Status}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(service.StartupType))
+        {
+            parts.Add($"Startup: {service.StartupType}");
+        }
+
         if (!string.IsNullOrWhiteSpace(service.PathName))
         {
             parts.Add($"Path: {service.PathName}");
@@ -502,7 +625,7 @@ public sealed class HomeDataService
             2 => "Automatic",
             3 => "Manual",
             4 => "Disabled",
-            _ => "Unknown"
+            _ => string.Empty
         };
     }
 
@@ -517,7 +640,7 @@ public sealed class HomeDataService
             5 => "Continue Pending",
             6 => "Pause Pending",
             7 => "Paused",
-            _ => "Unknown"
+            _ => string.Empty
         };
     }
 
@@ -612,6 +735,7 @@ public sealed class HomeDataService
                                 GetRegistryString(appKey, "UninstallString")),
                             DisplayIcon = GetRegistryString(appKey, "DisplayIcon")
                         };
+                        EnrichInstalledAppFromFileSystem(app);
 
                         var key = $"{app.Name}|{app.Version}|{app.Publisher}";
                         apps.TryAdd(key, app);
@@ -765,6 +889,7 @@ public sealed class HomeDataService
                     DisplayIcon = string.Empty,
                     UninstallCommand = string.Empty
                 };
+                EnrichInstalledAppFromFileSystem(app);
 
                 apps.TryAdd($"appx|{packageFullName}", app);
             }
@@ -838,6 +963,19 @@ public sealed class HomeDataService
         return string.IsNullOrWhiteSpace(first) ? second : first;
     }
 
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
+    }
+
     private static string FormatInstallDate(string raw)
     {
         if (raw.Length == 8 &&
@@ -846,19 +984,345 @@ public sealed class HomeDataService
             return parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
-        return string.IsNullOrWhiteSpace(raw) ? "Unknown" : raw;
+        return string.IsNullOrWhiteSpace(raw) ? string.Empty : raw;
     }
 
     private static string FormatEstimatedSize(long estimatedSizeKb)
     {
-        return estimatedSizeKb <= 0 ? "Unknown" : FormatBytes(estimatedSizeKb * 1024, decimals: 1);
+        return estimatedSizeKb <= 0 ? string.Empty : FormatBytes(estimatedSizeKb * 1024, decimals: 1);
+    }
+
+    private static void EnrichInstalledAppFromFileSystem(InstalledAppInfo app)
+    {
+        var folder = ResolveInstalledAppFolder(app);
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(app.InstallDate))
+        {
+            app.InstallDate = FormatFileSystemDate(folder);
+        }
+
+        if (string.IsNullOrWhiteSpace(app.SizeOnDisk))
+        {
+            app.SizeOnDisk = TryFormatDirectorySize(folder);
+        }
+    }
+
+    private static string ResolveInstalledAppFolder(InstalledAppInfo app)
+    {
+        var candidates = new[]
+        {
+            app.InstallLocation,
+            GetDirectoryNameOrEmpty(NormalizePathWithOptionalIndex(app.DisplayIcon)),
+            GetDirectoryNameOrEmpty(ExtractExecutablePath(app.UninstallCommand))
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(candidate.Trim().Trim('"'));
+                if (Directory.Exists(expanded))
+                {
+                    return expanded;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string GetDirectoryNameOrEmpty(string path)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(path) ? string.Empty : Path.GetDirectoryName(path) ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string NormalizePathWithOptionalIndex(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().Trim('"');
+        var commaIndex = normalized.LastIndexOf(',');
+        if (commaIndex > 2 && int.TryParse(normalized[(commaIndex + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            normalized = normalized[..commaIndex];
+        }
+
+        return Environment.ExpandEnvironmentVariables(normalized.Trim().Trim('"'));
+    }
+
+    private static string ExtractExecutablePath(string commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine))
+        {
+            return string.Empty;
+        }
+
+        var text = Environment.ExpandEnvironmentVariables(commandLine.Trim());
+        if (text.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (text[0] == '"')
+        {
+            var endQuote = text.IndexOf('"', 1);
+            return endQuote > 1 ? text[1..endQuote] : string.Empty;
+        }
+
+        var exeIndex = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeIndex >= 0)
+        {
+            return text[..(exeIndex + 4)].Trim();
+        }
+
+        var firstSpace = text.IndexOf(' ');
+        return firstSpace > 0 ? text[..firstSpace].Trim() : text;
+    }
+
+    private static string FormatFileSystemDate(string folder)
+    {
+        try
+        {
+            var info = new DirectoryInfo(folder);
+            var date = info.CreationTime;
+            if (date.Year < 1990)
+            {
+                date = info.LastWriteTime;
+            }
+
+            return date.Year < 1990 ? string.Empty : date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string TryFormatDirectorySize(string folder)
+    {
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var pending = new Stack<string>();
+            pending.Push(folder);
+            long total = 0;
+            var fileCount = 0;
+
+            while (pending.Count > 0)
+            {
+                if (fileCount >= DirectorySizeFileLimit || stopwatch.Elapsed > DirectorySizeTimeLimit)
+                {
+                    return string.Empty;
+                }
+
+                var current = pending.Pop();
+                string[] files;
+                try
+                {
+                    files = Directory.GetFiles(current);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var file in files)
+                {
+                    if (fileCount >= DirectorySizeFileLimit || stopwatch.Elapsed > DirectorySizeTimeLimit)
+                    {
+                        return string.Empty;
+                    }
+
+                    try
+                    {
+                        total += new FileInfo(file).Length;
+                        fileCount++;
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                try
+                {
+                    foreach (var directory in Directory.GetDirectories(current))
+                    {
+                        pending.Push(directory);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return total > 0 ? FormatBytes(total, decimals: 1) : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> RunVmBenchmarkScoreAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cpuTask = Task.Run(() => MeasureCpuWork(cancellationToken), cancellationToken);
+            var memoryTask = Task.Run(() => MeasureMemoryCopy(cancellationToken), cancellationToken);
+            var diskTask = MeasureDiskIoAsync(cancellationToken);
+            await Task.WhenAll(cpuTask, memoryTask, diskTask).ConfigureAwait(false);
+
+            var cpuScore = ScaleBenchmark(cpuTask.Result, 500_000d, 9_000_000d);
+            var memoryScore = ScaleBenchmark(memoryTask.Result, 700d, 9_000d);
+            var diskScore = ScaleBenchmark(diskTask.Result, 40d, 1_800d);
+            var score = Math.Round((cpuScore + memoryScore + diskScore) / 3d, 1, MidpointRounding.AwayFromZero);
+            return $"VM {score:0.0}";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _console.Publish("Error", $"VM benchmark failed: {ex.Message}");
+            return "Unavailable";
+        }
+    }
+
+    private static double MeasureCpuWork(CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var iterations = 0L;
+        var value = 0x9E3779B97F4A7C15UL;
+
+        while (stopwatch.ElapsedMilliseconds < 350)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            for (var i = 0; i < 10_000; i++)
+            {
+                value ^= value << 13;
+                value ^= value >> 7;
+                value ^= value << 17;
+                iterations++;
+            }
+        }
+
+        GC.KeepAlive(value);
+        return iterations / Math.Max(0.001d, stopwatch.Elapsed.TotalSeconds);
+    }
+
+    private static double MeasureMemoryCopy(CancellationToken cancellationToken)
+    {
+        var source = new byte[8 * 1024 * 1024];
+        var target = new byte[source.Length];
+        Array.Fill<byte>(source, 0x5A);
+        var copiedBytes = 0L;
+        var stopwatch = Stopwatch.StartNew();
+
+        while (stopwatch.ElapsedMilliseconds < 350)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Buffer.BlockCopy(source, 0, target, 0, source.Length);
+            copiedBytes += source.Length;
+        }
+
+        GC.KeepAlive(target);
+        return (copiedBytes / 1024d / 1024d) / Math.Max(0.001d, stopwatch.Elapsed.TotalSeconds);
+    }
+
+    private static async Task<double> MeasureDiskIoAsync(CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"phantom-vm-benchmark-{Guid.NewGuid():N}.tmp");
+        var buffer = new byte[4 * 1024 * 1024];
+        Random.Shared.NextBytes(buffer);
+        var bytes = 0L;
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            await using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, bufferSize: 1024 * 1024, FileOptions.SequentialScan | FileOptions.DeleteOnClose))
+            {
+                while (stopwatch.ElapsedMilliseconds < 350)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    bytes += buffer.Length;
+                }
+
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                stream.Position = 0;
+                while (stream.Position < stream.Length)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    bytes += read;
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return (bytes / 1024d / 1024d) / Math.Max(0.001d, stopwatch.Elapsed.TotalSeconds);
+    }
+
+    private static double ScaleBenchmark(double value, double low, double high)
+    {
+        if (value <= low)
+        {
+            return 1;
+        }
+
+        if (value >= high)
+        {
+            return 9.9;
+        }
+
+        return 1 + ((value - low) / (high - low) * 8.9);
     }
 
     private async Task<bool> RunWinsatFormalAsync(CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = "winsat.exe",
+            FileName = GetWinsatPath(),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -1095,4 +1559,6 @@ public sealed class HomeDataService
     private sealed record ServiceRegistryInfo(string StartupType, string PathName, string Description, string DisplayName);
 
     private sealed record CpuSample(long Idle, long Kernel, long User);
+
+    private sealed record HomePerformanceInfo(string DisplayText, string Tooltip, bool IsAvailable);
 }

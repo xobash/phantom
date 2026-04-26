@@ -15,8 +15,8 @@ public sealed class UpdatesViewModel : ObservableObject, ISectionViewModel
     private readonly Func<AppSettings> _settingsAccessor;
 
     private string _selectedMode = "Security";
-    private string _serviceStatus = "Unknown";
-    private string _policySummary = "Unknown";
+    private string _serviceStatus = string.Empty;
+    private string _policySummary = string.Empty;
     private string _policySource = $"Source: {UpdateModeOperationFactory.RegistryPolicyRootPath.Replace(":", string.Empty)} (Registry64, machine scope).";
     private string _policyExplanation = "Read-only snapshot. Preset buttons update these policy values and related Windows Update service behavior.";
 

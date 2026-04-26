@@ -177,11 +177,20 @@
                                                     <TextBlock Text="{Binding DisplayName}"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource DarkTextBrush}"/>
-                                                    <TextBlock Text="{Binding SourceSummary}"
-                                                               FontSize="13"
+                                                    <TextBlock FontSize="13"
                                                                Margin="0,4,0,0"
                                                                TextWrapping="Wrap"
-                                                               Foreground="{DynamicResource DarkTextBrush}"/>
+                                                               Foreground="{DynamicResource DarkTextBrush}">
+                                                        <Run Text="Purpose: "/>
+                                                        <Run Text="{Binding PurposeSummary}"/>
+                                                    </TextBlock>
+                                                    <TextBlock FontSize="12"
+                                                               Margin="0,8,0,0"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource MutedTextBrush}">
+                                                        <Run Text="Source: "/>
+                                                        <Run Text="{Binding SourceSummary}"/>
+                                                    </TextBlock>
                                                 </StackPanel>
                                             </ToolTip>
                                         </Border.ToolTip>
