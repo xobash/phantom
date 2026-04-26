@@ -24,7 +24,6 @@ public sealed class CliRunnerTests
             console,
             log,
             () => settings);
-        var query = new PowerShellQueryService(console, log);
         var cli = new CliRunner(
             paths,
             new DefinitionCatalogService(paths),
@@ -32,7 +31,6 @@ public sealed class CliRunnerTests
             console,
             log,
             new NetworkGuardService(),
-            query,
             settingsStore);
 
         var exitCode = await cli.RunAsync(@"..\..\outside.json", forceDangerous: false, dangerousAcknowledgement: null, skipCaptureCheck: false, CancellationToken.None);
@@ -137,7 +135,6 @@ public sealed class CliRunnerTests
             console,
             log,
             () => settings);
-        var query = new PowerShellQueryService(console, log);
         return new CliRunner(
             paths,
             new DefinitionCatalogService(paths),
@@ -145,7 +142,6 @@ public sealed class CliRunnerTests
             console,
             log,
             new NetworkGuardService(),
-            query,
             settingsStore);
     }
 

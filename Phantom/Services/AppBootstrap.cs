@@ -35,7 +35,7 @@ public sealed class AppBootstrap : IDisposable
         Prompt = new UserPromptService();
         ExecutionCoordinator = new ExecutionCoordinator();
         ExecutionCoordinator.RunningChanged += (_, running) => Console.Publish("Trace", $"ExecutionCoordinator running={running}");
-        HomeData = new HomeDataService(Console, Query, TelemetryStore);
+        HomeData = new HomeDataService(Console, TelemetryStore);
 
         Settings = new SettingsViewModel(SettingsStore, Log, SettingsProvider, Theme, Paths);
         Home = new HomeViewModel(HomeData, TelemetryStore, () => SettingsProvider.Current, Console);
@@ -51,7 +51,7 @@ public sealed class AppBootstrap : IDisposable
         Automation = new AutomationViewModel(Definitions, Store, Tweaks, Features, Fixes, Updates);
 
         Main = new MainViewModel(Home, Apps, Services, Store, Tweaks, Features, Fixes, Updates, Automation, Settings, Console, ExecutionCoordinator, Paths);
-        CliRunner = new CliRunner(Paths, Definitions, Operations, Console, Log, Network, Query, SettingsStore);
+        CliRunner = new CliRunner(Paths, Definitions, Operations, Console, Log, Network, SettingsStore);
         Console.Publish("Trace", "Phantom services wired and ready.");
     }
 

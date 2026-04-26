@@ -35,11 +35,12 @@ Get-Content $scriptPath
 
 The launcher will:
 
-- Check for the .NET 8 SDK and install it via winget if missing
-- Download and build Phantom from source
-- Launch the application
+- Open a lightweight WPF launcher immediately
+- Run update/install work in a background PowerShell runspace
+- Prefer the latest prebuilt ReadyToRun release asset
+- Fall back to source build only when no release asset is available
 
-Built output is saved to `%LOCALAPPDATA%\Phantom\app`. Subsequent launches can run `Phantom.exe` directly without rebuilding.
+Built or downloaded output is saved to `%LOCALAPPDATA%\Phantom\app`. Subsequent launches reuse the installed build when it is current.
 
 ---
 
@@ -144,7 +145,7 @@ Dangerous operations are gated behind both the **Enable Destructive Operations**
 
 ## Building
 
-The `irm` one-liner above handles everything automatically. To build manually:
+The `irm` one-liner above handles install/update automatically. To build manually:
 
 **Prerequisites:** Windows 10/11 x64, .NET 8 SDK, elevated PowerShell
 
@@ -241,7 +242,7 @@ The build output is self-contained — the .NET 8 runtime is bundled. winget and
 
 **Dangerous operation gates:** Irreversible operations require both the **Enable Destructive Operations** toggle and explicit confirmation. In CLI mode, dangerous operations require `"confirmDangerous": true`, `-ForceDangerous`, and an explicit acknowledgement token (`-AcknowledgeDangerous I_UNDERSTAND_NO_ROLLBACK`). Restore point safeguards are not bypassed by force mode. Safety-backup compensation can restore captured registry, service, and scheduled-task artifacts, but file-system deletions may still require manual recovery.
 
-**Supply chain considerations:** The `irm | iex` pattern downloads and executes a remote PowerShell script. If you are security-conscious about this, review `launch.ps1` in the repository before running it. The launcher can install the .NET 8 SDK via winget, download Phantom source from GitHub, and build it locally.
+**Supply chain considerations:** The `irm | iex` pattern downloads and executes a remote PowerShell script. If you are security-conscious about this, review `launch.ps1` in the repository before running it. The launcher prefers the signed-in repository's GitHub release zip, can install the .NET 8 SDK via winget when a source-build fallback is required, and downloads Phantom source only when no release asset is available or a forced rebuild is requested.
 
 **No persistence mechanisms:** Phantom installs no services, scheduled tasks, startup entries, or shell extensions. Removing the app directory and `%LOCALAPPDATA%\Phantom` leaves no running components behind.
 

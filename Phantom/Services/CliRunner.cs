@@ -13,7 +13,6 @@ public sealed class CliRunner
     private readonly ConsoleStreamService _console;
     private readonly LogService _log;
     private readonly NetworkGuardService _network;
-    private readonly PowerShellQueryService _query;
     private readonly SettingsStore _settingsStore;
 
     public CliRunner(
@@ -23,7 +22,6 @@ public sealed class CliRunner
         ConsoleStreamService console,
         LogService log,
         NetworkGuardService network,
-        PowerShellQueryService query,
         SettingsStore settingsStore)
     {
         _paths = paths;
@@ -32,7 +30,6 @@ public sealed class CliRunner
         _console = console;
         _log = log;
         _network = network;
-        _query = query;
         _settingsStore = settingsStore;
     }
 

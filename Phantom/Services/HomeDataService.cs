@@ -12,16 +12,14 @@ namespace Phantom.Services;
 public sealed class HomeDataService
 {
     private readonly ConsoleStreamService _console;
-    private readonly PowerShellQueryService _query;
     private readonly TelemetryStore _telemetryStore;
     private readonly object _cpuSampleSync = new();
     private TelemetryState? _telemetry;
     private CpuSample? _lastCpuSample;
 
-    public HomeDataService(ConsoleStreamService console, PowerShellQueryService query, TelemetryStore telemetryStore)
+    public HomeDataService(ConsoleStreamService console, TelemetryStore telemetryStore)
     {
         _console = console;
-        _query = query;
         _telemetryStore = telemetryStore;
     }
 
