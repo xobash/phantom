@@ -232,12 +232,25 @@ Write-OK "Extracted to $($extracted.FullName)"
 Write-Step "Building Phantom (this may take a minute on first run)..."
 
 $project = Join-Path $extracted.FullName "Phantom\Phantom.csproj"
+$nugetConfig = Join-Path $extracted.FullName "NuGet.Config"
 
 if (-not (Test-Path $project)) {
     Write-Fail "Could not find Phantom.csproj at expected path: $project"
     Stop-LaunchTranscript
     Save-LaunchLogToApp
     return
+}
+
+if (-not (Test-Path $nugetConfig)) {
+    @'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+</configuration>
+'@ | Set-Content -Path $nugetConfig -Encoding UTF8
 }
 
 Stop-RunningPhantomFromAppDir $AppDir
@@ -248,7 +261,16 @@ if (-not (Remove-DirectoryWithRetry $AppDir)) {
     return
 }
 
-dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:PublishTrimmed=false -o $AppDir
+dotnet restore $project -r win-x64 --configfile $nugetConfig -p:Configuration=Release -p:SelfContained=true -p:PublishReadyToRun=true -p:PublishTrimmed=false
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "dotnet restore failed. Confirm this VM can reach https://api.nuget.org/v3/index.json, then re-run."
+    Stop-LaunchTranscript
+    Save-LaunchLogToApp
+    return
+}
+
+dotnet publish $project -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:PublishTrimmed=false -o $AppDir
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "dotnet publish failed. See output above."
